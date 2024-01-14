@@ -1,0 +1,7 @@
+__pycache__/
+*.ini
+*.h5
+*.xdmf
+*.geo
+*.msh
+*.xml
