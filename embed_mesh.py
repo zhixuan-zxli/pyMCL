@@ -47,29 +47,34 @@ gmsh.model.geo.addLine(dryLeftEnd, pArcEnd)
 for i in range(0, arcNe-2):
     gmsh.model.geo.addLine(pArcEnd-i, pArcEnd-i-1)
 gmsh.model.geo.addLine(pUpLeft+1, wetEnd+1)
-# add curve loop
-gmsh.model.geo.addCurveLoop(range(1, lastRectLine+1), 1)
+# add curve loop of fluid 1
+gmsh.model.geo.addCurveLoop(list(range(dryNe+1, dryNe+wetNe+1)) + list(range(-lastRectLine-arcNe, -lastRectLine)), 1)
+# add curve loop of fluid 2
+gmsh.model.geo.addCurveLoop(list(range(1, dryNe+1)) \
+                            + list(range(lastRectLine+1, lastRectLine+arcNe+1)) \
+                            + list(range(dryNe+wetNe+1, 2*dryNe+wetNe+4)), 2)
 # add plane surface
 gmsh.model.geo.addPlaneSurface([1], 1)
+gmsh.model.geo.addPlaneSurface([2], 2)
 
 gmsh.model.geo.synchronize()
 
 # embed the interface in the bulk mesh
-gmsh.model.mesh.embed(1, range(lastRectLine+1, lastRectLine+arcNe+1), 2, 1)
+# gmsh.model.mesh.embed(1, range(lastRectLine+1, lastRectLine+arcNe+1), 2, 1)
 # embed the lower boundary in the bulk mesh
-gmsh.model.mesh.embed(1, range(1, 2*dryNe+wetNe+1), 2, 1)
+# gmsh.model.mesh.embed(1, range(1, 2*dryNe+wetNe+1), 2, 1)
 
 # add physical group
-pid1 = gmsh.model.geo.addPhysicalGroup(1, range(1, lastRectLine+1))
-print('Physical ID of boundary = {}'.format(pid1))
-pid2 = gmsh.model.geo.addPhysicalGroup(1, range(lastRectLine+1, lastRectLine+arcNe+1))
-print('Physical ID of interface = {}'.format(pid2))
+gmsh.model.addPhysicalGroup(2, [1], 1)
+gmsh.model.addPhysicalGroup(2, [2], 2)
+gmsh.model.addPhysicalGroup(1, range(lastRectLine+1, lastRectLine+arcNe+1), 3)
 
 # generate mesh
 gmsh.model.mesh.generate(2)
 
 # output the mesh
-gmsh.write('rect.msh')
+# gmsh.option.setNumber("Mesh.MshFileVersion",2.2) 
+gmsh.write('two-phase.msh')
 
 gmsh.finalize()
 
