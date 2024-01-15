@@ -52,21 +52,16 @@ def export_domain(msh, tdim, gdim, directory, prefix, outfix):
         )
     ]
     # Generate the domain cells data (for the subdomains)
+    has_physical_groups = False
     if "gmsh:physical" in msh.cell_data:
-        cell_data = {
-            "physical_group_data": [
-                np.concatenate(
-                    [
-                        msh.cell_data["gmsh:physical"][i]
-                        for i, cellBlock in enumerate(msh.cells)
-                        if cellBlock.type == cell_type
-                    ]
-                )
-            ]
-        }
-    else:
+        cell_data_array = [msh.cell_data["gmsh:physical"][i] \
+            for i, cellBlock in enumerate(msh.cells) if cellBlock.type == cell_type]
+        if len(cell_data_array) > 0:
+            cell_data = { "physical_group_data": [np.concatenate(cell_data_array)] }
+            has_physical_groups = True
+    if not has_physical_groups:
         print('WARNING: No physical groups found for tdim = {}.'.format(tdim))
-        cell_data = {"physical_group_data": np.zeros((0,1))}
+        cell_data = {"physical_group_data": [np.zeros((0,1), dtype=np.int64)]}
 
     # Generate a meshio Mesh for the domain
     domain = meshio.Mesh(
