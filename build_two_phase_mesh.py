@@ -1,6 +1,4 @@
 import numpy as np
-import meshio
-import gmsh
 import pygmsh
 
 def build_two_phase_mesh(h_size):
@@ -36,13 +34,22 @@ def build_two_phase_mesh(h_size):
     # add the line loop
     loop1 = geom.add_curve_loop(edgeWet + edgeInt)
     fluid1 = geom.add_plane_surface(loop1)
+    loop2 = geom.add_curve_loop(edgeDryL + [-e for e in reversed(edgeInt)] + edgeDryR + [edgeRight, edgeTop, edgeLeft])
+    fluid2 = geom.add_plane_surface(loop2)
     #
     geom.synchronize()
     # add physical group
     geom.add_physical([fluid1], "fluid1")
+    geom.add_physical([fluid2], "fluid2")
+    geom.add_physical(edgeInt, "interface")
+    geom.add_physical(edgeWet, "wet")
+    geom.add_physical(edgeDryL, "dryLeft")
+    geom.add_physical(edgeDryR, "dryRight")
+    geom.add_physical([edgeRight], "right")
+    geom.add_physical([edgeTop], "top")
+    geom.add_physical([edgeLeft], "left")
     # generate and save the mesh
-    geom.generate_mesh(dim=2)
-    pygmsh.write('two-phase-pygmsh.msh')
-  # return mesh
+    geom.generate_mesh(dim=2, verbose = True)
+    pygmsh.write('two-phase.msh')
 
 build_two_phase_mesh(0.05)
