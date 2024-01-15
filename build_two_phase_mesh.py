@@ -50,6 +50,6 @@ def build_two_phase_mesh(h_size):
     geom.add_physical([edgeLeft], "left")
     # generate and save the mesh
     geom.generate_mesh(dim=2, verbose = True)
-    pygmsh.write('two-phase.msh')
+    pygmsh.write('mesh/two-phase.msh')
 
 build_two_phase_mesh(0.05)
