@@ -12,7 +12,7 @@ except ImportError:
     print("Could not import dolfin. Continuing without Dolfin support.")
 
 
-def msh2xdmf(mesh_name, dim=2, directory="."):
+def msh2xdmf(mesh_name, tdim, gdim, directory="."):
     """
     Function converting a MSH mesh into XDMF files.
     The XDMF files are:
@@ -25,27 +25,24 @@ def msh2xdmf(mesh_name, dim=2, directory="."):
     # Read the input mesh
     msh = meshio.read("{}/{}".format(directory, mesh_name))
     # Generate the domain XDMF file
-    export_domain(msh, dim, directory, prefix)
+    export_domain(msh, tdim, gdim, directory, prefix, "domain.xdmf")
     # Generate the boundaries XDMF file
-    export_boundaries(msh, dim, directory, prefix)
+    export_domain(msh, tdim-1, gdim, directory, prefix, "boundaries.xdmf")
     # Export association table
     export_association_table(msh, prefix, directory)
 
 
-def export_domain(msh, dim, directory, prefix):
+def export_domain(msh, tdim, gdim, directory, prefix, outfix):
     """
     Export the domain XDMF file as well as the subdomains values.
     """
     # Set cell type
-    if dim == 2:
-        cell_type = "triangle"
-    elif dim == 3:
-        cell_type = "tetra"
+    cell_type = ["vertex", "line", "triangle", "tetra"][tdim]
     # Generate the cell block for the domain cells
     data_array = [cell.data for cell in msh.cells if cell.type == cell_type]
     if len(data_array) == 0:
-        print("WARNING: No domain physical group found.")
-        return
+        print("WARNING: No cells found for tdim = {}.".format(tdim))
+        data = np.zeros((0, tdim+1), dtype=np.int64)
     else:
         data = np.concatenate(data_array)
     cells = [
@@ -55,9 +52,9 @@ def export_domain(msh, dim, directory, prefix):
         )
     ]
     # Generate the domain cells data (for the subdomains)
-    try:
+    if "gmsh:physical" in msh.cell_data:
         cell_data = {
-            "subdomains": [
+            "physical_group_data": [
                 np.concatenate(
                     [
                         msh.cell_data["gmsh:physical"][i]
@@ -67,77 +64,22 @@ def export_domain(msh, dim, directory, prefix):
                 )
             ]
         }
-    except KeyError:
-        raise ValueError(
-            """
-            No physical group found for the domain.
-            Define the domain physical group.
-                - if dim=2, the domain is a surface
-                - if dim=3, the domain is a volume
-            """
-        )
+    else:
+        print('WARNING: No physical groups found for tdim = {}.'.format(tdim))
+        cell_data = {"physical_group_data": np.zeros((0,1))}
 
     # Generate a meshio Mesh for the domain
     domain = meshio.Mesh(
-        points=msh.points[:, :dim],
+        points=msh.points[:,:gdim],
         cells=cells,
         cell_data=cell_data,
     )
     # Export the XDMF mesh of the domain
     meshio.write(
-        "{}/{}_{}".format(directory, prefix, "domain.xdmf"),
+        "{}/{}_{}".format(directory, prefix, outfix),
         domain,
         file_format="xdmf"
     )
-
-
-def export_boundaries(msh, dim, directory, prefix):
-    """
-    Export the boundaries XDMF file.
-    """
-    # Set the cell type
-    if dim == 2:
-        cell_type = "line"
-    elif dim == 3:
-        cell_type = "triangle"
-    # Generate the cell block for the boundaries cells
-    data_array = [cell.data for cell in msh.cells if cell.type == cell_type]
-    if len(data_array) == 0:
-        print("WARNING: No boundary physical group found.")
-        return
-    else:
-        data = np.concatenate(data_array)
-    boundaries_cells = [
-        meshio.CellBlock(
-            cell_type=cell_type,
-            data=data,
-        )
-    ]
-    # Generate the boundaries cells data
-    cell_data = {
-        "boundaries": [
-            np.concatenate(
-                [
-                    msh.cell_data["gmsh:physical"][i]
-                    for i, cellBlock in enumerate(msh.cells)
-                    if cellBlock.type == cell_type
-                ]
-            )
-        ]
-    }
-    # Generate the meshio Mesh for the boundaries physical groups
-    boundaries = meshio.Mesh(
-        points=msh.points[:, :dim],
-        cells=boundaries_cells,
-        cell_data=cell_data,
-    )
-    # Export the XDMF mesh of the lines boundaries
-    meshio.write(
-        "{}/{}_{}".format(directory, prefix, "boundaries.xdmf"),
-        boundaries,
-        file_format="xdmf"
-    )
-
 
 def export_association_table(msh, prefix='mesh', directory='.', verbose=True):
     """
@@ -159,13 +101,13 @@ def export_association_table(msh, prefix='mesh', directory='.', verbose=True):
         print(separator)
 
     for label, arrays in msh.cell_sets.items():
-        # Get the index of the array in arrays
-        for i, array in enumerate(arrays):
-            if array.size != 0:
-                index = i
         # Added check to make sure that the association table
         # doesn't try to import irrelevant information.
         if label != "gmsh:bounding_entities":
+            # Get the index of the array in arrays
+            for i, array in enumerate(arrays):
+                if array.size != 0:
+                    index = i
             value = msh.cell_data["gmsh:physical"][index][0]
             # Store the association table in a dictionnary
             association_table[label] = value
@@ -185,7 +127,8 @@ def export_association_table(msh, prefix='mesh', directory='.', verbose=True):
 def import_mesh(
         prefix="mesh",
         subdomains=False,
-        dim=2,
+        tdim=2, 
+        gdim = 2, 
         directory=".",
 ):
     """Function importing a dolfin mesh.
@@ -209,24 +152,24 @@ def import_mesh(
     boundaries = "{}_boundaries.xdmf".format(prefix)
 
     # create 2 xdmf files if not converted before
-    if not os.path.exists("{}/{}".format(directory, domain)) or \
-       not os.path.exists("{}/{}".format(directory, boundaries)):
-        msh2xdmf("{}.msh".format(prefix), dim=dim, directory=directory)
+    # if not os.path.exists("{}/{}".format(directory, domain)) or \
+    #    not os.path.exists("{}/{}".format(directory, boundaries)):
+    msh2xdmf("{}.msh".format(prefix), tdim, gdim, directory=directory)
 
     # Import the converted domain
     mesh = Mesh()
     with XDMFFile("{}/{}".format(directory, domain)) as infile:
         infile.read(mesh)
     # Import the boundaries
-    boundaries_mvc = MeshValueCollection("size_t", mesh, dim=dim)
+    boundaries_mvc = MeshValueCollection("size_t", mesh, dim=tdim) # which dimension?
     with XDMFFile("{}/{}".format(directory, boundaries)) as infile:
-        infile.read(boundaries_mvc, 'boundaries')
+        infile.read(boundaries_mvc, 'physical_group_data')
     boundaries_mf = MeshFunctionSizet(mesh, boundaries_mvc)
     # Import the subdomains
     if subdomains:
-        subdomains_mvc = MeshValueCollection("size_t", mesh, dim=dim)
+        subdomains_mvc = MeshValueCollection("size_t", mesh, dim=tdim) # which dimension?
         with XDMFFile("{}/{}".format(directory, domain)) as infile:
-            infile.read(subdomains_mvc, 'subdomains')
+            infile.read(subdomains_mvc, 'physical_group_data')
         subdomains_mf = MeshFunctionSizet(mesh, subdomains_mvc)
     # Import the association table
     association_table_name = "{}/{}_{}".format(
@@ -242,24 +185,3 @@ def import_mesh(
         return mesh, boundaries_mf, association_table
     else:
         return mesh, boundaries_mf, subdomains_mf, association_table
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "msh_file",
-        help="input .msh file",
-        type=str,
-    )
-    parser.add_argument(
-        "-d",
-        "--dimension",
-        help="dimension of the domain",
-        type=int,
-        default=2,
-    )
-    args = parser.parse_args()
-    # Get current directory
-    current_directory = os.getcwd()
-    # Conert the mesh
-    msh2xdmf(args.msh_file, args.dimension, directory=current_directory)
