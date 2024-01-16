@@ -27,31 +27,53 @@ m = dolfin.assemble(dolfin.dot(nu,nu) * dx)
 print('Initial surface measure = {}'.format(m))
 
 # Define the function space
-X_element = dolfin.VectorElement('P', dolfin.triangle, 1, dim=gdim)
-K_element = dolfin.FiniteElement('P', dolfin.triangle, 1)
-XK_element = dolfin.MixedElement([X_element, K_element])
-XK_space = dolfin.FunctionSpace(surface_mesh, XK_element)
+surface_cell = surface_mesh.ufl_cell()
+X_element = dolfin.VectorElement('P', surface_cell, 1, dim=gdim)
+X_space = dolfin.FunctionSpace(surface_mesh, X_element)
+K_element = dolfin.FiniteElement('P', surface_cell, 1)
+K_space = dolfin.FunctionSpace(surface_mesh, K_element)
+# XK_element = dolfin.MixedElement([X_element, K_element])
+# XK_space = dolfin.FunctionSpace(surface_mesh, XK_element)
+
+# get the surface identity from mesh
+x0 = dolfin.Function(X_space)
+x0_array = x0.vector().get_local()
+v2d = dolfin.vertex_to_dof_map(X_space)
+coords = surface_mesh.coordinates()
+x0_array[np.ix_(v2d)] = coords.flatten()
+x0.vector().set_local(x0_array)
+x0.rename("identify", "1")
 
 # get the trial and test functions
-x, kappa = dolfin.TrialFunction(XK_space)
-eta, chi = dolfin.TestFunctions(XK_space)
+# x, kappa = dolfin.TrialFunctions(XK_space)
+# eta, chi = dolfin.TestFunctions(XK_space)
+x = dolfin.TrialFunction(X_space)
+eta = dolfin.TestFunction(X_space)
 
 # the bilinear form for the mean curvature vector
-a_2 = dolfin.dot(x, eta) + dolfin.inner(dolfin.grad(x), dolfin.grad(eta))
-rhs = dolfin.dot(dolfin.Constant((0, 0)), eta)
+a_2 = dolfin.dot(x, eta)*dx 
+l_2 = dolfin.inner(dolfin.grad(x0), dolfin.grad(eta)) * dx
 
 # solve the linear system
-mcv = dolfin.Function(XK_space)[0] # mean curvature vector
+# mcv = dolfin.Function(XK_space)[0] # mean curvature vector
+mcv = dolfin.Function(X_space)
 A = dolfin.assemble(a_2)
-RHS = dolfin.assemble(rhs)
-dolfin.solve(A, mcv.vector(), RHS)
+L = dolfin.assemble(l_2)
+dolfin.solve(A, mcv.vector(), L)
 
 # calculate the initial curvature
-kappa0 = dolfin.Function(XK_space)[1]
-mcv_array = mcv.vector().get_local()
-kappa0.vector().set_local(np.sqrt(mcv_array.sum(axis=1)))
-outfile = dolfin.XDMFFile('data/{}'.format(meshPrefix))
-outfile.write(kappa0)
+kappa0 = dolfin.project(dolfin.Constant(1/2) * dolfin.dot(nu, mcv), K_space)
+kappa0.rename("curvature", "2")
+nu_h = dolfin.project(nu, X_space)
+nu_h.rename("normal", "3")
+outfile = dolfin.XDMFFile('data/{}.xdmf'.format(meshPrefix))
+outfile.parameters.update({
+    "functions_share_mesh": True,
+    "rewrite_function_mesh": False
+    })
+outfile.write(x0, 0.)
+outfile.write(nu_h, 0.)
+outfile.write(kappa0, 0.)
 outfile.close()
 
 
