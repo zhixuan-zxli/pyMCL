@@ -1,55 +1,57 @@
 import numpy as np
-import pygmsh
+import gmsh
 
 def build_two_phase_mesh(h_size):
-  # define the parameters
-  r = 1.0/4
-  dryNe = int(np.ceil((0.5 - r) / h_size))
-  wetNe = int(np.ceil(2*r / h_size))
-  intNe = int(np.ceil(np.pi * r / h_size))
-  print(f'dryNe = {dryNe}, wetNe = {wetNe}, intNe = {intNe}')
-  # start writing the geometry
-  with pygmsh.geo.Geometry() as geom:
+    # define the parameters
+    r = 1.0/4
+    dryNe = int(np.ceil((0.5 - r) / h_size))
+    wetNe = int(np.ceil(2*r / h_size))
+    intNe = int(np.ceil(np.pi * r / h_size))
+    print(f'dryNe = {dryNe}, wetNe = {wetNe}, intNe = {intNe}')
+
+    gmsh.initialize()
+    gmsh.model.add("two-phase")
     # write the points
-    ptsDryL = [geom.add_point([x,0], h_size) for x in np.linspace(0, 1/2-r, dryNe+1)]
-    ptsWet  = [geom.add_point([x,0], h_size) for x in np.linspace(1/2-r+h_size, 1/2+r-h_size, wetNe-1)]
-    ptsDryR = [geom.add_point([x,0], h_size) for x in np.linspace(1/2+r, 1, dryNe+1)]
-    ptsUR = geom.add_point([1,1/2], h_size)
-    ptsUL = geom.add_point([0,1/2], h_size)
+    ptsDryL = [gmsh.model.geo.addPoint(x, 0, 0, h_size) for x in np.linspace(0, 1/2-r, dryNe+1)]
+    ptsWet  = [gmsh.model.geo.addPoint(x, 0, 0, h_size) for x in np.linspace(1/2-r+h_size, 1/2+r-h_size, wetNe-1)]
+    ptsDryR = [gmsh.model.geo.addPoint(x, 0, 0, h_size) for x in np.linspace(1/2+r, 1, dryNe+1)]
+    ptsUR = gmsh.model.geo.addPoint(1, 1/2, 0, h_size)
+    ptsUL = gmsh.model.geo.addPoint(0, 1/2, 0, h_size)
     # add the interface markers
     theta = np.linspace(0, np.pi, intNe+1)
-    ptsInt = [geom.add_point([r * np.cos(t) + 1/2, r * np.sin(t)], h_size) for t in theta[1:-1]]
+    ptsInt = [gmsh.model.geo.addPoint(r*np.cos(t) + 1/2, r*np.sin(t), 0.0, h_size) for t in theta[1:-1]]
+
     # add the line segments
-    edgeDryL = [geom.add_line(ptsDryL[i], ptsDryL[i+1]) for i in range(dryNe)]
-    edgeWet = [geom.add_line(ptsDryL[-1], ptsWet[0])]
-    edgeWet += [geom.add_line(ptsWet[i], ptsWet[i+1]) for i in range(wetNe-2)]
-    edgeWet += [geom.add_line(ptsWet[-1], ptsDryR[0])]
-    edgeDryR = [geom.add_line(ptsDryR[i], ptsDryR[i+1]) for i in range(dryNe)]
-    edgeRight = geom.add_line(ptsDryR[-1], ptsUR)
-    edgeTop = geom.add_line(ptsUR, ptsUL)
-    edgeLeft = geom.add_line(ptsUL, ptsDryL[0])
-    edgeInt = [geom.add_line(ptsDryR[0], ptsInt[0])]
-    edgeInt += [geom.add_line(ptsInt[i], ptsInt[i+1]) for i in range(intNe-2)]
-    edgeInt += [geom.add_line(ptsInt[-1], ptsDryL[-1])] # the interface is traversed ccw
+    edgeDryL = [gmsh.model.geo.addLine(ptsDryL[i], ptsDryL[i+1]) for i in range(dryNe)]
+    edgeWet = [gmsh.model.geo.addLine(ptsDryL[-1], ptsWet[0])]
+    edgeWet += [gmsh.model.geo.addLine(ptsWet[i], ptsWet[i+1]) for i in range(wetNe-2)]
+    edgeWet += [gmsh.model.geo.addLine(ptsWet[-1], ptsDryR[0])]
+    edgeDryR = [gmsh.model.geo.addLine(ptsDryR[i], ptsDryR[i+1]) for i in range(dryNe)]
+    edgeRight = gmsh.model.geo.addLine(ptsDryR[-1], ptsUR)
+    edgeTop = gmsh.model.geo.addLine(ptsUR, ptsUL)
+    edgeLeft = gmsh.model.geo.addLine(ptsUL, ptsDryL[0])
+    edgeInt = [gmsh.model.geo.addLine(ptsDryR[0], ptsInt[0])]
+    edgeInt += [gmsh.model.geo.addLine(ptsInt[i], ptsInt[i+1]) for i in range(intNe-2)]
+    edgeInt += [gmsh.model.geo.addLine(ptsInt[-1], ptsDryL[-1])] # the interface is traversed ccw
     # add the line loop
-    loop1 = geom.add_curve_loop(edgeWet + edgeInt)
-    fluid1 = geom.add_plane_surface(loop1)
-    loop2 = geom.add_curve_loop(edgeDryL + [-e for e in reversed(edgeInt)] + edgeDryR + [edgeRight, edgeTop, edgeLeft])
-    fluid2 = geom.add_plane_surface(loop2)
-    #
-    geom.synchronize()
+    loop1 = gmsh.model.geo.addCurveLoop(edgeWet + edgeInt)
+    fluid1 = gmsh.model.geo.addPlaneSurface([loop1])
+    loop2 = gmsh.model.geo.addCurveLoop(edgeDryL + [-e for e in reversed(edgeInt)] + edgeDryR + [edgeRight, edgeTop, edgeLeft])
+    fluid2 = gmsh.model.geo.addPlaneSurface([loop2])
+    gmsh.model.geo.synchronize()
     # add physical group
-    geom.add_physical([fluid1], "fluid1")
-    geom.add_physical([fluid2], "fluid2")
-    geom.add_physical(edgeInt, "interface")
-    geom.add_physical(edgeWet, "wet")
-    geom.add_physical(edgeDryL, "dryLeft")
-    geom.add_physical(edgeDryR, "dryRight")
-    geom.add_physical([edgeRight], "right")
-    geom.add_physical([edgeTop], "top")
-    geom.add_physical([edgeLeft], "left")
+    gmsh.model.setPhysicalName(2, gmsh.model.addPhysicalGroup(2, [fluid1]), "fluid1")
+    gmsh.model.setPhysicalName(2, gmsh.model.addPhysicalGroup(2, [fluid2]), "fluid2")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, edgeInt), "interface")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, edgeWet), "wet")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, edgeDryL), "dryLeft")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, edgeDryR), "dryRight")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [edgeRight]), "right")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [edgeTop]), "top")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [edgeLeft]), "left")
     # generate and save the mesh
-    geom.generate_mesh(dim=2, verbose = True)
-    pygmsh.write('mesh/two-phase.msh')
+    gmsh.model.mesh.generate(dim=2)
+    gmsh.write("mesh/two-phase.msh")
+    gmsh.finalize()
 
 build_two_phase_mesh(0.05)
