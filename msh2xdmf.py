@@ -147,9 +147,9 @@ def import_mesh(
     boundaries = "{}_boundaries.xdmf".format(prefix)
 
     # create 2 xdmf files if not converted before
-    # if not os.path.exists("{}/{}".format(directory, domain)) or \
-    #    not os.path.exists("{}/{}".format(directory, boundaries)):
-    msh2xdmf("{}.msh".format(prefix), tdim, gdim, directory=directory)
+    if not os.path.exists("{}/{}".format(directory, domain)) or \
+       not os.path.exists("{}/{}".format(directory, boundaries)):
+        msh2xdmf("{}.msh".format(prefix), tdim, gdim, directory=directory)
 
     # Import the converted domain
     mesh = Mesh()
