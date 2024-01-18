@@ -2,6 +2,7 @@ import numpy as np
 import dolfin
 from msh2xdmf import import_mesh
 from matplotlib import pyplot
+from getSubspaceAndIndex import *
 
 tdim = 2 # dimension of the manifold
 gdim = tdim+1 # dimension of the ambient space
@@ -30,13 +31,8 @@ X_element = dolfin.VectorElement('P', surface_cell, 1, dim=gdim)
 K_element = dolfin.FiniteElement('P', surface_cell, 1)
 XK_space = dolfin.FunctionSpace(surface_mesh, dolfin.MixedElement([X_element, K_element]))
 # Get the subspace by collapsing
-X_space, X_map = XK_space.sub(0).collapse(True)
-K_space, K_map = XK_space.sub(1).collapse(True)
-X_map_array = np.array([[k,v] for (k,v) in X_map.items()])
-X_idx = X_map_array[np.argsort(X_map_array[:,0]), :]
-K_map_array = np.array([[k,v] for (k,v) in K_map.items()])
-K_idx = K_map_array[np.argsort(K_map_array[:,0]), :]
-del X_map, K_map, X_map_array, K_map_array
+X_space, X_idx = getSubspaceAndIndex(XK_space, 0)
+K_space, K_idx = getSubspaceAndIndex(XK_space, 1)
 
 # output the normal
 nu_h = dolfin.project(nu, X_space)
