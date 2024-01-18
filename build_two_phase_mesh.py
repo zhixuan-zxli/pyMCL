@@ -49,6 +49,9 @@ def build_two_phase_mesh(h_size):
     gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [edgeRight]), "right")
     gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [edgeTop]), "top")
     gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [edgeLeft]), "left")
+    # add periodicity
+    translation = [1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    gmsh.model.mesh.setPeriodic(1, [edgeRight], [edgeLeft], translation)
     # generate and save the mesh
     gmsh.model.mesh.generate(dim=2)
     gmsh.write("mesh/two-phase.msh")
