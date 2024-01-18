@@ -5,7 +5,13 @@ from matplotlib import pyplot
 
 tdim = 2 # dimension of the manifold
 gdim = tdim+1 # dimension of the ambient space
-meshPrefix = 'sphere'
+meshPrefix = 'dumbbell'
+
+outfile = dolfin.XDMFFile('data/{}.xdmf'.format(meshPrefix))
+# outfile.parameters.update({
+#     "functions_share_mesh": True,
+#     "rewrite_function_mesh": False
+#     })
 
 # first import mesh
 surface_mesh, boundary_marker, physical_table = import_mesh(prefix=meshPrefix, tdim=tdim, gdim=gdim, directory='mesh')
@@ -32,13 +38,15 @@ K_map_array = np.array([[k,v] for (k,v) in K_map.items()])
 K_idx = K_map_array[np.argsort(K_map_array[:,0]), :]
 del X_map, K_map, X_map_array, K_map_array
 
+# output the normal
+nu_h = dolfin.project(nu, X_space)
+nu_h.rename("nu", "0")
+outfile.write(nu_h, 0.0)
+
 # set the initial value: identity of mesh
 x_expr = dolfin.Expression(("x[0]", "x[1]"), degree=1) if gdim == 2 else dolfin.Expression(("x[0]", "x[1]", "x[2]"), degree=1)
 x_n = dolfin.interpolate(x_expr, X_space)
-# x_n = dolfin.project(x, X_space)
 x_n.rename("x", "1")
-# with dolfin.XDMFFile('data/{}.xdmf'.format(meshPrefix)) as outfile:
-#     outfile.write(x_n, 0.0)
 k_n = dolfin.Function(K_space)
 k_n.rename("kappa", "2")
 
@@ -52,12 +60,6 @@ param = {"dt":1.0/1000, "maxStep":50}
 a = dolfin.Constant(1.0/param["dt"]) * dolfin.dot(x, nu) * chi * dx - kappa * chi * dx \
   + kappa * dolfin.dot(nu, eta) * dx + dolfin.inner(dolfin.grad(x), dolfin.grad(eta)) * dx
 l = dolfin.Constant(1.0/param["dt"]) * dolfin.dot(x_n, nu) * chi * dx
-
-outfile = dolfin.XDMFFile('data/{}.xdmf'.format(meshPrefix))
-# outfile.parameters.update({
-#     "functions_share_mesh": True,
-#     "rewrite_function_mesh": False
-#     })
 
 # solve the linear system
 t = 0.0
