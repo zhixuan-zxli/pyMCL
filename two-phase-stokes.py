@@ -16,21 +16,21 @@ dx = dolfin.Measure('dx', domain=mesh)
 # print('Interface measure = {}'.format(dolfin.assemble(dolfin.Constant(1.0) * dS)))
 
 # Define the periodic boundary condition
-# class PeriodicBoundary(dolfin.SubDomain):
-#     # identify the left boundary
-#     def inside(self, x, on_boundary):
-#         return on_boundary and dolfin.near(x[0], 0.0)
-#     # map the right boundary (x) to the left (y)
-#     def map(self, x, y):
-#         y[0] = x[0] - 1.0
-#         y[1] = y[0]
-# periodic_bc = PeriodicBoundary()
+class PeriodicBoundary(dolfin.SubDomain):
+    # identify the left boundary
+    def inside(self, x, on_boundary):
+        return on_boundary and dolfin.near(x[0], 0.0)
+    # map the right boundary (x) to the left (y)
+    def map(self, x, y):
+        y[0] = x[0] - 1.0
+        y[1] = x[1]
+periodic_bc = PeriodicBoundary()
 
 # define the function spaces
 cell = mesh.ufl_cell()
 U = dolfin.VectorElement('CG', cell, degree=2)
 P = dolfin.FiniteElement('CG', cell, degree=1)
-TaylorHoodSpace = dolfin.FunctionSpace(mesh, dolfin.MixedElement([U, P])) #, constrained_domain = periodic_bc)
+TaylorHoodSpace = dolfin.FunctionSpace(mesh, dolfin.MixedElement([U, P]), constrained_domain = periodic_bc)
 
 # define the flow boundary conditions
 # noSlipBC_T = dolfin.DirichletBC(TaylorHoodSpace.sub(0), dolfin.Constant((0.0, 0.0)), \
@@ -49,16 +49,15 @@ TaylorHoodSpace = dolfin.FunctionSpace(mesh, dolfin.MixedElement([U, P])) #, con
 #                                   boundary_marker, physical_table["dryright"])
 # flow_bcs = [noSlipBC_T, noSlip_L, noSlip_W, noSlip_R] #noPen_L, noPen_W, noPen_R]
 
-class Boundary(dolfin.SubDomain):
+class TopBottomBoundary(dolfin.SubDomain):
     def inside(self, x, on_boundary):
-        return on_boundary
-noSlip = dolfin.DirichletBC(TaylorHoodSpace.sub(0), dolfin.Constant((0.0, 0.0)), Boundary())
+        return on_boundary and (dolfin.near(x[1], 0.0) or dolfin.near(x[1], 1.0))
+noSlip = dolfin.DirichletBC(TaylorHoodSpace.sub(0), dolfin.Constant((0.0, 0.0)), TopBottomBoundary())
 
 # define the physical parameters
 # phys = {"gamma":1.0, "kappa":-0.2}
 f = dolfin.Expression(("-2*pi*pi*sin(2*pi*x[1])*(1-2*sin(pi*x[0]))*(1+2*sin(pi*x[0]))", \
                        "-2*pi*pi*sin(2*pi*x[0])*(2*sin(pi*x[1])+1)*(2*sin(pi*x[1])-1)"), degree=3)
-# f = dolfin.Expression(("0.0", "0.0"), degree=1)
 
 # define the variational problem
 u, p = dolfin.TrialFunctions(TaylorHoodSpace)
@@ -96,7 +95,6 @@ dolfin.as_backend_type(A).set_nullspace(null_space)
 null_space.orthogonalize(L)
 
 solver.solve(sol.vector(), L)
-
 
 u_sol, p_sol = sol.split()
 u_sol.rename("u", "1")
