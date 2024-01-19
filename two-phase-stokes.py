@@ -4,15 +4,21 @@ from msh2xdmf import import_mesh
 from matplotlib import pyplot
 
 # load the mesh
-mesh, boundary_marker, subdomain_marker, physical_table = import_mesh(prefix='two-phase', subdomains=True, tdim=2, gdim=2, directory="mesh")
+bulk_mesh, boundary_marker, subdomain_marker, physical_table = import_mesh(prefix='two-phase', subdomains=True, tdim=2, gdim=2, directory="mesh")
+interface_mesh = dolfin.MeshView.create(boundary_marker, physical_table["interface"])
+interface_mesh.init_cell_orientations(dolfin.Expression(("x[0] - 0.5", "x[1]"), degree = 1))
 
 # define the symbols
-dx = dolfin.Measure('dx', domain=mesh, subdomain_data=subdomain_marker)
+dx = dolfin.Measure('dx', domain=bulk_mesh, subdomain_data=subdomain_marker)
 # ds = dolfin.Measure('ds', domain=mesh, subdomain_data=boundary_marker)
-dS = dolfin.Measure('dS', domain=mesh, subdomain_id=physical_table["interface"], subdomain_data=boundary_marker)
-n = dolfin.FacetNormal(mesh)
-print('Interface measure = {}'.format(dolfin.assemble(dolfin.Constant(1.0) * dS)))
-proj_mea = dolfin.dot(dolfin.Constant((0.0, 1.0)), n('+')) * dS
+# dS = dolfin.Measure('dS', domain=bulk_mesh, subdomain_id=physical_table["interface"], subdomain_data=boundary_marker)
+dS = dolfin.Measure('dx', domain=interface_mesh)
+n = dolfin.CellNormal(interface_mesh)
+# n = dolfin.FacetNormal(bulk_mesh)
+print('Measure of interface as MeshView = {}'.format(dolfin.assemble(dolfin.Constant(1.0) * dS)))
+# print('Interface measure = {}'.format(dolfin.assemble(dolfin.Constant(1.0) * dS)))
+# proj_mea = dolfin.dot(dolfin.Constant((0.0, 1.0)), n('+')) * dS
+proj_mea = dolfin.dot(dolfin.Constant((0.0, 1.0)), n) * dS
 print('Projected measure = {}'.format(dolfin.assemble(proj_mea)))
 
 # Define the periodic boundary condition
@@ -27,11 +33,11 @@ class PeriodicBoundary(dolfin.SubDomain):
 periodic_bc = PeriodicBoundary()
 
 # define the function spaces
-cell = mesh.ufl_cell()
+cell = bulk_mesh.ufl_cell()
 U = dolfin.VectorElement('CG', cell, degree=2)
 P1 = dolfin.FiniteElement('CG', cell, degree=1)
 P0 = dolfin.FiniteElement('DG', cell, degree=0)
-AugTHSpace = dolfin.FunctionSpace(mesh, dolfin.MixedElement([U, P1, P0]), constrained_domain = periodic_bc)
+AugTHSpace = dolfin.FunctionSpace(bulk_mesh, dolfin.MixedElement([U, P1, P0]), constrained_domain = periodic_bc)
 
 # define the flow boundary conditions
 noSlipBC_T = dolfin.DirichletBC(AugTHSpace.sub(0), dolfin.Constant((0.0, 0.0)), \
@@ -87,7 +93,7 @@ u_sol, p1_sol, p0_sol = sol.split()
 u_sol.rename("u", "u")
 
 # Convert the P1+P0 pressure to a DG1 function
-PP = dolfin.FunctionSpace(mesh, dolfin.FiniteElement('DG', cell, degree=1), constrained_domain = periodic_bc)
+PP = dolfin.FunctionSpace(bulk_mesh, dolfin.FiniteElement('DG', cell, degree=1), constrained_domain = periodic_bc)
 pp1 = dolfin.project(p1_sol, PP)
 pp0 = dolfin.project(p0_sol, PP)
 pp1.vector().axpy(1.0, pp0.vector())
