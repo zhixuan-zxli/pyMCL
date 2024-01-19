@@ -28,8 +28,8 @@ dx = dolfin.Measure('dx', domain=mesh)
 
 # define the function spaces
 cell = mesh.ufl_cell()
-U = dolfin.VectorElement('P', cell, degree=2)
-P = dolfin.FiniteElement('P', cell, degree=1)
+U = dolfin.VectorElement('CG', cell, degree=2)
+P = dolfin.FiniteElement('CG', cell, degree=1)
 TaylorHoodSpace = dolfin.FunctionSpace(mesh, dolfin.MixedElement([U, P])) #, constrained_domain = periodic_bc)
 
 # define the flow boundary conditions
@@ -58,24 +58,45 @@ noSlip = dolfin.DirichletBC(TaylorHoodSpace.sub(0), dolfin.Constant((0.0, 0.0)),
 # phys = {"gamma":1.0, "kappa":-0.2}
 f = dolfin.Expression(("-2*pi*pi*sin(2*pi*x[1])*(1-2*sin(pi*x[0]))*(1+2*sin(pi*x[0]))", \
                        "-2*pi*pi*sin(2*pi*x[0])*(2*sin(pi*x[1])+1)*(2*sin(pi*x[1])-1)"), degree=3)
+# f = dolfin.Expression(("0.0", "0.0"), degree=1)
 
 # define the variational problem
 u, p = dolfin.TrialFunctions(TaylorHoodSpace)
 v, q = dolfin.TestFunctions(TaylorHoodSpace)
 a = dolfin.inner(dolfin.grad(u), dolfin.grad(v)) * dx + dolfin.div(v) * p * dx + dolfin.div(u) * q * dx
 l = dolfin.dot(f, v) * dx
+b = dolfin.inner(dolfin.grad(u), dolfin.grad(v))*dx + p*q*dx
 # l = dolfin.Constant(phys["gamma"] * phys["kappa"]) * dolfin.dot(n('+'), v('+')) * dS \
 #     + dolfin.dot(dolfin.Constant((0.0, 0.0)), v) * dx # a hack to fix the interior facet normal
 
 # assemble and solve the linear problem with direct solver
 sol = dolfin.Function(TaylorHoodSpace)
-dolfin.solve(a == l, sol, noSlip)
+# dolfin.solve(a == l, sol, noSlip)
 # [bc.apply(A, L) for bc in flow_bcs]
-# problem = dolfin.LinearVariationalProblem(a, l, sol, noSlip)
-# solver = dolfin.LinearVariationalSolver(problem)
-# solver.parameters["linear_solver"] = "gmres"
-# solver.parameters["preconditioner"] = "ilu"
-# solver.solve()
+# A = dolfin.assemble(a)
+# L = dolfin.assemble(l)
+# noSlip.apply(A, L)
+# dolfin.solve(A, sol.vector(), L, "gmres", "ilu")
+
+A, L = dolfin.assemble_system(a, l, [noSlip])
+B, _ = dolfin.assemble_system(b, l, [noSlip])
+# set up the solver
+solver = dolfin.KrylovSolver("gmres", "amg")
+solver.set_operators(A, B)
+
+# create the null vector
+null_vec = dolfin.Vector(sol.vector())
+TaylorHoodSpace.sub(1).dofmap().set(null_vec, 1.0)
+null_vec *= 1.0 / null_vec.norm("l2")
+
+# attach the null space to the PETSc matrix
+null_space = dolfin.VectorSpaceBasis([null_vec])
+dolfin.as_backend_type(A).set_nullspace(null_space)
+
+null_space.orthogonalize(L)
+
+solver.solve(sol.vector(), L)
+
 
 u_sol, p_sol = sol.split()
 u_sol.rename("u", "1")
@@ -84,5 +105,5 @@ p_sol.rename("p", "2")
 # output the solution
 outfile = dolfin.XDMFFile('data/two-phase.xdmf')
 outfile.write(u_sol, 0.0)
-outfile.write(p_sol, 0.0)
+# outfile.write(p_sol, 0.0)
 outfile.close()
