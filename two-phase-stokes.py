@@ -1,6 +1,7 @@
 import numpy as np
 from dolfin import *
 from msh2xdmf import import_mesh
+from test_util import *
 # from matplotlib import pyplot
 
 def testStokes():
@@ -60,37 +61,51 @@ def testStokes():
     (u, p1, p0, nu) = TrialFunctions(FuncSpace)
     (v, q1, q0, xi) = TestFunctions(FuncSpace)
     a = Constant(1.0/phys["Re"]) * inner(grad(u), grad(v)) * dx + div(v)*(p1+p0) * dx + div(u)*(q1+q0) * dx \
-      - Constant(1.0/phys["Ca"]) * dot(nu, xi) * dS + Constant(phys["beta"]/phys["ls"]) * u[0] * v[0] * ds(bottom_id)
-    l = dot(Constant((0.0, 0.0)), v) * dx
+      - Constant(1.0/phys["Ca"]) * dot(nu, v) * dS + Constant(phys["beta"]/phys["ls"]) * u[0] * v[0] * ds(bottom_id) \
+      + dot(nu, xi) * dS
+    l = dot(Constant((0.0, 0.0)), v) * dx - inner(grad(x), grad(xi)) * dS + dot(Constant((0.0, -1.0)), xi) * dp
 
     # assemble the linear system
     sol = Function(FuncSpace)
-    # u_sol = Function(FuncSpaces["U"])
-    # p1_sol = Function(FuncSpaces["P1"])
-    # p0_sol = Function(FuncSpaces["P0"])
+    subSol = [Function(v) for v in FuncSpaces.values()]
 
     system = assemble_mixed_system(a == l, sol, essentialBCs)
-    # A_blocks = system[0]
-    # rhs_blocks = system[1]
+    A_blocks = system[0]
+    rhs_blocks = system[1]
 
-    # A = PETScNestMatrix(A_blocks)
-    # L = Vector()
-    # sol_vec = Vector()
-    # A.init_vectors(L, rhs_blocks)
-    # A.init_vectors(sol_vec, [u_sol.vector(), p1_sol.vector(), p0_sol.vector()])
+    A = PETScNestMatrix(A_blocks)
+    L = Vector()
+    sol_vec = Vector()
+    A.init_vectors(L, rhs_blocks)
+    A.init_vectors(sol_vec, [s.vector() for s in subSol])
 
-    # solve(A, sol_vec, L) # LU solver
+    A.convert_to_aij()
+    solve(A, sol_vec, L) # use LU solver
 
     # get the sub solution
-    # FuncSpaceDims = np.array([fs.dim() for fs in FuncSpaces.values()])
-    # FuncSpaceDims = np.cumsum(FuncSpaceDims)
-    # u_sol.vector().set_local(sol_vec.get_local()[:FuncSpaceDims[0]])
-    # u_sol.vector().apply("")
-    # p1_sol.vector().set_local(sol_vec.get_local()[FuncSpaceDims[0]:FuncSpaceDims[1]])
-    # p1_sol.vector().apply("")
-    # p0_sol.vector().set_local(sol_vec.get_local()[FuncSpaceDims[1]:])
-    # p0_sol.vector().apply("")
+    FuncSpaceDims = np.array([0] + [v.dim() for v in FuncSpaces.values()])
+    FuncSpaceDims = np.cumsum(FuncSpaceDims)
+    for i in range(4):
+        subSol[i].vector().set_local(sol_vec.get_local()[FuncSpaceDims[i]:FuncSpaceDims[i+1]])
+        subSol[i].vector().apply("")
 
-    pass
+    # convert the pressure to DG1
+    DG1_space = FunctionSpace(bulk_mesh, 'DG', 1)
+    p1_proj = project(subSol[1], DG1_space)
+    p0_proj = project(subSol[2], DG1_space)
+    p1_proj.vector().add_local(p0_proj.vector().get_local())
+    p1_proj.vector().apply("")
+    zeroMean(p1_proj, dx)
+
+    # output the solution
+    subSol[0].rename("u", "velocity")
+    with XDMFFile("data/two-phase-u.xdmf") as outfile:
+        outfile.write(subSol[0])
+    p1_proj.rename("p", "pressure")
+    with XDMFFile("data/two-phase-p.xdmf") as outfile:
+        outfile.write(p1_proj)
+    subSol[3].rename("nu", "mean_curavature_vector")
+    with XDMFFile("data/two-phase-nu.xdmf") as outfile:
+        outfile.write(subSol[3])
 
 testStokes()
