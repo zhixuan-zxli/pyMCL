@@ -81,7 +81,7 @@ def testStokes(mesh_div):
     (v, q1, q0) = TestFunctions(FuncSpace)
     a = Constant(1.0/phys["Re"]) * inner(grad(u), grad(v)) * dx + div(v) * (p1+p0) * dx + div(u) * (q1+q0) * dx 
     l = dot(f, v) * dx
-    # b = Constant(0.0) * inner(u, v) * dx + (p1+p0)*(q1+q0)*dx # the preconditioning matrix
+    b = Constant(0.0) * inner(u, v) * dx + (p1+p0)*(q1+q0)*dx # the preconditioning matrix
 
     # assemble the linear system
     sol = Function(FuncSpace)
@@ -99,41 +99,41 @@ def testStokes(mesh_div):
     A.init_vectors(L, rhs_blocks)
     A.init_vectors(sol_vec, [u_sol.vector(), p1_sol.vector(), p0_sol.vector()])
 
-    A.convert_to_aij()
+    # A.convert_to_aij()
 
-    # system = assemble_mixed_system(b == l, sol, essentialBCs)
-    # B_blocks = system[0]
-    # B_blocks[0] = A_blocks[0]
-    # B = PETScNestMatrix(B_blocks)
+    system = assemble_mixed_system(b == l, sol, essentialBCs)
+    B_blocks = system[0]
+    B_blocks[0] = A_blocks[0]
+    B = PETScNestMatrix(B_blocks)
 
     # set up the preconditioner
 
     # PETScOptions.set("ksp_view");
     # PETScOptions.set("ksp_monitor_true_residual");
-    # PETScOptions.set("pc_type", "fieldsplit");
-    # PETScOptions.set("pc_fieldsplit_type", "additive");
+    PETScOptions.set("pc_type", "fieldsplit");
+    PETScOptions.set("pc_fieldsplit_type", "multiplicative");
 
-    # PETScOptions.set("fieldsplit_0_ksp_type", "preonly");
-    # PETScOptions.set("fieldsplit_0_pc_type", "gamg");
-    # PETScOptions.set("fieldsplit_1_ksp_type", "preonly");
-    # PETScOptions.set("fieldsplit_1_pc_type", "lu");
-    # PETScOptions.set("fieldsplit_2_ksp_type", "preonly");
-    # PETScOptions.set("fieldsplit_2_pc_type", "lu");
+    PETScOptions.set("fieldsplit_0_ksp_type", "preonly");
+    PETScOptions.set("fieldsplit_0_pc_type", "hypre");
+    PETScOptions.set("fieldsplit_1_ksp_type", "preonly");
+    PETScOptions.set("fieldsplit_1_pc_type", "lu");
+    PETScOptions.set("fieldsplit_2_ksp_type", "preonly");
+    PETScOptions.set("fieldsplit_2_pc_type", "lu");
 
     # solve the linear system
-    # solver = PETScKrylovSolver("gmres")
-    # solver.set_from_options()
-    # solver.set_operators(A, B)
-    # prms = solver.parameters
-    # prms["monitor_convergence"] = True
-    # prms["relative_tolerance"] = 1e-5
+    solver = PETScKrylovSolver("bicgstab")
+    solver.set_from_options()
+    solver.set_operators(A, B)
+    prms = solver.parameters
+    prms["monitor_convergence"] = True
+    # prms["relative_tolerance"] = 1e-6
     # prms["report"] = True
 
-    # fields = [PETScNestMatrix.get_block_dofs(A, i) for i in range(3)]
-    # PETScPreconditioner.set_fieldsplit(solver, fields, ["0", "1", "2"])
+    fields = [PETScNestMatrix.get_block_dofs(A, i) for i in range(3)]
+    PETScPreconditioner.set_fieldsplit(solver, fields, ["0", "1", "2"])
 
-    # solver.solve(sol_vec, L)
-    solve(A, sol_vec, L) # LU solver
+    # solve(A, sol_vec, L) # LU solver
+    solver.solve(sol_vec, L)
     sol_vec.apply("")
 
     # get the sub solution
