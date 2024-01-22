@@ -9,7 +9,7 @@ def testStokes():
     bulk_mesh, boundary_marker, subdomain_marker, assoc_table = \
         import_mesh(prefix='two-phase', subdomains=True, tdim=2, gdim=2, directory='mesh')
     interface_mesh = MeshView.create(boundary_marker, assoc_table["interface"])
-    interface_mesh.init_cell_orientations(Expression(("x[0] - 0.5", "x[1]"), degree = 1))
+    interface_mesh.init_cell_orientations(Expression(("x[0]", "x[1]"), degree = 1))
 
     # define the symbols
     dx = Measure('dx', domain=bulk_mesh, subdomain_data=subdomain_marker)
@@ -25,13 +25,12 @@ def testStokes():
     class PeriodicBoundary(SubDomain):
         # identify the left boundary
         def inside(self, x, on_boundary):
-            return on_boundary and near(x[0], 0.0)
+            return on_boundary and near(x[0], -1.0)     # change this <<<<<<<<<<<<<
         # map the right boundary (x) to the left (y)
         def map(self, x, y):
-            y[0] = x[0] - 1.0
+            y[0] = x[0] - 2.0
             y[1] = x[1]
     periodic_bc = PeriodicBoundary()
-
 
     # define the function spaces
     FuncSpaces = dict()
