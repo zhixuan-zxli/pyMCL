@@ -40,21 +40,19 @@ def testStokes():
     FuncSpaces["X"] = VectorFunctionSpace(interface_mesh, 'CG', 1)
     FuncSpaces["K"] = FunctionSpace(interface_mesh, 'CG', 1)
     FuncSpace = MixedFunctionSpace(*FuncSpaces.values())
+
+    X_m = Function(FuncSpaces['X']) # the parametrization of the interface
     
-    bulk_coord_space = FunctionSpace(bulk_mesh, bulk_mesh.ufl_coordinate_element())
+    # for moving the bulk mesh
+    bulk_coord_space = FunctionSpace(bulk_mesh, bulk_mesh.ufl_coordinate_element()) 
     bulk_disp = Function(bulk_coord_space)
     bulk_X = Function(bulk_coord_space)
     
     # build the vertex dof-to-dof map
-    v_map = interface_mesh.topology().mapping()[bulk_mesh.id()].vertex_map()
-    v_map_all = np.array(v_map + [v + bulk_mesh.num_vertices() for v in v_map]) # extend by dimension
+    v_map = np.array(interface_mesh.topology().mapping()[bulk_mesh.id()].vertex_map(), dtype=np.uint64)
     d2v = dof_to_vertex_map(FuncSpaces["X"])
     v2d = vertex_to_dof_map(bulk_coord_space)
-    d2d = v2d[v_map_all[d2v]]
-
-    # get the interface parametrization
-    X_m = Function(FuncSpaces['X'])
-    get_coordinates(X_m, interface_mesh.geometry())
+    d2d = v2d[v_map[d2v//2]*2 + (d2v%2)]
 
     # define the flow boundary conditions
     top_id = assoc_table["top"]
@@ -72,7 +70,7 @@ def testStokes():
 
     # define the physical parameters
     phys = {"Re":10.0, "Ca":0.1, "ls":0.1, "beta":0.1, "beta_c": 0.1, "theta_Y":2*np.pi/3}
-    params = {"dt":1e-4, "max_step":1}
+    params = {"dt":5e-4, "max_step":1}
 
     # define the variational problem
     (u, p1, p0, X, kappa) = TrialFunctions(FuncSpace)
@@ -101,7 +99,11 @@ def testStokes():
     t = 0.0
     for m in range(params["max_step"]):
         print('t = {0:.3f}'.format(t))
+
+        # synchornize the surface parametrization
+        get_coordinates(X_m, interface_mesh.geometry())
             
+        # assemble the linear system
         system = assemble_mixed_system(a == l, sol, essentialBCs)
         A_blocks = system[0]
         rhs_blocks = system[1]
@@ -112,6 +114,7 @@ def testStokes():
         A.init_vectors(L, rhs_blocks)
         A.init_vectors(sol_vec, [s.vector() for s in subSol])
 
+        # solve the linear system
         A.convert_to_aij()
         solve(A, sol_vec, L) # use LU solver
 
@@ -122,10 +125,7 @@ def testStokes():
             subSol[i].vector().set_local(sol_vec.get_local()[FuncSpaceDims[i]:FuncSpaceDims[i+1]])
             subSol[i].vector().apply("")
 
-        # before the mesh is displaced, output the solution
-        outfile_u.write(subSol[0], t)
-
-        # project the velocity on the interface on the bulk mesh, and move the interface
+        # find the displacement of the bulk mesh
         vec_disp = subSol[3].vector().get_local() - X_m.vector().get_local()
         vec_bulk_disp = bulk_disp.vector().get_local()
         vec_bulk_disp[:] = 0
@@ -133,13 +133,18 @@ def testStokes():
         bulk_disp.vector().set_local(vec_bulk_disp)
         bulk_disp.vector().apply("")
 
+        # before the mesh is displaced, output the solution
+        outfile_u.write(subSol[0], t)
+        outfile_disp.write(bulk_disp, t)
+
+        # move the bulk mesh
         get_coordinates(bulk_X, bulk_mesh.geometry())
         bulk_X.vector().axpy(1.0, bulk_disp.vector())
         bulk_X.vector().apply("")
         set_coordinates(bulk_mesh.geometry(), bulk_X)
 
-        # output the displacement
-        outfile_disp.write(bulk_disp, t)
+        # move the interface itself
+        set_coordinates(interface_mesh.geometry(), subSol[3])
 
         t = t + params["dt"]
         
