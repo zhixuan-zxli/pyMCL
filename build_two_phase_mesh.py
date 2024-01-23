@@ -58,5 +58,5 @@ def build_two_phase_mesh(bbox:np.ndarray, markers:np.ndarray, h_size):
 
 if True: #__name__ == "main":
     bbox = np.array([[-1,0], [1,1]], dtype=np.float64)
-    markers = np.array([[0.5,0], [0.5, 0.5], [-0.5, 0.5], [-0.5,0]])
+    markers = np.array([[0.5,0], [0.5, 0.25], [-0.5, 0.25], [-0.5,0]])
     build_two_phase_mesh(bbox, markers, 0.1)
