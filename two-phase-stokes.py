@@ -70,7 +70,7 @@ def testStokes():
 
     # define the physical parameters
     phys = {"Re":10.0, "Ca":0.1, "ls":0.1, "beta":0.1, "beta_c": 0.1, "theta_Y":2*np.pi/3}
-    params = {"dt":5e-4, "max_step":1}
+    params = {"dt":1e-4, "max_step":20}
 
     # define the variational problem
     (u, p1, p0, X, kappa) = TrialFunctions(FuncSpace)
@@ -94,7 +94,7 @@ def testStokes():
     subSol[0].rename("u", "velocity")
 
     outfile_u = XDMFFile("data/two-phase-u.xdmf")
-    outfile_disp = XDMFFile("data/two-phase-disp.xdmf")
+    # outfile_disp = XDMFFile("data/two-phase-disp.xdmf")
 
     t = 0.0
     for m in range(params["max_step"]):
@@ -135,7 +135,7 @@ def testStokes():
 
         # before the mesh is displaced, output the solution
         outfile_u.write(subSol[0], t)
-        outfile_disp.write(bulk_disp, t)
+        # outfile_disp.write(bulk_disp, t)
 
         # move the bulk mesh
         get_coordinates(bulk_X, bulk_mesh.geometry())
@@ -159,7 +159,7 @@ def testStokes():
     # zeroMean(p1_proj, dx)
         
     outfile_u.close()
-    outfile_disp.close()
+    # outfile_disp.close()
 
 
 testStokes()
