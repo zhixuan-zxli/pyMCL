@@ -40,6 +40,17 @@ def testStokes():
     FuncSpaces["X"] = VectorFunctionSpace(interface_mesh, 'CG', 1)
     FuncSpaces["K"] = FunctionSpace(interface_mesh, 'CG', 1)
     FuncSpace = MixedFunctionSpace(*FuncSpaces.values())
+    
+    bulk_coord_space = FunctionSpace(bulk_mesh, bulk_mesh.ufl_coordinate_element())
+    bulk_disp = Function(bulk_coord_space)
+    bulk_X = Function(bulk_coord_space)
+    
+    # build the vertex dof-to-dof map
+    v_map = interface_mesh.topology().mapping()[bulk_mesh.id()].vertex_map()
+    v_map_all = np.array(v_map + [v + bulk_mesh.num_vertices() for v in v_map]) # extend by dimension
+    d2v = dof_to_vertex_map(FuncSpaces["X"])
+    v2d = vertex_to_dof_map(bulk_coord_space)
+    d2d = v2d[v_map_all[d2v]]
 
     # get the interface parametrization
     X_m = Function(FuncSpaces['X'])
@@ -55,12 +66,13 @@ def testStokes():
     def onMeshBoundary(x, on_boundary):
         return on_boundary
     attachBC = DirichletBC(FuncSpace.sub_space(3).sub(1), Constant(0.0), onMeshBoundary)
+    conormal_1_x = Expression("x[0] > 0 ? 1.0 : -1.0", degree=1) # the x component of the conormal of the wet part
 
     essentialBCs = [noSlipBC, noPenBC, attachBC]
 
     # define the physical parameters
     phys = {"Re":10.0, "Ca":0.1, "ls":0.1, "beta":0.1, "beta_c": 0.1, "theta_Y":2*np.pi/3}
-    params = {"dt":1e-4}
+    params = {"dt":1e-4, "max_step":1}
 
     # define the variational problem
     (u, p1, p0, X, kappa) = TrialFunctions(FuncSpace)
@@ -71,9 +83,9 @@ def testStokes():
     a_i  = ( Constant(1.0/params["dt"]) * dot(X, n)*eta - dot(u, n)*eta \
       + kappa * dot(n, Y) + inner(grad(X), grad(Y)) ) * dS                                             # interface motion
     a_cl = Constant(phys["beta_c"]*phys["Ca"]/params["dt"]) * X[0] * Y[0] * dp                         # contact line condition
-    l_i  = Constant(1.0/params["dt"]) * dot(X_m, n)*eta  # interface motion
+    l_i  = Constant(1.0/params["dt"]) * dot(X_m, n)*eta * dS  # interface motion
     l_cl = Constant(phys["beta_c"]*phys["Ca"]/params["dt"]) * X_m[0] * Y[0] * dp \
-      + Constant(np.cos(phys["theta_Y"])) * Y[0] * dp    # contact line condition
+      + Constant(np.cos(phys["theta_Y"])) * conormal_1_x * Y[0] * dp    # contact line condition
     
     a = a_f + a_s + a_ca + a_i + a_cl
     l = l_i + l_cl
@@ -81,26 +93,57 @@ def testStokes():
     # assemble the linear system
     sol = Function(FuncSpace)
     subSol = [Function(v) for v in FuncSpaces.values()]
+    subSol[0].rename("u", "velocity")
 
-    system = assemble_mixed_system(a == l, sol, essentialBCs)
-    # A_blocks = system[0]
-    # rhs_blocks = system[1]
+    outfile_u = XDMFFile("data/two-phase-u.xdmf")
+    outfile_disp = XDMFFile("data/two-phase-disp.xdmf")
 
-    # A = PETScNestMatrix(A_blocks)
-    # L = Vector()
-    # sol_vec = Vector()
-    # A.init_vectors(L, rhs_blocks)
-    # A.init_vectors(sol_vec, [s.vector() for s in subSol])
+    t = 0.0
+    for m in range(params["max_step"]):
+        print('t = {0:.3f}'.format(t))
+            
+        system = assemble_mixed_system(a == l, sol, essentialBCs)
+        A_blocks = system[0]
+        rhs_blocks = system[1]
 
-    # A.convert_to_aij()
-    # solve(A, sol_vec, L) # use LU solver
+        A = PETScNestMatrix(A_blocks)
+        L = Vector()
+        sol_vec = Vector()
+        A.init_vectors(L, rhs_blocks)
+        A.init_vectors(sol_vec, [s.vector() for s in subSol])
 
-    # get the sub solution
-    FuncSpaceDims = np.array([0] + [v.dim() for v in FuncSpaces.values()])
-    FuncSpaceDims = np.cumsum(FuncSpaceDims)
-    # for i in range(4):
-    #     subSol[i].vector().set_local(sol_vec.get_local()[FuncSpaceDims[i]:FuncSpaceDims[i+1]])
-    #     subSol[i].vector().apply("")
+        A.convert_to_aij()
+        solve(A, sol_vec, L) # use LU solver
+
+        # get the sub solution
+        FuncSpaceDims = np.array([0] + [v.dim() for v in FuncSpaces.values()])
+        FuncSpaceDims = np.cumsum(FuncSpaceDims)
+        for i in range(4):
+            subSol[i].vector().set_local(sol_vec.get_local()[FuncSpaceDims[i]:FuncSpaceDims[i+1]])
+            subSol[i].vector().apply("")
+
+        # before the mesh is displaced, output the solution
+        outfile_u.write(subSol[0], t)
+
+        # project the velocity on the interface on the bulk mesh, and move the interface
+        vec_disp = subSol[3].vector().get_local() - X_m.vector().get_local()
+        vec_bulk_disp = bulk_disp.vector().get_local()
+        vec_bulk_disp[:] = 0
+        vec_bulk_disp[d2d] += vec_disp
+        bulk_disp.vector().set_local(vec_bulk_disp)
+        bulk_disp.vector().apply("")
+
+        get_coordinates(bulk_X, bulk_mesh.geometry())
+        bulk_X.vector().axpy(1.0, bulk_disp.vector())
+        bulk_X.vector().apply("")
+        set_coordinates(bulk_mesh.geometry(), bulk_X)
+
+        # output the displacement
+        outfile_disp.write(bulk_disp, t)
+
+        t = t + params["dt"]
+        
+    # relex the mesh
 
     # convert the pressure to DG1
     # DG1_space = FunctionSpace(bulk_mesh, 'DG', 1)
@@ -109,16 +152,9 @@ def testStokes():
     # p1_proj.vector().add_local(p0_proj.vector().get_local())
     # p1_proj.vector().apply("")
     # zeroMean(p1_proj, dx)
+        
+    outfile_u.close()
+    outfile_disp.close()
 
-    # output the solution
-    # subSol[0].rename("u", "velocity")
-    # with XDMFFile("data/two-phase-u.xdmf") as outfile:
-    #     outfile.write(subSol[0])
-    # p1_proj.rename("p", "pressure")
-    # with XDMFFile("data/two-phase-p.xdmf") as outfile:
-    #     outfile.write(p1_proj)
-    # subSol[3].rename("nu", "mean_curavature_vector")
-    # with XDMFFile("data/two-phase-nu.xdmf") as outfile:
-    #     outfile.write(subSol[3])
 
 testStokes()
