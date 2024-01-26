@@ -42,6 +42,15 @@ def testStokes():
     FuncSpace = MixedFunctionSpace(*FuncSpaces.values())
 
     X_m = Function(FuncSpaces['X']) # the parametrization of the interface
+
+    # convert the mesh function to a DG0 function for output
+    subdomain_fn = Function(FuncSpaces["P0"])
+    subdomain_fn_vec = subdomain_fn.vector().get_local()
+    dofmap = FuncSpaces["P0"].dofmap()
+    for cell in cells(bulk_mesh):
+        subdomain_fn_vec[dofmap.cell_dofs(cell.index()).item()] = subdomain_marker[cell]
+    subdomain_fn.vector().set_local(subdomain_fn_vec)
+    subdomain_fn.vector().apply("")
     
     # for moving the bulk mesh
     W_space = FunctionSpace(bulk_mesh, bulk_mesh.ufl_coordinate_element()) # should be 2D P-1 element
@@ -75,7 +84,7 @@ def testStokes():
 
     # define the physical parameters
     phys = {"Re":10.0, "Ca":0.1, "ls":0.1, "beta":0.1, "beta_c": 0.1, "theta_Y":2*np.pi/3}
-    params = {"dt":1e-4, "max_step":20}
+    params = {"dt":1e-4, "max_step":400}
 
     # define the variational problem
     (u, p1, p0, X, kappa) = TrialFunctions(FuncSpace)
@@ -99,6 +108,7 @@ def testStokes():
     subSol[0].rename("u", "velocity")
 
     outfile_u = XDMFFile("data/two-phase-u.xdmf")
+    outfile_phase = XDMFFile("data/two-phase-phase.xdmf")
     # outfile_disp = XDMFFile("data/two-phase-disp.xdmf")
 
     t = 0.0
@@ -151,6 +161,7 @@ def testStokes():
 
         # before the mesh is displaced, output the solution
         outfile_u.write(subSol[0], t)
+        outfile_phase.write(subdomain_fn, t)
                 
         # Supply the displacement BC at the bottom
         # In 3D, this should be obtained from mesh adjustment.
@@ -202,6 +213,7 @@ def testStokes():
         
     outfile_u.close()
     # outfile_disp.close()
+    outfile_phase.close()
 
 
 testStokes()
