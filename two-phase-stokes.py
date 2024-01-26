@@ -44,21 +44,26 @@ def testStokes():
     X_m = Function(FuncSpaces['X']) # the parametrization of the interface
     
     # for moving the bulk mesh
-    bulk_coord_space = FunctionSpace(bulk_mesh, bulk_mesh.ufl_coordinate_element()) 
-    bulk_disp = Function(bulk_coord_space)
-    bulk_X = Function(bulk_coord_space)
+    W_space = FunctionSpace(bulk_mesh, bulk_mesh.ufl_coordinate_element()) # should be 2D P-1 element
+    bulk_disp = Function(W_space)
+    bulk_X = Function(W_space)
+    
+    # define the elastic bilinear form
+    w = TrialFunction(W_space)
+    s = TestFunction(W_space)
+    modulus = Function(FuncSpaces["P0"])
+    a_e = modulus * inner(Constant(0.5)*(grad(w) + grad(w).T) + div(w)*Identity(2), Constant(0.5)*(grad(s) + grad(s).T)) * dx
+    l_e = dot(Constant((0.0, 0.0)), s) * dx
     
     # build the vertex dof-to-dof map
     v_map = np.array(interface_mesh.topology().mapping()[bulk_mesh.id()].vertex_map(), dtype=np.uint64)
     d2v = dof_to_vertex_map(FuncSpaces["X"])
-    v2d = vertex_to_dof_map(bulk_coord_space)
+    v2d = vertex_to_dof_map(W_space)
     d2d = v2d[v_map[d2v//2]*2 + (d2v%2)]
 
     # define the flow boundary conditions
-    top_id = assoc_table["top"]
-    noSlipBC = DirichletBC(FuncSpace.sub_space(0), Constant((0.0, 0.0)), boundary_marker, top_id)
-    bottom_id = assoc_table["bottom"]
-    noPenBC = DirichletBC(FuncSpace.sub_space(0).sub(1), Constant(0.0), boundary_marker, bottom_id)
+    noSlipBC = DirichletBC(FuncSpace.sub_space(0), Constant((0.0, 0.0)), boundary_marker, assoc_table["top"])
+    noPenBC = DirichletBC(FuncSpace.sub_space(0).sub(1), Constant(0.0), boundary_marker, assoc_table["bottom"])
 
     # Define the interface boundary condition
     def onMeshBoundary(x, on_boundary):
@@ -75,8 +80,8 @@ def testStokes():
     # define the variational problem
     (u, p1, p0, X, kappa) = TrialFunctions(FuncSpace)
     (v, q1, q0, Y, eta) = TestFunctions(FuncSpace)
-    a_f  = (Constant(1.0/phys["Re"]) * inner(grad(u), grad(v)) - div(v)*(p1+p0) + div(u)*(q1+q0)) * dx  # incompressible fluid
-    a_s  = Constant(phys["beta"]/phys["ls"]) * u[0] * v[0] * ds(bottom_id)                              # slip boundary condition
+    a_fl = (Constant(1.0/phys["Re"]) * inner(grad(u), grad(v)) - div(v)*(p1+p0) + div(u)*(q1+q0)) * dx  # incompressible fluid
+    a_sl = Constant(phys["beta"]/phys["ls"]) * u[0] * v[0] * ds(assoc_table["bottom"])                  # slip boundary condition
     a_ca = -Constant(1.0/phys["Ca"]) * kappa * dot(n, v) * dS                                           # capillary tension
     a_i  = ( Constant(1.0/params["dt"]) * dot(X, n)*eta - dot(u, n)*eta \
       + kappa * dot(n, Y) + inner(grad(X), grad(Y)) ) * dS                                             # interface motion
@@ -85,10 +90,10 @@ def testStokes():
     l_cl = Constant(phys["beta_c"]*phys["Ca"]/params["dt"]) * X_m[0] * Y[0] * dp \
       + Constant(np.cos(phys["theta_Y"])) * conormal_1_x * Y[0] * dp    # contact line condition
     
-    a = a_f + a_s + a_ca + a_i + a_cl
+    a = a_fl + a_sl + a_ca + a_i + a_cl
     l = l_i + l_cl
 
-    # assemble the linear system
+    # create the solution functions
     sol = Function(FuncSpace)
     subSol = [Function(v) for v in FuncSpaces.values()]
     subSol[0].rename("u", "velocity")
@@ -98,12 +103,18 @@ def testStokes():
 
     t = 0.0
     for m in range(params["max_step"]):
-        print('t = {0:.3f}'.format(t))
+        print('t = {0:.4f}'.format(t))
 
         # synchornize the surface parametrization
         get_coordinates(X_m, interface_mesh.geometry())
+        # get the contact line positions
+        # In 3D simulations, we should build a function space for the contact line, 
+        # then build the DOF-to-DOF map, and extract the CL parametrization. 
+        # Here in 2D we circumvent it. 
+        cl_m = [assemble(Expression("x[0] <= 0 ? 1.0 : 0.0", degree=1) * X_m[0] * dp),  # left cl
+                assemble(Expression("x[0] >= 0 ? 1.0 : 0.0", degree=1) * X_m[0] * dp)]  # right cl
             
-        # assemble the linear system
+        # assemble the linear system for fluid and interface
         system = assemble_mixed_system(a == l, sol, essentialBCs)
         A_blocks = system[0]
         rhs_blocks = system[1]
@@ -125,7 +136,12 @@ def testStokes():
             subSol[i].vector().set_local(sol_vec.get_local()[FuncSpaceDims[i]:FuncSpaceDims[i+1]])
             subSol[i].vector().apply("")
 
-        # find the displacement of the bulk mesh
+        # get the new contact line position
+        cl = [assemble(Expression("x[0] <= 0 ? 1.0 : 0.0", degree=1) * subSol[3][0] * dp),  # left cl
+              assemble(Expression("x[0] >= 0 ? 1.0 : 0.0", degree=1) * subSol[3][0] * dp)]  # right cl
+        cl_disp = [cl[0] - cl_m[0], cl[1] - cl_m[1]]
+
+        # embed the interface displacement into the bulk mesh
         vec_disp = subSol[3].vector().get_local() - X_m.vector().get_local()
         vec_bulk_disp = bulk_disp.vector().get_local()
         vec_bulk_disp[:] = 0
@@ -135,6 +151,32 @@ def testStokes():
 
         # before the mesh is displaced, output the solution
         outfile_u.write(subSol[0], t)
+                
+        # Supply the displacement BC at the bottom
+        # In 3D, this should be obtained from mesh adjustment.
+        # Here we provide the explicit displacement.
+        disp_BC = Expression("(x[0] <= cl_m_l) ? ((x[0]+1.0)/(cl_m_l+1.0)*cl_disp_l) : ((x[0] >= cl_m_r) ? ((1.0-x[0])/(1.0-cl_m_r)*cl_disp_r) : ((x[0]-cl_m_l)/(cl_m_r-cl_m_l)*cl_disp_r + (cl_m_r-x[0])/(cl_m_r-cl_m_l)*cl_disp_l))", degree=1, cl_m_l=cl_m[0], cl_m_r=cl_m[1], cl_disp_l=cl_disp[0], cl_disp_r=cl_disp[1])
+        # Change the magic constant if the domain changes ^^^^^^
+
+        # build the BC for the displacement problem
+        noMoveBC_top = DirichletBC(W_space, Constant((0.0, 0.0)), boundary_marker, assoc_table["top"])
+        noMoveBC_left = DirichletBC(W_space, Constant((0.0, 0.0)), boundary_marker, assoc_table["left"])
+        noMoveBC_right = DirichletBC(W_space, Constant((0.0, 0.0)), boundary_marker, assoc_table["right"])
+        moveBC_bot_x = DirichletBC(W_space.sub(0), disp_BC, boundary_marker, assoc_table["bottom"])
+        moveBC_bot_y = DirichletBC(W_space.sub(1), Constant(0.0), boundary_marker, assoc_table["bottom"])
+        moveBC_int = DirichletBC(W_space, bulk_disp, boundary_marker, assoc_table["interface"])
+        
+        essentialBCs_e = [noMoveBC_top, noMoveBC_left, noMoveBC_right, moveBC_bot_x, moveBC_bot_y, moveBC_int]
+
+        # calculate the modulus based on element size
+        cell_vol = project(CellVolume(bulk_mesh), FuncSpaces["P0"]) # get the cell volume in DG0 space
+        cell_vol_max = cell_vol.vector().get_local().max()
+        cell_vol_min = cell_vol.vector().get_local().min()
+        modulus.assign(project(Constant(1.0) + Constant(cell_vol_max-cell_vol_min) / CellVolume(bulk_mesh), FuncSpaces["P0"]))
+
+        # solve the elastic problem for the mesh displacement
+        solve(a_e == l_e, bulk_disp, essentialBCs_e)
+
         # outfile_disp.write(bulk_disp, t)
 
         # move the bulk mesh
