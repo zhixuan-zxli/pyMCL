@@ -1,126 +1,219 @@
 import numpy as np
-import dolfin
+from dolfin import *
 from msh2xdmf import import_mesh
+from test_util import *
 # from matplotlib import pyplot
 
-# load the mesh
-gdim = 2
-# bulk_mesh, boundary_marker, subdomain_marker, physical_table = import_mesh(prefix='two-phase', subdomains=True, tdim=gdim, gdim=gdim, directory="mesh")
-# interface_mesh = dolfin.MeshView.create(boundary_marker, physical_table["interface"])
-# interface_mesh.init_cell_orientations(dolfin.Expression(("x[0] - 0.5", "x[1]"), degree = 1))
-bulk_mesh = dolfin.UnitSquareMesh(16, 16)
+def testStokes():
+    # load the mesh
+    bulk_mesh, boundary_marker, subdomain_marker, assoc_table = \
+        import_mesh(prefix='two-phase', subdomains=True, tdim=2, gdim=2, directory='mesh')
+    interface_mesh = MeshView.create(boundary_marker, assoc_table["interface"])
+    interface_mesh.init_cell_orientations(Expression(("x[0]", "x[1]"), degree = 1))
 
-# define the symbols
-dx = dolfin.Measure('dx', domain=bulk_mesh)
-# dx = dolfin.Measure('dx', domain=bulk_mesh, subdomain_data=subdomain_marker)
-# dl = dolfin.Measure('ds', domain=bulk_mesh, subdomain_data=boundary_marker)
-# dS = dolfin.Measure('dx', domain=interface_mesh)
-# n = dolfin.CellNormal(interface_mesh)
-# print('Measure of interface as MeshView = {}'.format(dolfin.assemble(dolfin.Constant(1.0) * dS)))
-# proj_mea = dolfin.dot(dolfin.Constant((0.0, 1.0)), n) * dS
-# print('Projected measure = {}'.format(dolfin.assemble(proj_mea)))
+    # define the symbols
+    dx = Measure('dx', domain=bulk_mesh, subdomain_data=subdomain_marker)
+    ds = Measure('ds', domain=bulk_mesh, subdomain_data=boundary_marker)
+    dS = Measure('dx', domain=interface_mesh)
+    dp = Measure('ds', domain=interface_mesh)
+    n = CellNormal(interface_mesh)
+    # just to check orientation
+    proj_mea = dot(Constant((0.0, 1.0)), n) * dS
+    print('Projected measure of interface = {}'.format(assemble(proj_mea)))
 
-# Define the periodic boundary condition
-class PeriodicBoundary(dolfin.SubDomain):
-    # identify the left boundary
-    def inside(self, x, on_boundary):
-        return on_boundary and dolfin.near(x[0], 0.0)
-    # map the right boundary (x) to the left (y)
-    def map(self, x, y):
-        y[0] = x[0] - 1.0
-        y[1] = x[1]
-periodic_bc = PeriodicBoundary()
+    # Define the periodic boundary condition
+    class PeriodicBoundary(SubDomain):
+        # identify the left boundary
+        def inside(self, x, on_boundary):
+            return on_boundary and near(x[0], -1.0)     # change this if the domain changes <<<<<<<<<<<<<
+        # map the right boundary (x) to the left (y)
+        def map(self, x, y):
+            y[0] = x[0] - 2.0
+            y[1] = x[1]
+    periodic_bc = PeriodicBoundary()
 
-# Define the endpoint of the interface
-def onMeshBoundary(x, on_boundary):
-    return on_boundary
+    # define the function spaces
+    FuncSpaces = dict()
+    FuncSpaces["U"] = VectorFunctionSpace(bulk_mesh, 'CG', 2, constrained_domain = periodic_bc)
+    FuncSpaces["P1"] = FunctionSpace(bulk_mesh, 'CG', 1, constrained_domain = periodic_bc)
+    FuncSpaces["P0"] = FunctionSpace(bulk_mesh, 'DG', 0, constrained_domain = periodic_bc)
+    FuncSpaces["X"] = VectorFunctionSpace(interface_mesh, 'CG', 1)
+    FuncSpaces["K"] = FunctionSpace(interface_mesh, 'CG', 1)
+    FuncSpace = MixedFunctionSpace(*FuncSpaces.values())
 
-# define the function spaces
-FuncSpaces = dict()
-FuncSpaces["U"] = dolfin.VectorFunctionSpace(bulk_mesh, 'CG', 2, dim=gdim, constrained_domain = periodic_bc)
-FuncSpaces["P1"] = dolfin.FunctionSpace(bulk_mesh, 'CG', 1, constrained_domain = periodic_bc)
-FuncSpaces["P0"] = dolfin.FunctionSpace(bulk_mesh, 'DG', 0, constrained_domain = periodic_bc)
-# FuncSpaces["X"] = dolfin.VectorFunctionSpace(interface_mesh, 'CG', 1, dim=gdim)
-# FuncSpaces["K"] = dolfin.FunctionSpace(interface_mesh, 'CG', 1)
-FuncSpace = dolfin.MixedFunctionSpace(*FuncSpaces.values())
+    X_m = Function(FuncSpaces['X']) # the parametrization of the interface
 
-# define the flow boundary conditions
-noSlipBC = dolfin.DirichletBC(FuncSpace.sub_space(0), dolfin.Constant((0.0, 0.0)), onMeshBoundary)
-# noSlipBC = dolfin.DirichletBC(FuncSpace.sub_space(0), dolfin.Constant((0.0, 0.0)), boundary_marker, physical_table["top"])
-# noPenBC = dolfin.DirichletBC(FuncSpace.sub_space(0).sub(1), dolfin.Constant(0.0), boundary_marker, physical_table["bottom"])
-# define the attach boundary condition
-# attachBC = dolfin.DirichletBC(FuncSpace.sub_space(3).sub(1), dolfin.Constant(0.0), onMeshBoundary)
+    # convert the mesh function to a DG0 function for output
+    subdomain_fn = Function(FuncSpaces["P0"])
+    subdomain_fn_vec = subdomain_fn.vector().get_local()
+    dofmap = FuncSpaces["P0"].dofmap()
+    for cell in cells(bulk_mesh):
+        subdomain_fn_vec[dofmap.cell_dofs(cell.index()).item()] = subdomain_marker[cell]
+    subdomain_fn.vector().set_local(subdomain_fn_vec)
+    subdomain_fn.vector().apply("")
+    
+    # for moving the bulk mesh
+    W_space = FunctionSpace(bulk_mesh, bulk_mesh.ufl_coordinate_element()) # should be 2D P-1 element
+    bulk_disp = Function(W_space)
+    bulk_X = Function(W_space)
+    
+    # define the elastic bilinear form
+    w = TrialFunction(W_space)
+    s = TestFunction(W_space)
+    modulus = Function(FuncSpaces["P0"])
+    a_e = modulus * inner(Constant(0.5)*(grad(w) + grad(w).T) + div(w)*Identity(2), Constant(0.5)*(grad(s) + grad(s).T)) * dx
+    l_e = dot(Constant((0.0, 0.0)), s) * dx
+    
+    # build the vertex dof-to-dof map
+    v_map = np.array(interface_mesh.topology().mapping()[bulk_mesh.id()].vertex_map(), dtype=np.uint64)
+    d2v = dof_to_vertex_map(FuncSpaces["X"])
+    v2d = vertex_to_dof_map(W_space)
+    d2d = v2d[v_map[d2v//2]*2 + (d2v%2)]
 
-essentialBCs = [noSlipBC] #, noPenBC] #, attachBC]
+    # define the flow boundary conditions
+    noSlipBC = DirichletBC(FuncSpace.sub_space(0), Constant((0.0, 0.0)), boundary_marker, assoc_table["top"])
+    noPenBC = DirichletBC(FuncSpace.sub_space(0).sub(1), Constant(0.0), boundary_marker, assoc_table["bottom"])
 
-# define the physical parameters
-phys = {"Re":1.0, "Ca":0.1, "ls":0.1, "beta":0.1}
+    # Define the interface boundary condition
+    def onMeshBoundary(x, on_boundary):
+        return on_boundary
+    attachBC = DirichletBC(FuncSpace.sub_space(3).sub(1), Constant(0.0), onMeshBoundary)
+    conormal_1_x = Expression("x[0] > 0 ? 1.0 : -1.0", degree=1) # the x component of the conormal of the wet part
 
-f = dolfin.Expression(("-2*pi*pi*sin(2*pi*x[1])*(1-2*sin(pi*x[0]))*(1+2*sin(pi*x[0]))", \
-                       "-2*pi*pi*sin(2*pi*x[0])*(2*sin(pi*x[1])+1)*(2*sin(pi*x[1])-1)"), degree=3)
+    essentialBCs = [noSlipBC, noPenBC, attachBC]
+
+    # define the physical parameters
+    phys = {"Re":10.0, "Ca":0.1, "ls":0.1, "beta":0.1, "beta_c": 0.1, "theta_Y":2*np.pi/3}
+    params = {"dt":1e-4, "max_step":400}
+
+    # define the variational problem
+    (u, p1, p0, X, kappa) = TrialFunctions(FuncSpace)
+    (v, q1, q0, Y, eta) = TestFunctions(FuncSpace)
+    a_fl = (Constant(1.0/phys["Re"]) * inner(grad(u), grad(v)) - div(v)*(p1+p0) + div(u)*(q1+q0)) * dx  # incompressible fluid
+    a_sl = Constant(phys["beta"]/phys["ls"]) * u[0] * v[0] * ds(assoc_table["bottom"])                  # slip boundary condition
+    a_ca = -Constant(1.0/phys["Ca"]) * kappa * dot(n, v) * dS                                           # capillary tension
+    a_i  = ( Constant(1.0/params["dt"]) * dot(X, n)*eta - dot(u, n)*eta \
+      + kappa * dot(n, Y) + inner(grad(X), grad(Y)) ) * dS                                             # interface motion
+    a_cl = Constant(phys["beta_c"]*phys["Ca"]/params["dt"]) * X[0] * Y[0] * dp                         # contact line condition
+    l_i  = Constant(1.0/params["dt"]) * dot(X_m, n)*eta * dS  # interface motion
+    l_cl = Constant(phys["beta_c"]*phys["Ca"]/params["dt"]) * X_m[0] * Y[0] * dp \
+      + Constant(np.cos(phys["theta_Y"])) * conormal_1_x * Y[0] * dp    # contact line condition
+    
+    a = a_fl + a_sl + a_ca + a_i + a_cl
+    l = l_i + l_cl
+
+    # create the solution functions
+    sol = Function(FuncSpace)
+    subSol = [Function(v) for v in FuncSpaces.values()]
+    subSol[0].rename("u", "velocity")
+
+    outfile_u = XDMFFile("data/two-phase-u.xdmf")
+    outfile_phase = XDMFFile("data/two-phase-phase.xdmf")
+    # outfile_disp = XDMFFile("data/two-phase-disp.xdmf")
+
+    t = 0.0
+    for m in range(params["max_step"]):
+        print('t = {0:.4f}'.format(t))
+
+        # synchornize the surface parametrization
+        get_coordinates(X_m, interface_mesh.geometry())
+        # get the contact line positions
+        # In 3D simulations, we should build a function space for the contact line, 
+        # then build the DOF-to-DOF map, and extract the CL parametrization. 
+        # Here in 2D we circumvent it. 
+        cl_m = [assemble(Expression("x[0] <= 0 ? 1.0 : 0.0", degree=1) * X_m[0] * dp),  # left cl
+                assemble(Expression("x[0] >= 0 ? 1.0 : 0.0", degree=1) * X_m[0] * dp)]  # right cl
+            
+        # assemble the linear system for fluid and interface
+        system = assemble_mixed_system(a == l, sol, essentialBCs)
+        A_blocks = system[0]
+        rhs_blocks = system[1]
+
+        A = PETScNestMatrix(A_blocks)
+        L = Vector()
+        sol_vec = Vector()
+        A.init_vectors(L, rhs_blocks)
+        A.init_vectors(sol_vec, [s.vector() for s in subSol])
+
+        # solve the linear system
+        A.convert_to_aij()
+        solve(A, sol_vec, L) # use LU solver
+
+        # get the sub solution
+        FuncSpaceDims = np.array([0] + [v.dim() for v in FuncSpaces.values()])
+        FuncSpaceDims = np.cumsum(FuncSpaceDims)
+        for i in range(4):
+            subSol[i].vector().set_local(sol_vec.get_local()[FuncSpaceDims[i]:FuncSpaceDims[i+1]])
+            subSol[i].vector().apply("")
+
+        # get the new contact line position
+        cl = [assemble(Expression("x[0] <= 0 ? 1.0 : 0.0", degree=1) * subSol[3][0] * dp),  # left cl
+              assemble(Expression("x[0] >= 0 ? 1.0 : 0.0", degree=1) * subSol[3][0] * dp)]  # right cl
+        cl_disp = [cl[0] - cl_m[0], cl[1] - cl_m[1]]
+
+        # embed the interface displacement into the bulk mesh
+        vec_disp = subSol[3].vector().get_local() - X_m.vector().get_local()
+        vec_bulk_disp = bulk_disp.vector().get_local()
+        vec_bulk_disp[:] = 0
+        vec_bulk_disp[d2d] += vec_disp
+        bulk_disp.vector().set_local(vec_bulk_disp)
+        bulk_disp.vector().apply("")
+
+        # before the mesh is displaced, output the solution
+        outfile_u.write(subSol[0], t)
+        outfile_phase.write(subdomain_fn, t)
+                
+        # Supply the displacement BC at the bottom
+        # In 3D, this should be obtained from mesh adjustment.
+        # Here we provide the explicit displacement.
+        disp_BC = Expression("(x[0] <= cl_m_l) ? ((x[0]+1.0)/(cl_m_l+1.0)*cl_disp_l) : ((x[0] >= cl_m_r) ? ((1.0-x[0])/(1.0-cl_m_r)*cl_disp_r) : ((x[0]-cl_m_l)/(cl_m_r-cl_m_l)*cl_disp_r + (cl_m_r-x[0])/(cl_m_r-cl_m_l)*cl_disp_l))", degree=1, cl_m_l=cl_m[0], cl_m_r=cl_m[1], cl_disp_l=cl_disp[0], cl_disp_r=cl_disp[1])
+        # Change the magic constant if the domain changes ^^^^^^
+
+        # build the BC for the displacement problem
+        noMoveBC_top = DirichletBC(W_space, Constant((0.0, 0.0)), boundary_marker, assoc_table["top"])
+        noMoveBC_left = DirichletBC(W_space, Constant((0.0, 0.0)), boundary_marker, assoc_table["left"])
+        noMoveBC_right = DirichletBC(W_space, Constant((0.0, 0.0)), boundary_marker, assoc_table["right"])
+        moveBC_bot_x = DirichletBC(W_space.sub(0), disp_BC, boundary_marker, assoc_table["bottom"])
+        moveBC_bot_y = DirichletBC(W_space.sub(1), Constant(0.0), boundary_marker, assoc_table["bottom"])
+        moveBC_int = DirichletBC(W_space, bulk_disp, boundary_marker, assoc_table["interface"])
+        
+        essentialBCs_e = [noMoveBC_top, noMoveBC_left, noMoveBC_right, moveBC_bot_x, moveBC_bot_y, moveBC_int]
+
+        # calculate the modulus based on element size
+        cell_vol = project(CellVolume(bulk_mesh), FuncSpaces["P0"]) # get the cell volume in DG0 space
+        cell_vol_max = cell_vol.vector().get_local().max()
+        cell_vol_min = cell_vol.vector().get_local().min()
+        modulus.assign(project(Constant(1.0) + Constant(cell_vol_max-cell_vol_min) / CellVolume(bulk_mesh), FuncSpaces["P0"]))
+
+        # solve the elastic problem for the mesh displacement
+        solve(a_e == l_e, bulk_disp, essentialBCs_e)
+
+        # outfile_disp.write(bulk_disp, t)
+
+        # move the bulk mesh
+        get_coordinates(bulk_X, bulk_mesh.geometry())
+        bulk_X.vector().axpy(1.0, bulk_disp.vector())
+        bulk_X.vector().apply("")
+        set_coordinates(bulk_mesh.geometry(), bulk_X)
+
+        # move the interface itself
+        set_coordinates(interface_mesh.geometry(), subSol[3])
+
+        t = t + params["dt"]
+        
+    # relex the mesh
+
+    # convert the pressure to DG1
+    # DG1_space = FunctionSpace(bulk_mesh, 'DG', 1)
+    # p1_proj = project(subSol[1], DG1_space)
+    # p0_proj = project(subSol[2], DG1_space)
+    # p1_proj.vector().add_local(p0_proj.vector().get_local())
+    # p1_proj.vector().apply("")
+    # zeroMean(p1_proj, dx)
+        
+    outfile_u.close()
+    # outfile_disp.close()
+    outfile_phase.close()
 
 
-# define the variational problem
-# (u, p1, p0, x, kappa) = dolfin.TrialFunctions(FuncSpace)
-# (v, q1, q0, y, chi) = dolfin.TestFunctions(FuncSpace)
-(u, p1, p0) = dolfin.TrialFunctions(FuncSpace)
-(v, q1, q0) = dolfin.TestFunctions(FuncSpace)
-a = dolfin.Constant(1.0/phys["Re"]) * dolfin.inner(dolfin.grad(u), dolfin.grad(v)) * dx - dolfin.div(v) * (p1+p0) * dx + dolfin.div(u) * (q1+q0) * dx 
-l = dolfin.dot(f, v) * dx
-# l = dolfin.Constant(0.0) * (q1 + q0) * dx
-#   + dolfin.Constant(phys["beta"]/phys["ls"]) * u[0] * v[0] * dl(physical_table["bottom"])
-#   + dolfin.Constant(1.0/phys["Ca"]) * kappa * dolfin.dot(n, v) * dS
-# l = dolfin.Constant(phys["gamma"] * phys["kappa"]) * dolfin.dot(n('+'), v('+')) * dS # \
-#     # + dolfin.dot(dolfin.Constant((0.0, 0.0)), v) * dx # a hack to fix the interior facet normal
-# b = dolfin.inner(dolfin.grad(u), dolfin.grad(v))*dx + (p1+p0)*(q1+q0)*dx # the preconditioning matrix
-
-# assemble the linear system
-sol = dolfin.Function(FuncSpace)
-# dolfin.solve(a == l, sol, essentialBCs)
-system = dolfin.assemble_mixed_system(a == l, sol, essentialBCs)
-matrix_blocks = system[0]
-rhs_blocks = system[1]
-# A, L = dolfin.assemble_system(a, l, flow_bcs)
-# B, _ = dolfin.assemble_system(b, l, flow_bcs)
-
-A = dolfin.PETScNestMatrix(matrix_blocks)
-L = dolfin.Vector()
-A.init_vectors(L, rhs_blocks)
-A.convert_to_aij()
-
-# set up the solver
-sol_vec = dolfin.Vector()
-solver = dolfin.LUSolver()
-solver.solve(A, sol_vec, L)
-FuncSpaceDims = [fs.dim() for fs in FuncSpaces.values()]
-u_sol = dolfin.Function(FuncSpaces["U"])
-u_sol.vector().set_local(sol_vec.get_local()[:FuncSpaceDims[0]])
-# (u, p1, p0) = sol.split()
-# solver = dolfin.KrylovSolver("gmres", "amg")
-# solver.set_operators(A, B)
-# solver.parameters["report"] = True
-
-# create the null vector
-# sol = dolfin.Function(AugTHSpace)
-# nv1 = dolfin.Vector(sol.vector())
-# nv0 = dolfin.Vector(sol.vector())
-# AugTHSpace.sub(1).dofmap().set(nv1, 1.0)
-# AugTHSpace.sub(2).dofmap().set(nv0, 1.0)
-# nv1 *= 1.0 / nv1.norm("l2")
-# nv0 *= 1.0 / nv0.norm("l2")
-
-# attach the null space to the PETSc matrix
-# null_space = dolfin.VectorSpaceBasis([nv1, nv0])
-# dolfin.as_backend_type(A).set_nullspace(null_space)
-
-# null_space.orthogonalize(L)
-
-# solve the linear system
-
-# Convert the P1+P0 pressure to a DG1 function
-
-
-# output the solution
-outfile = dolfin.XDMFFile('data/two-phase-u.xdmf')
-outfile.write(u_sol)
-outfile.close()
+testStokes()
