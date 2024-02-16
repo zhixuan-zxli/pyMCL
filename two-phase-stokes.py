@@ -39,7 +39,10 @@ def testStokes():
     FuncSpaces["P0"] = FunctionSpace(bulk_mesh, 'DG', 0, constrained_domain = periodic_bc)
     FuncSpaces["X"] = VectorFunctionSpace(interface_mesh, 'CG', 1)
     FuncSpaces["K"] = FunctionSpace(interface_mesh, 'CG', 1)
-    FuncSpace = MixedFunctionSpace(*FuncSpaces.values())
+
+    FuncSpace = MixedFunctionSpace(*FuncSpaces.values())    
+    FuncSpaceDims = np.array([0] + [v.dim() for v in FuncSpaces.values()])
+    FuncSpaceDims = np.cumsum(FuncSpaceDims)
 
     X_m = Function(FuncSpaces['X']) # the parametrization of the interface
 
@@ -72,13 +75,13 @@ def testStokes():
     def onMeshBoundary(x, on_boundary):
         return on_boundary
     attachBC = DirichletBC(FuncSpace.sub_space(3).sub(1), Constant(0.0), onMeshBoundary)
-    conormal_1_x = Expression("x[0] > 0 ? 1.0 : -1.0", degree=1) # the x component of the conormal of the wet part
-
+    # conormal_1_x = Expression("x[0] > 0 ? 1.0 : -1.0", degree=1) # the x component of the conormal of the wet part
+    
     essentialBCs = [noSlipBC, noPenBC, attachBC]
 
     # define the physical parameters
-    phys = {"Re":10.0, "Ca":0.1, "ls":0.1, "beta":0.1, "beta_c": 0.1, "theta_Y":2*np.pi/3}
-    params = {"dt":1e-4, "max_step":400}
+    phys = {"Re":10.0, "Ca":0.1, "ls":0.1, "beta":0.1, "beta_c": 0.1, "theta_Y":2*np.pi/3, "cl_speed":5.0}
+    params = {"dt":1e-4, "max_step":200}
 
     # define the variational problem
     (u, p1, p0, X, kappa) = TrialFunctions(FuncSpace)
@@ -88,13 +91,13 @@ def testStokes():
     a_ca = -Constant(1.0/phys["Ca"]) * kappa * dot(n, v) * dS                                           # capillary tension
     a_i  = ( Constant(1.0/params["dt"]) * dot(X, n)*eta - dot(u, n)*eta \
       + kappa * dot(n, Y) + inner(grad(X), grad(Y)) ) * dS                                             # interface motion
-    a_cl = Constant(phys["beta_c"]*phys["Ca"]/params["dt"]) * X[0] * Y[0] * dp                         # contact line condition
+    # a_cl = Constant(phys["beta_c"]*phys["Ca"]/params["dt"]) * X[0] * Y[0] * dp                         # contact line condition
     l_i  = Constant(1.0/params["dt"]) * dot(X_m, n)*eta * dS  # interface motion
-    l_cl = Constant(phys["beta_c"]*phys["Ca"]/params["dt"]) * X_m[0] * Y[0] * dp \
-      + Constant(np.cos(phys["theta_Y"])) * conormal_1_x * Y[0] * dp    # contact line condition
+    # l_cl = Constant(phys["beta_c"]*phys["Ca"]/params["dt"]) * X_m[0] * Y[0] * dp \
+    #   + Constant(np.cos(phys["theta_Y"])) * conormal_1_x * Y[0] * dp    # contact line condition
     
-    a = a_fl + a_sl + a_ca + a_i + a_cl
-    l = l_i + l_cl
+    a = a_fl + a_sl + a_ca + a_i # + a_cl
+    l = l_i #  + l_cl
 
     # create the solution functions
     sol = Function(FuncSpace)
@@ -105,21 +108,25 @@ def testStokes():
     outfile_phase = XDMFFile("data/two-phase-phase.xdmf")
     # outfile_disp = XDMFFile("data/two-phase-disp.xdmf")
 
-    t = 0.0
+    t = params["dt"]
     for m in range(params["max_step"]):
         print('t = {0:.4f}'.format(t))
 
         # synchornize the surface parametrization
         get_coordinates(X_m, interface_mesh.geometry())
-        # get the contact line positions
-        # In 3D simulations, we should build a function space for the contact line, 
-        # then build the DOF-to-DOF map, and extract the CL parametrization. 
-        # Here in 2D we circumvent it. 
+
+        # get the old contact line positions
         cl_m = [assemble(Expression("x[0] <= 0 ? 1.0 : 0.0", degree=1) * X_m[0] * dp),  # left cl
                 assemble(Expression("x[0] >= 0 ? 1.0 : 0.0", degree=1) * X_m[0] * dp)]  # right cl
-            
+
+        # set up the prescribed contact line condition
+        cl = [-0.5 + phys["cl_speed"] * t, 0.5 - phys["cl_speed"] * t] 
+        clExpr = Expression("x[0] >=0 ? cl : (-cl)", cl=cl[1], degree=1)
+        clBC = DirichletBC(FuncSpace.sub_space(3).sub(0), clExpr, onMeshBoundary)
+        # print("cl_m = {}, cl = {}".format(cl_m, cl))
+
         # assemble the linear system for fluid and interface
-        system = assemble_mixed_system(a == l, sol, essentialBCs)
+        system = assemble_mixed_system(a == l, sol, essentialBCs + [clBC])
         A_blocks = system[0]
         rhs_blocks = system[1]
 
@@ -134,15 +141,13 @@ def testStokes():
         solve(A, sol_vec, L) # use LU solver
 
         # get the sub solution
-        FuncSpaceDims = np.array([0] + [v.dim() for v in FuncSpaces.values()])
-        FuncSpaceDims = np.cumsum(FuncSpaceDims)
         for i in range(4):
             subSol[i].vector().set_local(sol_vec.get_local()[FuncSpaceDims[i]:FuncSpaceDims[i+1]])
             subSol[i].vector().apply("")
 
         # get the new contact line position
-        cl = [assemble(Expression("x[0] <= 0 ? 1.0 : 0.0", degree=1) * subSol[3][0] * dp),  # left cl
-              assemble(Expression("x[0] >= 0 ? 1.0 : 0.0", degree=1) * subSol[3][0] * dp)]  # right cl
+        # cl = [assemble(Expression("x[0] <= 0 ? 1.0 : 0.0", degree=1) * subSol[3][0] * dp),  # left cl
+        #       assemble(Expression("x[0] >= 0 ? 1.0 : 0.0", degree=1) * subSol[3][0] * dp)]  # right cl
         cl_disp = [cl[0] - cl_m[0], cl[1] - cl_m[1]]
 
         # embed the interface displacement into the bulk mesh
