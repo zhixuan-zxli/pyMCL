@@ -1,7 +1,7 @@
 import numpy as np
 from dolfin import *
 from msh2xdmf import import_mesh
-from test_util import *
+from util import *
 # from matplotlib import pyplot
 
 def testStokes():
@@ -44,13 +44,7 @@ def testStokes():
     X_m = Function(FuncSpaces['X']) # the parametrization of the interface
 
     # convert the mesh function to a DG0 function for output
-    subdomain_fn = Function(FuncSpaces["P0"])
-    subdomain_fn_vec = subdomain_fn.vector().get_local()
-    dofmap = FuncSpaces["P0"].dofmap()
-    for cell in cells(bulk_mesh):
-        subdomain_fn_vec[dofmap.cell_dofs(cell.index()).item()] = subdomain_marker[cell]
-    subdomain_fn.vector().set_local(subdomain_fn_vec)
-    subdomain_fn.vector().apply("")
+    subdomain_fn = cellFuncToDG0(bulk_mesh, FuncSpaces["P0"], subdomain_marker)
     
     # for moving the bulk mesh
     W_space = FunctionSpace(bulk_mesh, bulk_mesh.ufl_coordinate_element()) # should be 2D P-1 element
