@@ -1,8 +1,14 @@
 import numpy as np
 import dolfin
 from msh2xdmf import import_mesh
-from matplotlib import pyplot
-from getSubspaceAndIndex import *
+# from matplotlib import pyplot
+
+def getSubspaceAndIndex(parentSpace, id):
+    subspace, collapsedMap = parentSpace.sub(id).collapse(True)
+    a = np.array([[k,v] for (k,v) in collapsedMap.items()])
+    subspaceIndex = a[np.argsort(a[:,0]), :]
+    assert np.all(subspaceIndex[:-1,0] + 1 == subspaceIndex[1:,0]) # check consecutive
+    return (subspace, subspaceIndex)
 
 tdim = 2 # dimension of the manifold
 gdim = tdim+1 # dimension of the ambient space
