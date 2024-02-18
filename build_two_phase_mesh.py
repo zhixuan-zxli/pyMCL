@@ -1,14 +1,6 @@
 import numpy as np
 import gmsh
 
-def interface_arclength(markers:np.ndarray):
-    """
-    Calculate the arc-length of the interface. 
-    markers [in, Np x 2]. 
-    """
-    vec = markers[1:,:] - markers[:-1,:]
-    return np.sqrt((vec**2).sum(axis=1)).sum()
-
 def build_two_phase_mesh(bbox:np.ndarray, markers:np.ndarray, h_size, dist_max = 1):
     """
     Build the two-phase mesh, given the interface markers. 
@@ -64,10 +56,13 @@ def build_two_phase_mesh(bbox:np.ndarray, markers:np.ndarray, h_size, dist_max =
     gmsh.model.setPhysicalName(2, gmsh.model.addPhysicalGroup(2, [fluid_1]), "fluid_1")
     gmsh.model.setPhysicalName(2, gmsh.model.addPhysicalGroup(2, [fluid_2]), "fluid_2")
     gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, e_marker), "interface")
-    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [e_dry_l, e_wet, e_dry_r]), "bottom")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [e_dry_l, e_dry_r]), "dry")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [e_wet]), "wet")
     gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [e_right]), "right")
     gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [e_top]), "top")
     gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [e_left]), "left")
+    gmsh.model.setPhysicalName(0, gmsh.model.addPhysicalGroup(0, [pts_marker[0], pts_marker[-1]]), "cl")
+    gmsh.model.setPhysicalName(0, gmsh.model.addPhysicalGroup(0, [pts_ll, pts_lr]), "clamp")
     # add periodicity
     translation = [1, 0, 0, bbox[1,0] - bbox[0,0], 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
     gmsh.model.mesh.setPeriodic(1, [e_right], [e_left], translation)
@@ -77,7 +72,7 @@ def build_two_phase_mesh(bbox:np.ndarray, markers:np.ndarray, h_size, dist_max =
     gmsh.write("mesh/two-phase.msh")
     gmsh.finalize()
 
-if True: #__name__ == "main":
+if __name__ == "__main__":
     bbox = np.array([[-1,0], [1,1]], dtype=np.float64)
     markers = np.array([[0.5,0], [0.5, 0.25], [-0.5, 0.25], [-0.5,0]])
     build_two_phase_mesh(bbox, markers, [0.04, 0.1], 0.5)
