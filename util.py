@@ -1,29 +1,4 @@
 import numpy as np
-from dolfin import *
-
-def zeroMean(p, dx):
-    """
-    Make a function of zero mean. 
-    """
-    p_avr = assemble(p*dx) / assemble(Constant(1.0) * dx)
-    p_vec = p.vector().get_local() - p_avr
-    p.vector().set_local(p_vec)
-    p.vector().apply("")
-    return p
-
-def cellFuncToDG0(mesh, DG0_space, cellfunc):
-    """
-    Convert a CellFunction to a DG0 function. 
-    Return the DG0 function. 
-    """
-    res = Function(DG0_space)
-    res_vec = res.vector().get_local()
-    dofmap = DG0_space.dofmap()
-    for cell in cells(mesh):
-        res_vec[dofmap.cell_dofs(cell.index()).item()] = cellfunc[cell]
-    res.vector().set_local(res_vec)
-    res.vector().apply("")
-    return res
 
 def printConvergenceTable(mesh_table, error_table):
     """ 
