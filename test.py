@@ -1,6 +1,8 @@
 import numpy as np
 from Mesh import Mesh
 
-mesh = Mesh("mesh/two-phase.msh")
-mesh.buildP2Mesh()
-print("Finished.")
+if __name__ == "__main__":
+    mesh = Mesh()
+    mesh.load("mesh/two-phase.msh")
+    interface_mesh = mesh.view(1, [3])
+    print("Finished.")
