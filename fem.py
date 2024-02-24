@@ -1,3 +1,4 @@
+from typing import Optional
 import numpy as np
 from scipy.sparse import csr_matrix
 from mesh import Mesh
@@ -23,25 +24,31 @@ class FESpace:
 
     def __init_Lagrange(self, degree: int) -> None:
         if degree >= 1:
-            if hasattr(self.mesh, "tri"):
+            if self.mesh.tri.shape[0] > 0:
                 self.dof_of_elem = self.mesh.tri[:,:-1]
-            elif hasattr(self.mesh, "edge"):
+            elif self.mesh.edge.shape[0] > 0:
                 self.dof_of_elem = self.mesh.edge[:,:-1]
             else:
-                self.dof_of_elem = np.arange(self.mesh.point.shape[0]).reshape(-1, 1)
+                self.dof_of_elem = np.arange(self.mesh.point.shape[0], dtype=np.uint32).reshape(-1, 1)
+            self.num_dof = self.mesh.point.shape[0]
         if degree == 2:
-            if hasattr(self.mesh, "tri"):
+            Np = self.mesh.point.shape[0]
+            if self.mesh.tri.shape[0] > 0:
                 # figure out the new dofs on the edge
-                Np = self.mesh.point.shape[0]
                 Nt = self.dof_of_elem.shape[0]
                 tri_edges = self.dof_of_elem[:, [0,1,1,2,2,0]].reshape(-1, 3, 2)
                 S = csr_matrix((np.ones((3*Nt,), dtype=np.uint32), 
                             (np.min(tri_edges, axis=2).flatten(), np.max(tri_edges, axis=2).flatten())), 
                             shape=(Np, Np))
-                S.data = np.arange(S.nnz, dtype=S.dtype) + (Np+1)
-                extra_dof = S[np.min(tri_edges, axis=2), np.max(tri_edges, axis=2)].todense()
-            elif hasattr(self.mesh, "edge"):
-                extra_dof = np.arange(self.edge.shape[0]).reshape(-1, 1) + self.mesh.point.shape[0]
+                assert(S.nnz == Np + Nt - 1) # check using Euler's formula
+                S.data = np.arange(S.nnz, dtype=S.dtype) + Np
+                extra_dof = S[np.min(tri_edges, axis=2).flatten(), np.max(tri_edges, axis=2).flatten()]
+                extra_dof = extra_dof.reshape(-1, 3)
+                self.num_dof = Np + S.nnz
+            elif self.mesh.edge.shape[0] > 0:
+                extra_dof = np.arange(self.mesh.edge.shape[0], dtype=np.uint32).reshape(-1, 1) + self.mesh.point.shape[0]
+                self.num_dof = Np + self.mesh.edge.shape[0]
             self.dof_of_elem = np.hstack((self.dof_of_elem, extra_dof))
         if degree >= 3:
             raise RuntimeError("Degree {} not implemented for Lagrange element. ".format(degree))
+        

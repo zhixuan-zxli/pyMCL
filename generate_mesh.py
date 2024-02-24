@@ -1,7 +1,8 @@
+from sys import argv
 import numpy as np
 import gmsh
 
-def build_two_phase_mesh(bbox:np.ndarray, markers:np.ndarray, h_size, dist_max = 1):
+def build_two_phase_mesh(bbox:np.ndarray, markers:np.ndarray, h_size, dist_max = 1) -> None:
     """
     Build the two-phase mesh, given the interface markers. 
     bbox    [in, 2 x 2]  [[x_lo, y_lo], [x_hi, y_hi]]
@@ -72,7 +73,38 @@ def build_two_phase_mesh(bbox:np.ndarray, markers:np.ndarray, h_size, dist_max =
     gmsh.write("mesh/two-phase.msh")
     gmsh.finalize()
 
+def build_unit_square(h: float) -> None:
+    gmsh.initialize()
+    gmsh.model.add("unit_square")
+    # write the points
+    p_id = [gmsh.model.geo.addPoint(0.0, 0.0, 0.0, h), 
+            gmsh.model.geo.addPoint(1.0, 0.0, 0.0, h), 
+            gmsh.model.geo.addPoint(1.0, 1.0, 0.0, h), 
+            gmsh.model.geo.addPoint(0.0, 1.0, 0.0, h)]
+    # write the edges
+    e_id = [gmsh.model.geo.addLine(p_id[0], p_id[1]), 
+            gmsh.model.geo.addLine(p_id[1], p_id[2]), 
+            gmsh.model.geo.addLine(p_id[2], p_id[3]), 
+            gmsh.model.geo.addLine(p_id[3], p_id[0])]
+    # add the loop and the surface
+    s_1 = gmsh.model.geo.addPlaneSurface([gmsh.model.geo.addCurveLoop(e_id)])
+    gmsh.model.geo.synchronize()
+    # add physical group
+    gmsh.model.setPhysicalName(2, gmsh.model.addPhysicalGroup(2, [s_1]), "domain")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, e_id), "boundary")
+    # add periodicity
+    translation = [1.0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    gmsh.model.mesh.setPeriodic(1, [e_id[1]], [e_id[3]], translation)
+    # generate and save
+    gmsh.model.mesh.generate(dim = 2)
+    gmsh.write("mesh/unit_square.msh")
+    gmsh.finalize()
+
 if __name__ == "__main__":
-    bbox = np.array([[-1,0], [1,1]], dtype=np.float64)
-    markers = np.array([[0.5,0], [0.5, 0.25], [-0.5, 0.25], [-0.5,0]])
-    build_two_phase_mesh(bbox, markers, [0.04, 0.1], 0.5)
+    mesh_name = argv[1] if len(argv) >= 2 else "unit_square"
+    if mesh_name == "two-phase":
+        bbox = np.array([[-1,0], [1,1]], dtype=np.float64)
+        markers = np.array([[0.5,0], [0.5, 0.25], [-0.5, 0.25], [-0.5,0]])
+        build_two_phase_mesh(bbox, markers, [0.04, 0.1], 0.5)
+    elif mesh_name == "unit_square":
+        build_unit_square(0.1)
