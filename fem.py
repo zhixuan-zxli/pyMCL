@@ -3,19 +3,19 @@ from scipy.sparse import csr_matrix
 from mesh import Mesh
 from element import Element
 
-class FESpace:
+class FiniteElement:
     def __init__(self, mesh: Mesh, elem: Element, vecdim: int = 1) -> None:
         self.mesh = mesh
         self.elem = elem
         self.vecdim = vecdim
-        initializer = {"Lagrange": self.__init_Lagrange}
+        initializer = {"Lagrange": self.__init_Lagrange__}
         if not elem.type in initializer:
             raise RuntimeError("Unrecognized finite element type {}. ".format(elem.type))
         initializer[elem.type](elem.degree)
         # todo: handle periodicity here
 
-    def __init_Lagrange(self, degree: int) -> None:
-        if degree >= 1:
+    def __init_Lagrange__(self, degree: int) -> None:
+        if degree == 1:
             if self.mesh.tri.shape[0] > 0:
                 self.dof_of_elem = self.mesh.tri[:,:-1]
             elif self.mesh.edge.shape[0] > 0:
