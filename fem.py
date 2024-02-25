@@ -1,15 +1,7 @@
-from typing import Optional
 import numpy as np
 from scipy.sparse import csr_matrix
 from mesh import Mesh
-
-class Element:
-    def __init__(self, type: str, degree: int) -> None:
-        self.type = type
-        self.degree = degree
-
-    def __str__(self) -> str:
-        return "Degree-{} {} element".format(self.degree, self.type)
+from element import Element
 
 class FESpace:
     def __init__(self, mesh: Mesh, elem: Element, vecdim: int = 1) -> None:
