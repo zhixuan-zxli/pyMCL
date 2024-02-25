@@ -5,6 +5,7 @@ from matplotlib import pyplot
 if __name__ == "__main__":
     mesh = fem.Mesh()
     mesh.load("mesh/unit_square.msh")
+    u_space = fem.FiniteElement(mesh, fem.element.LagrangeTri(2))
     # u_space = fem.FESpace(mesh, fem.Element("Lagrange", "tri", 2))
     # qpts = np.array([[1.0/2, 0.0, 0.0], [1.0/2, 1.0/2, 0.0], [0.0, 1.0/2, 0.0]])
     # qpts[:,-1] = 1.0 - np.sum(qpts, axis=1)

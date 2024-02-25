@@ -14,6 +14,8 @@ class Element:
 
 class LagrangeTri(Element):
 
+    tdim: int = 2
+
     def __init__(self, degree: int) -> None:
         super().__init__("Lagrange", "triangle", degree)
         self.num_basis = {1: 3, 2: 6}[degree]
