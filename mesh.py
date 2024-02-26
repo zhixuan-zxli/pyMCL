@@ -72,41 +72,6 @@ class Mesh:
             raise RuntimeError("Submesh of dimension {} not implemented".format(sub_dim))
         return submesh
     
-    def refine(self) -> "Mesh":
-        fine_mesh = Mesh()
-        if self.tri.shape[0] > 0:
-            # identify the new nodes
-            Np = self.point.shape[0]
-            Nt = self.tri.shape[0]
-            tri_edges = self.tri[:, [0,1,1,2,2,0]].reshape(-1, 3, 2)
-            S = csr_matrix((np.ones((3*Nt,), dtype=np.uint32), 
-                        (np.min(tri_edges, axis=2).flatten(), np.max(tri_edges, axis=2).flatten())), 
-                        shape=(Np, Np))
-            assert(S.nnz == Np + Nt - 1) # check using Euler's formula
-            S.data = np.arange(S.nnz, dtype=S.dtype) + Np
-            row, col = S.nonzero()
-            # set up the new nodes
-            new_point = 0.5 * (self.point[row,:] + self.point[col,:])
-            new_point[:,-1] = 0.
-            fine_mesh.point = np.vstack((self.point, new_point))
-            # set up the new edges
-            mid_edge = S[np.min(self.edge[:,0:2], axis=1), np.max(self.edge[:,0:2], axis=1)].reshape(-1, 1)
-            fine_mesh.edge = np.block([[self.edge[:,[0]], mid_edge, self.edge[:,[2]]], [mid_edge, self.edge[:,[1]], self.edge[:,[2]]]])
-            # set up the new triangles
-            mid_tri = np.zeros((Nt, 3), dtype=np.uint32)
-            mid_tri[:,0] = S[np.min(self.tri[:,0:2], axis=1), np.max(self.tri[:,0:2], axis=1)]
-            mid_tri[:,1] = S[np.min(self.tri[:,1:3], axis=1), np.max(self.tri[:,1:3], axis=1)]
-            mid_tri[:,2] = S[np.min(self.tri[:,[0,2]], axis=1), np.max(self.tri[:,[0,2]], axis=1)]
-            fine_mesh.tri = np.block([[self.tri[:,[0]], mid_tri[:,[0]], mid_tri[:,[2]], self.tri[:,[3]]], 
-                                      [mid_tri[:,[0]], self.tri[:,[1]], mid_tri[:,[1]], self.tri[:,[3]]], 
-                                      [mid_tri[:,[1]], self.tri[:,[2]], mid_tri[:,[2]], self.tri[:,[3]]], 
-                                      [mid_tri[:,[0]], mid_tri[:,[1]], mid_tri[:,[2]], self.tri[:,[3]]]])
-        elif self.edge.shape[0] > 0:
-            raise RuntimeError("Refine 1D mesh to be implemented. ")
-        else:
-            raise RuntimeError("There is nothing to refine. ")
-        return fine_mesh
-    
     def draw(self) -> None:
         if self.tet.shape[0] > 0:
             pass

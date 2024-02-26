@@ -39,11 +39,11 @@ class FiniteElement:
             self.facet_dof = np.hstack((self.facet_dof, extra_dof))
             self.num_dof = Np + S.nnz
         if degree >= 3:
-            raise RuntimeError("Degree {} not implemented for {}".format(degree, self.elem))
+            raise NotImplementedError
         
     def getFacetDof(self, ids: Optional[List[int]] = None) -> np.ndarray:
         if self.elem.tdim == 3:
-            raise RuntimeError("getFacetDof for 3D is not implemented. ")
+            raise NotImplementedError
         if self.elem.tdim == 2:
             if ids is None:
                 return np.unique(self.facet_dof)
