@@ -52,7 +52,7 @@ class Mesh:
                 temp = self.cell[2][:, [0,1,1,2,2,0]].reshape(-1, 3, 2)
                 edge_table = np.stack((np.min(temp, axis=2), np.max(temp, axis=2)), axis=2).reshape(-1, 2)
                 edge_table = np.unique(edge_table, axis=0)
-                self.edge_table = {r.tobytes(): i for i, r in enumerate(edge_table)}
+                self.entities[1] = {r.tobytes(): i for i, r in enumerate(edge_table)}
             elif dim == 2:
                 raise NotImplementedError
         return self.entities[dim]
