@@ -2,7 +2,7 @@ from typing import List
 import meshio
 import numpy as np
 from scipy.sparse import csr_matrix
-from matplotlib.pyplot import triplot, axis
+from matplotlib import pyplot
 
 class Mesh:
     def __init__(self) -> None:
@@ -46,46 +46,52 @@ class Mesh:
                 self.tri_tag = np.hstack((self.tri_tag, data))
             else:
                 raise RuntimeError("Unrecognized cell type. ")
+            
+    def get_edge_table(self) -> dict:
+        if not hasattr(self, "edge_table"):
+            temp = self.tri[:, [0,1,1,2,2,0]].reshape(-1, 3, 2)
+            edge_table = np.stack((np.min(temp, axis=2), np.max(temp, axis=2)), axis=2).reshape(-1, 2)
+            edge_table = np.unique(edge_table, axis=0)
+            self.edge_table = {r.tobytes(): i for i, r in enumerate(edge_table)}
+        return self.edge_table
 
-    def view(self, sub_dim: int, tags: List[int]) -> "Mesh":
-        Np = self.point.shape[0]
-        submesh = Mesh()
-        if sub_dim == 0:
-            # extract the points
-            point_mask = np.zeros_like(self.point_tag, dtype=np.bool8)
-            for t in tags:
-                point_mask[self.point_tag == t] = True
-            submesh.point_map = np.arange(0, Np)[point_mask]
-            submesh.point = self.point[point_mask]
-            submesh.point_tag = self.point_tag[point_mask]
-        elif sub_dim == 1:
-            # extract the edges
-            edge_mask = np.zeros_like(self.edge_tag, dtype=np.bool8)
-            for t in tags:
-                edge_mask[self.edge_tag == t] = True
-            submesh.edge_map = np.arange(0, self.edge.shape[0], dtype=np.uint32)[edge_mask]
-            submesh.edge = self.edge[edge_mask, :]
-            submesh.edge_tag = self.edge_tag[edge_mask, :]
-            # extract the points
-            point_mask = np.zeros((Np,), dtype=np.bool8)
-            point_mask[submesh.edge.flatten()] = True
-            submesh.point_map = np.arange(0, Np, dtype=np.uint32)[point_mask]
-            submesh.point = self.point[point_mask]
-            submesh.point_tag = self.point_tag[point_mask]
-            # finally fix the edge indices
-            inv_point_map = np.cumsum(point_mask) - 1
-            submesh.edge = inv_point_map[submesh.edge.flatten()]
-            submesh.edge = submesh.edge.reshape(-1, 2)
-        else:
-            raise NotImplementedError
-        return submesh
+    # def view(self, sub_dim: int, tags: List[int]) -> "Mesh":
+    #     Np = self.point.shape[0]
+    #     submesh = Mesh()
+    #     if sub_dim == 0:
+    #         # extract the points
+    #         point_mask = np.zeros_like(self.point_tag, dtype=np.bool8)
+    #         for t in tags:
+    #             point_mask[self.point_tag == t] = True
+    #         submesh.point_map = np.arange(0, Np)[point_mask]
+    #         submesh.point = self.point[point_mask]
+    #         submesh.point_tag = self.point_tag[point_mask]
+    #     elif sub_dim == 1:
+    #         # extract the edges
+    #         edge_mask = np.zeros_like(self.edge_tag, dtype=np.bool8)
+    #         for t in tags:
+    #             edge_mask[self.edge_tag == t] = True
+    #         submesh.edge_map = np.arange(0, self.edge.shape[0], dtype=np.uint32)[edge_mask]
+    #         submesh.edge = self.edge[edge_mask, :]
+    #         submesh.edge_tag = self.edge_tag[edge_mask, :]
+    #         # extract the points
+    #         point_mask = np.zeros((Np,), dtype=np.bool8)
+    #         point_mask[submesh.edge.flatten()] = True
+    #         submesh.point_map = np.arange(0, Np, dtype=np.uint32)[point_mask]
+    #         submesh.point = self.point[point_mask]
+    #         submesh.point_tag = self.point_tag[point_mask]
+    #         # finally fix the edge indices
+    #         inv_point_map = np.cumsum(point_mask) - 1
+    #         submesh.edge = inv_point_map[submesh.edge.flatten()]
+    #         submesh.edge = submesh.edge.reshape(-1, 2)
+    #     else:
+    #         raise NotImplementedError
+    #     return submesh
     
     def draw(self) -> None:
-        if self.tet.shape[0] > 0:
-            pass
-        elif self.tri.shape[0] > 0:
-            triplot(self.point[:,0], self.point[:,1], self.tri[:,:-1])
+        if self.tri.shape[0] > 0:
+            pyplot.triplot(self.point[:,0], self.point[:,1], self.tri)
         elif self.edge.shape[0] > 0:
             pass
-        axis("equal")
+        pyplot.axis("equal")
 

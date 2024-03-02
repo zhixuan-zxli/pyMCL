@@ -2,8 +2,9 @@ from typing import Optional, Type
 import numpy as np
 from scipy.sparse import csr_matrix
 from mesh import Mesh
-from fem import FiniteElement
-from quadrature import QuadTable
+from element import *
+from fe import FiniteElement
+# from quadrature import QuadTable
 
 class QuadData(np.ndarray):
     """
@@ -47,18 +48,18 @@ class Function(np.ndarray):
         pass
 
 class Measure:
-    def __init__(self, mesh: Mesh, type: str, sub_id: Optional[int] = None) -> None:
+    def __init__(self, mesh: Mesh, type: str, sub_id: int = 0) -> None:
         self.mesh = mesh
         self.sub_id = sub_id
 
 class bulkMeasure(Measure):
-    def __init__(self, mesh: Mesh, type: str, sub_id: Optional[int] = None) -> None:
+    def __init__(self, mesh: Mesh, type: str, sub_id: int = 0) -> None:
         super().__init__(mesh, type, sub_id)
 
     # routine for generating gradients, cell normal and Jacobian
 
 class surfaceMeasure(Measure):
-    def __init__(self, mesh: Mesh, type: str, sub_id: Optional[int] = None) -> None:
+    def __init__(self, mesh: Mesh, type: str, sub_id: int = 0) -> None:
         super().__init__(mesh, type, sub_id)
 
     # routine for generating gradients, cell normal and Jacobian
@@ -77,8 +78,21 @@ class assembler:
         if trial_space is not None:
             assert(test_space.mesh is trial_space.mesh)
 
-    def assembleLinear(self, form, mea: Measure, **kwargs) -> np.ndarray:
-        raise NotImplementedError
+    def assembleLinear(self, form, mea: Measure, order: int, **kwargs) -> np.ndarray:
+        if isinstance(mea, bulkMeasure):
+            dof_flag = None if mea.sub_id == None else self.test_space.cell_tag == mea.sub_id
+            if self.test_space.elem.tdim == 2:
+                return self._assembleLinearD2(form, self.test_space.cell_dof, dof_flag, order, kwargs)
+            if self.test_space.elem.tdim == 1:
+                return self._assembleLinearD1(form, self.test_space.cell_dof, dof_flag, order, kwargs)
+        elif isinstance(mea, surfaceMeasure):
+            raise NotImplementedError
+        
+    def _assembleLinearD2(self, form, dof, dof_flag, order: int, **kwargs) -> np.ndarray:
+        pass
+
+    def _assembleLinearD1(self, form, mea: Measure, order: int, **kwargs) -> np.ndarray:
+        pass
     
     def assembleBilinear(self, form, mea: Measure, **kwargs) -> csr_matrix:
         raise NotImplementedError
