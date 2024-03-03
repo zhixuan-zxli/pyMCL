@@ -28,11 +28,17 @@ class QuadData(np.ndarray):
         else:
             obj = value.view(cls)
         obj.grad = None
+        obj.dx = None
+        obj.n = None
+        obj.inv_grad = None
         return obj
     
     def __array_finalize__(self, obj) -> None:
         if obj is None: return
         self.grad = getattr(obj, "grad", None)
+        self.dx = getattr(obj, "dx", None)
+        self.n = getattr(obj, "n", None)
+        self.inv_grad = getattr(obj, "inv_grad", None)
 
     def __array_wrap__(self, out_arr, context=None):
         # invalidate the attributes
@@ -65,7 +71,7 @@ class Function(np.ndarray):
     
     def _get_quad_data(self, hint, mea: Measure, quadTable: np.ndarray) -> QuadData:
         """
-        hint can be {"grad", "dx", "inv_grad", "n"}
+        See the doc of QuadData for hints. 
         """
         # check cache
         dof = self.fe.getCellDof(mea.tdim, mea.sub_id)
@@ -87,7 +93,7 @@ class Function(np.ndarray):
                 basis_grad = basis_provider._eval_grad(i, quadTable) # (rdim, tdim, num_quad)
                 grad = grad + self[:, np.newaxis, dof[:,i], np.newaxis] * basis_grad[:, :, np.newaxis, :]
             if not self.isMeshMapping:
-                mapping = self.fe.mesh.mapping._get_quad_data("inv_grad", mea, quadTable) # (tdim, gdim, Ne, num_quad)
+                mapping = self.fe.mesh.mapping._get_quad_data(["grad", "inv_grad"], mea, quadTable) # (tdim, gdim, Ne, num_quad)
                 grad = np.einsum("ij...,jk...->ik...", grad, mapping.inv_grad)
             data.grad = grad # (rdim, gdim, Ne, num_quad)
         if "dx" in hint:
@@ -96,7 +102,7 @@ class Function(np.ndarray):
                 data.dx = np.sqrt(np.squeeze(np.sum(grad**2, axis=0))) # (Ne, num_quad)
             elif mea.tdim == 2:
                 temp = np.cross(grad[:, 0, :, :], grad[:, 1, :, :], axis=0)
-                data.dx = np.sqrt(np.squeeze(np.sum(temp**2, axis=0)))
+                data.dx = np.sqrt(np.squeeze(np.sum(temp**2, axis=0))) # (Ne, num_quad)
             else:
                 raise NotImplementedError
         if "n" in hint:
@@ -108,11 +114,29 @@ class Function(np.ndarray):
                 data.n[0, :] = t[1, :]
                 data.n[1, :] = -t[0, :]
             elif mea.tdim == 2:
-                pass
+                assert(rdim == 3)
+                temp = np.cross(grad[:, 0, :, :], grad[:, 1, :, :], axis=0) # (3, Ne, num_quad)
+                data.n = temp / data.dx[np.newaxis, :, :]
             else:
                 raise RuntimeError("Cannot calculate the normal of a 3D cell. ")
         if "inv_grad" in hint:
-            pass
+            assert(self.isMeshMapping)
+            if self.fe.tdim == 1 and rdim == 1:
+                data.inv_grad = 1.0 / data.grad
+            elif self.fe.tdim == 1 and rdim == 2:
+                temp = np.squeeze(data.grad) # (2, Ne, num_quad)
+                data.inv_grad = (temp / data.dx[np.newaxis, :, :]**2).reshape(1, 2, data.grad.shape[2], data.grad.shape[3])
+            elif self.fe.tdim == 2 and rdim == 2:
+                data.inv_grad = np.zeros_like(data.grad)
+                data.inv_grad[0, 0, :, :] = data.grad[1, 1, :, :] / data.dx
+                data.inv_grad[0, 1, :, :] = -data.grad[0, 1, :, :] / data.dx
+                data.inv_grad[1, 0, :, :] = -data.grad[1, 0, :, :] / data.dx
+                data.inv_grad[1, 1, :, :] = data.grad[0, 0, :, :] / data.dx
+            elif self.fe.tdim == 2 and rdim == 3:
+                data.inv_grad = np.zeros((2, 3, data.grad.shape[2], data.grad.shape[3]))
+            else:
+                raise RuntimeError("Unable to calculate inv_grad for tdim={} and rdim={}.".format(self.fe.tdim, rdim))
+        # todo: conormal
         return data
     
 

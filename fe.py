@@ -6,12 +6,12 @@ class FiniteElement:
 
     tdim: int
     rdim: int
+    degree: int
     num_copy: int
     num_dof_per_elem: int
     num_dof_per_dim: np.ndarray
     num_dof: int
     mesh: Mesh
-    name: str
     # cell_dof
 
     def getCellDof(self, dim: int, sub_ids = None) -> np.ndarray:
@@ -31,7 +31,27 @@ class FiniteElement:
         return self.cell_dof[dim][flag]
     
 class NodeElement(FiniteElement):
-    pass
+
+    tdim: int = 0
+    rdim: int = 1
+    degree: int = 0
+    
+    def __init__(self, mesh: Mesh, num_copy: int = 1) -> None:
+        self.num_copy = num_copy
+        self.num_dof_per_elem = 1
+        self.num_dof_per_dim = None
+        self.num_dof = 1
+        self.mesh = mesh
+
+    @classmethod
+    def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray:
+        assert(basis_id == 0)
+        return np.ones((1, qpts.shape[1]))
+    
+    @classmethod
+    def _eval_grad(basis_id: int, qpts: np.ndarray) -> np.ndarray:
+        raise RuntimeError("Evalating gradient of a node element. ")
+
     
 class LineElement(FiniteElement):
     pass
@@ -41,7 +61,6 @@ class LineP2(LineElement):
     tdim: int = 1
     rdim: int = 1
     num_dof_per_elem: int = 3
-    name: str = "Edge P2"
     trace_type = [NodeElement]
 
     # todo
@@ -54,10 +73,9 @@ class TriP2(TriElement):
     tdim: int = 2
     rdim: int = 1
     num_dof_per_elem: int = 6
-    name: str = "Triangular P2"
     trace_type = [NodeElement, LineP2]
 
-    def __init__(self, mesh: Mesh, num_copy: int) -> None:
+    def __init__(self, mesh: Mesh, num_copy: int = 1) -> None:
         self.mesh = mesh
         assert(mesh.cell[2].shape[0] > 0)
         self.num_copy = num_copy
@@ -83,9 +101,11 @@ class TriP2(TriElement):
             edge_table[r.tobytes()] for r in temp
         ], dtype=np.uint32)
         self.cell_dof[1][:, -1] = mesh.cell[1][:, -1]
+        # build the node dofs
+        # ...
 
     @classmethod
-    def _eval_basis(basis_id:int, qpts: np.ndarray) -> np.ndarray: # rdim(=1) * num_quad
+    def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # rdim(=1) * num_quad
         assert(basis_id < TriP2.num_dof_per_elem)
         x = qpts[0]
         y = qpts[1]
