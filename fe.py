@@ -6,6 +6,7 @@ class FiniteElement:
 
     tdim: int
     rdim: int
+    num_copy: int
     num_dof_per_elem: int
     num_dof_per_dim: np.ndarray
     num_dof: int
@@ -13,7 +14,7 @@ class FiniteElement:
     name: str
     # cell_dof
 
-    def getDof(self, dim: int, sub_ids = None) -> np.ndarray:
+    def getCellDof(self, dim: int, sub_ids = None) -> np.ndarray:
         if dim == 0:
             if sub_ids == None:
                 return np.arange(self.num_dof_per_dim[0], dtype=np.uint32)
@@ -23,31 +24,43 @@ class FiniteElement:
                     flag[self.mesh.point_tag == i] = True
                 return np.nonzero(flag)[0].astype(np.uint32)
         if sub_ids == None:
-            return self.cell_dof[dim][:, :-1].unique()
+            return self.cell_dof[dim]
         flag = np.zeros((self.cell_dof[dim].shape[0], ), np.bool8)
         for t in sub_ids:
             flag[self.cell_dof[dim][:, -1] == t] = True
-        return self.cell_dof[dim][flag, :-1].unique()
+        return self.cell_dof[dim][flag]
+    
+class NodeElement(FiniteElement):
+    pass
+    
+class LineElement(FiniteElement):
+    pass
 
-class EdgeP2(FiniteElement):
+class LineP2(LineElement):
     
     tdim: int = 1
     rdim: int = 1
     num_dof_per_elem: int = 3
     name: str = "Edge P2"
-    trace_type = None
+    trace_type = [NodeElement]
 
-class TriP2(FiniteElement):
+    # todo
+
+class TriElement(FiniteElement):
+    pass
+
+class TriP2(TriElement):
 
     tdim: int = 2
     rdim: int = 1
     num_dof_per_elem: int = 6
     name: str = "Triangular P2"
-    trace_type = EdgeP2
+    trace_type = [NodeElement, LineP2]
 
-    def __init__(self, mesh: Mesh) -> None:
+    def __init__(self, mesh: Mesh, num_copy: int) -> None:
         self.mesh = mesh
         assert(mesh.cell[2].shape[0] > 0)
+        self.num_copy = num_copy
         edge_table = mesh.get_entities(1)
         self.num_dof_per_dim = np.array([mesh.point.shape[0], len(edge_table)], dtype=np.uint32)
         self.num_dof = np.sum(self.num_dof_per_dim)
@@ -72,38 +85,40 @@ class TriP2(FiniteElement):
         self.cell_dof[1][:, -1] = mesh.cell[1][:, -1]
 
     @classmethod
-    def _eval_basis(basis_id:int, qpts: np.ndarray) -> np.ndarray:
+    def _eval_basis(basis_id:int, qpts: np.ndarray) -> np.ndarray: # rdim(=1) * num_quad
         assert(basis_id < TriP2.num_dof_per_elem)
-        x = qpts[0, :]
-        y = qpts[1, :]
+        x = qpts[0]
+        y = qpts[1]
         if basis_id == 0:
-            return 2.0*x**2 - 3.0*x + 1.0 + 2.0*y**2 - 3.0*y + 4.0*x*y
-        if basis_id == 1:
-            return 2.0*x*(x-1.0/2)
-        if basis_id == 2:
-            return 2.0*y*(y-1.0/2)
-        if basis_id == 3:
-            return -4.0*x*(x+y-1)
-        if basis_id == 4:
-            return 4.0*x*y
-        if basis_id == 5:
-            return -4.0*y*(x+y-1)
+            basis = 2.0*x**2 - 3.0*x + 1.0 + 2.0*y**2 - 3.0*y + 4.0*x*y
+        elif basis_id == 1:
+            basis = 2.0*x*(x-1.0/2)
+        elif basis_id == 2:
+            basis = 2.0*y*(y-1.0/2)
+        elif basis_id == 3:
+            basis = -4.0*x*(x+y-1)
+        elif basis_id == 4:
+            basis = 4.0*x*y
+        elif basis_id == 5:
+            basis = -4.0*y*(x+y-1)
+        return basis.reshape(1, -1)
     
     @classmethod
-    def _eval_grad(basis_id:int, qpts: np.ndarray) -> np.ndarray:
+    def _eval_grad(basis_id:int, qpts: np.ndarray) -> np.ndarray: # rdim(=1) * tdim(=2) * num_quad
         assert(basis_id < TriP2.num_dof_per_elem)
-        x = qpts[0, :]
-        y = qpts[1, :]
+        x = qpts[0]
+        y = qpts[1]
         if basis_id == 0:
-            return np.vstack((4.0*x+4.0*y-3.0, 4.0*x+4.0*y-3.0))
-        if basis_id == 1:
-            return np.vstack((4.0*x-1.0, 0.0*y))
-        if basis_id == 2:
-            return np.vstack((0.0*x, 4.0*y-1.0))
-        if basis_id == 3:
-            return np.vstack((-8.0*x-4.0*y+4.0, -4.0*x))
-        if basis_id == 4:
-            return np.vstack((4.0*y, 4.0*x))
-        if basis_id == 5:
-            return np.vstack((-4.0*y, -4.0*x-8.0*y+4.0))
+            data = np.vstack((4.0*x+4.0*y-3.0, 4.0*x+4.0*y-3.0))
+        elif basis_id == 1:
+            data = np.vstack((4.0*x-1.0, 0.0*y))
+        elif basis_id == 2:
+            data = np.vstack((0.0*x, 4.0*y-1.0))
+        elif basis_id == 3:
+            data = np.vstack((-8.0*x-4.0*y+4.0, -4.0*x))
+        elif basis_id == 4:
+            data = np.vstack((4.0*y, 4.0*x))
+        elif basis_id == 5:
+            data = np.vstack((-4.0*y, -4.0*x-8.0*y+4.0))
+        return data[np.newaxis, :, :]
         
