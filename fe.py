@@ -1,44 +1,71 @@
-# from typing import Optional
+from typing import Optional
 import numpy as np
-from mesh import *
+from mesh import Mesh
+
+class Measure:
+    def __init__(self, mesh: Mesh, tdim: int, sub_id: Optional[int] = None) -> None:
+        self.mesh = mesh
+        self.tdim = tdim
+        self.sub_id = sub_id
+
+class RefCell:
+    tdim: int
+    dx: float
+
+class RefNode(RefCell):
+    tdim: int = 0
+    dx: float = 0.0
+
+class RefLine(RefCell):
+    tdim: int = 1
+    dx: float = 1.0
+
+class RefTri(RefCell):
+    tdim: int = 2
+    dx: float = 1.0/2
 
 class FiniteElement:
 
+    # class attributes
+    ref_cell: RefCell
     tdim: int
     rdim: int
     degree: int
-    num_copy: int
     num_dof_per_elem: int
+
+    # finite element attributes
+    num_copy: int
     num_dof_per_dim: np.ndarray
     num_dof: int
     mesh: Mesh
     # cell_dof
 
-    def getCellDof(self, dim: int, sub_ids = None) -> np.ndarray:
-        if dim == 0:
-            if sub_ids == None:
+    def getCellDof(self, mea: Measure) -> np.ndarray:
+        if mea.tdim == 0:
+            if mea.sub_id == None:
                 return np.arange(self.num_dof_per_dim[0], dtype=np.uint32)
             else:
                 flag = np.zeros((self.mesh.point.shape[0], ), np.bool8)
-                for i in sub_ids:
+                for i in mea.sub_id:
                     flag[self.mesh.point_tag == i] = True
                 return np.nonzero(flag)[0].astype(np.uint32)
-        if sub_ids == None:
-            return self.cell_dof[dim]
-        flag = np.zeros((self.cell_dof[dim].shape[0], ), np.bool8)
-        for t in sub_ids:
-            flag[self.cell_dof[dim][:, -1] == t] = True
-        return self.cell_dof[dim][flag]
+        if mea.sub_id == None:
+            return self.cell_dof[mea.tdim]
+        flag = np.zeros((self.cell_dof[mea.tdim].shape[0], ), np.bool8)
+        for t in mea.sub_id:
+            flag[self.cell_dof[mea.tdim][:, -1] == t] = True
+        return self.cell_dof[mea.tdim][flag]
     
 class NodeElement(FiniteElement):
 
+    ref_cell = RefNode
     tdim: int = 0
     rdim: int = 1
     degree: int = 0
+    num_dof_per_elem: int = 1
     
     def __init__(self, mesh: Mesh, num_copy: int = 1) -> None:
         self.num_copy = num_copy
-        self.num_dof_per_elem = 1
         self.num_dof_per_dim = None
         self.num_dof = 1
         self.mesh = mesh
@@ -52,26 +79,36 @@ class NodeElement(FiniteElement):
     def _eval_grad(basis_id: int, qpts: np.ndarray) -> np.ndarray:
         raise RuntimeError("Evalating gradient of a node element. ")
 
-    
+
+# =====================================================================
+# Line elements    
+
 class LineElement(FiniteElement):
-    pass
+    
+    ref_cell = RefLine
+    tdim: int = 1
 
 class LineP2(LineElement):
     
-    tdim: int = 1
     rdim: int = 1
+    degree: int = 2
     num_dof_per_elem: int = 3
     trace_type = [NodeElement]
 
-    # todo
+    # todo <<<<<<<<
+
+# =====================================================================
+# Triangular elements
 
 class TriElement(FiniteElement):
-    pass
+    
+    ref_cell = RefTri
+    tdim: int = 2
 
 class TriP2(TriElement):
 
-    tdim: int = 2
     rdim: int = 1
+    degree: int = 2
     num_dof_per_elem: int = 6
     trace_type = [NodeElement, LineP2]
 
@@ -101,8 +138,6 @@ class TriP2(TriElement):
             edge_table[r.tobytes()] for r in temp
         ], dtype=np.uint32)
         self.cell_dof[1][:, -1] = mesh.cell[1][:, -1]
-        # build the node dofs
-        # ...
 
     @classmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # rdim(=1) * num_quad
