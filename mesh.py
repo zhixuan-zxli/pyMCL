@@ -3,6 +3,15 @@ import numpy as np
 from matplotlib import pyplot
 
 class Mesh:
+
+    gdim: int
+    tdim: int
+    point: np.ndarray
+    point_tag: np.ndarray
+    # cell
+    # entities
+    mapping: "Function"
+
     def __init__(self) -> None:
         self.point = None
         self.point_tag = None

@@ -1,7 +1,11 @@
 import numpy as np
-from fe import LineElement, TriElement
+from fe import RefCell, RefNode, RefLine, RefTri
 
 class Quadrature:
+
+    _node = np.array(
+        [[0.0, 1.0]]
+    ).T
 
     _tri_O3 = np.array(
         [[1.0/2, 0.0, 1.0/2, 1.0/3], 
@@ -18,12 +22,13 @@ class Quadrature:
     ).T
     
     @staticmethod
-    def getTable(elemType, order: int) -> np.array:
-        if issubclass(elemType, LineElement):
-            raise NotImplementedError
-        if issubclass(elemType, TriElement):
+    def getTable(cellType: type, order: int) -> np.array:
+        if type == RefNode:
+            print("Retriving quadrature table for node. ")
+            return Quadrature._node
+        if type == RefTri:
             if order == 3:
                 return Quadrature._tri_O3
             if order == 4:
                 return Quadrature._tri_O4
-            raise NotImplementedError
+        raise NotImplementedError

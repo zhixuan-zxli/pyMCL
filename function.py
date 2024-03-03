@@ -67,7 +67,7 @@ class Function(np.ndarray):
         num_dof_per_elem = basis_type.num_dof_per_elem
         rdim = np.maximum(self.fe.num_copy, self.fe.rdim)
         data = None
-        if "basis" in hint:
+        if "f" in hint:
             data = np.zeros((rdim, cell_dof.shape[0], quadTable.shape[1]))
             for i in range(num_dof_per_elem):
                 basis = basis_type._eval_basis(i, quadTable) # (rdim, num_quad)
