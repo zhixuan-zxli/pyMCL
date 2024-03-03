@@ -1,11 +1,11 @@
-import numpy as np
+# import numpy as np
 import fe
 from matplotlib import pyplot
 
 if __name__ == "__main__":
     mesh = fe.Mesh()
     mesh.load("mesh/unit_square.msh")
-    u_space = fe.FiniteElement()
+    u_space = fe.TriP2(mesh)
     # u_space = fem.FESpace(mesh, fem.Element("Lagrange", "tri", 2))
     # qpts = np.array([[1.0/2, 0.0, 0.0], [1.0/2, 1.0/2, 0.0], [0.0, 1.0/2, 0.0]])
     # qpts[:,-1] = 1.0 - np.sum(qpts, axis=1)
