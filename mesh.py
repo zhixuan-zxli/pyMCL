@@ -10,7 +10,8 @@ class Mesh:
     point_tag: np.ndarray
     # cell
     # entities
-    mapping: "Function"
+    # coord_fe: "FiniteElement"
+    # coord_map: "Function"
 
     def __init__(self) -> None:
         self.point = None
@@ -68,7 +69,7 @@ class Mesh:
     
     def draw(self) -> None:
         if self.tdim == 3:
-            pass
+            print("Unable to visualize 3D mesh. ")
         elif self.tdim == 2:
             if self.gdim == 2:
                 pyplot.triplot(self.point[:,0], self.point[:,1], self.cell[2][:, :-1])
@@ -76,6 +77,6 @@ class Mesh:
                 # use plot_trisurf
                 raise NotImplementedError
         elif self.tdim == 1:
-            pass
+            raise NotImplementedError
         pyplot.axis("equal")
 

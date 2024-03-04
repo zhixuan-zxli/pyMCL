@@ -1,6 +1,6 @@
 import numpy as np
 
-def printConvergenceTable(mesh_table, error_table):
+def printConvergenceTable(mesh_table, error_table) -> None:
     """ 
     Print the convergence table. 
     mesh_table: a list of string for mesh sizes as table headers. 

@@ -1,21 +1,18 @@
 # import numpy as np
-import fe
+from mesh import Mesh
+from fe import Measure, TriP2
+from function import Function
+from assemble import assembler, setMeshMapping
 from matplotlib import pyplot
 
 if __name__ == "__main__":
-    mesh = fe.Mesh()
+    mesh = Mesh()
     mesh.load("mesh/unit_square.msh")
-    u_space = fe.TriP2(mesh)
-    # u_space = fem.FESpace(mesh, fem.Element("Lagrange", "tri", 2))
-    # qpts = np.array([[1.0/2, 0.0, 0.0], [1.0/2, 1.0/2, 0.0], [0.0, 1.0/2, 0.0]])
-    # qpts[:,-1] = 1.0 - np.sum(qpts, axis=1)
-    # qpts = qpts.T
-    # phi, dphidx, dphidy = u_space.elem.basis(qpts)
-    # import element
-    # elem = element.LagrangeTri(2)
-    # elem.eval_basis(5, np.array([1]))
-    # print(elem)
-    # pyplot.figure()
-    # mesh.draw()
-    # pyplot.show()
+    setMeshMapping(mesh)
+    space = TriP2(mesh)
+    dx = Measure(2, None)
+    asm = assembler(space, None, dx, 4)
+    pyplot.figure()
+    mesh.draw()
+    pyplot.show()
     pass

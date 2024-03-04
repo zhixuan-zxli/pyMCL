@@ -117,7 +117,7 @@ class TriP1(TriElement):
 
     rdim: int = 1
     degree: int = 1
-    num_dof_per_elem: int
+    num_dof_per_elem: int = 3
     trace_type = [NodeElement, LineP1]
 
     def __init__(self, mesh: Mesh, num_copy: int = 1) -> None:
