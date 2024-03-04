@@ -25,11 +25,11 @@ class assembler:
         # trial space
         self.trial_basis, self.trial_dof = self._get_basis_and_dof(trial_space)
         # geometric mapping space
-        geom_space = test_space.mesh.mapping.fe
+        geom_space = test_space.mesh.coord_fe
         geom_basis, geom_dof = self._get_basis_and_dof(geom_space)
         if geom_hint is None:
-            geom_hint = ("f", "grad", "dx", "inv_grad", "n")
-        self.geom_data = test_space.mesh.mapping._get_quad_data(geom_dof, mea.tdim, geom_basis, self.quadTable, geom_hint)
+            geom_hint = ("f", "grad", "dx", "inv_grad")
+        self.geom_data = test_space.mesh.coord_map._get_quad_data(geom_basis, geom_dof, None, self.quadTable, geom_hint)
 
     def _get_basis_and_dof(self, fe: FiniteElement) -> tuple[type, np.ndarray]:
         """
@@ -46,9 +46,8 @@ class assembler:
 
     def assembleFunctional(self, form, **extra_args) -> float | np.ndarray:
         # convert the args into QuadData
-        extra_data = {"x": self.geom_data}
+        extra_data = dict()
         for k, v in extra_args.items():
-            assert k != "x"
             if isinstance(v, QuadData):
                 extra_data[k] = v
             elif isinstance(v, Function):
@@ -56,7 +55,7 @@ class assembler:
                 extra_data[k] = v._get_quad_data(dof, self.mea.tdim, basis, self.quadTable, form.hint)
             else:
                 raise RuntimeError("Unable to convert extra argument to QuadData. ")
-        data = self.test_space.ref_cell.dx * form(extra_data) # (rdim, Ne, num_quad)
+        data = self.test_space.ref_cell.dx * form(self.geom_data, extra_data) # (rdim, Ne, num_quad)
         Ne = data.shape[1] if data.ndim > 2 else data.shape[0]
         Nq = data.shape[-1]
         data = data.reshape(-1, Nq) @ self.quadTable[-1, :]
@@ -77,7 +76,13 @@ class assembler:
 def setMeshMapping(mesh: Mesh, mapping: Optional[Function] = None):
     if mapping is None:
         # set an affine mapping
-        raise NotImplementedError
+        if mesh.tdim == 2:
+            from fe import TriP1
+            mesh.coord_fe = TriP1(mesh, mesh.gdim)
+            mesh.coord_map = Function(mesh.coord_fe)
+            np.copyto(mesh.coord_map, mesh.point.T)
+        else:
+            raise NotImplementedError
     else:
         mesh.mapping = mapping
     

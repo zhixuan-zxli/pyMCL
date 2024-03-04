@@ -132,7 +132,7 @@ class TriP1(TriElement):
         # build the facet dofs
         self.cell_dof[1] = self.mesh.cell[1]
 
-    @classmethod
+    @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # rdim(=1) * num_quad
         x = qpts[0]
         y = qpts[1]

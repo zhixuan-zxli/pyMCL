@@ -39,33 +39,28 @@ class Function(np.ndarray):
     Array of size num_dof. 
     """
     fe: FiniteElement
-    # is this function is a mapping, then there is no chain rule when evaluating gradients. 
-    isMeshMapping: bool
     
-    def __new__(cls, fe: FiniteElement, isMeshMapping: bool = False):
+    def __new__(cls, fe: FiniteElement):
         obj = np.zeros((fe.num_copy, fe.num_dof)).view(cls)
         obj.fe = fe
-        obj.isMeshMapping = isMeshMapping
         return obj
     
     def __array_finalize__(self, obj) -> None:
         if obj is None:
             return
         self.fe = getattr(obj, "fe", None)
-        self.isMeshMapping = getattr(obj, "isMeshMapping", False)
 
     def __array_wrap__(self, out_arr, context=None):
         out_arr.fe = self.fe
-        out_arr.isMeshMapping = self.isMeshMapping
         return out_arr
     
-    def _get_quad_data(self, cell_dof: np.ndarray, tdim: int, basis_type, quadTable: np.ndarray, hint) -> QuadData:
+    def _get_quad_data(self, basis_type, cell_dof: np.ndarray, x: Optional[QuadData], quadTable: np.ndarray, hint) -> QuadData:
         """
         See the doc of QuadData for hints. 
         """
-        # todo: check cache
+        tdim = basis_type.tdim
         num_dof_per_elem = basis_type.num_dof_per_elem
-        rdim = np.maximum(self.fe.num_copy, self.fe.rdim)
+        rdim = max(self.fe.num_copy, self.fe.rdim)
         data = None
         if "f" in hint:
             data = np.zeros((rdim, cell_dof.shape[0], quadTable.shape[1]))
@@ -78,12 +73,11 @@ class Function(np.ndarray):
             for i in range(num_dof_per_elem):
                 basis_grad = basis_type._eval_grad(i, quadTable) # (rdim, tdim, num_quad)
                 grad = grad + self[:, np.newaxis, cell_dof[:,i], np.newaxis] * basis_grad[:, :, np.newaxis, :]
-            if not self.isMeshMapping:
-                mapping = self.fe.mesh.mapping._get_quad_data(cell_dof, tdim, basis_type, quadTable, ["grad", "inv_grad"]) # (tdim, gdim, Ne, num_quad)
-                grad = np.einsum("ij...,jk...->ik...", grad, mapping.inv_grad)
+            if x is not None:
+                grad = np.einsum("ij...,jk...->ik...", grad, x.inv_grad)
             data.grad = grad # (rdim, gdim, Ne, num_quad)
         if "dx" in hint:
-            assert(self.isMeshMapping)
+            assert x is None
             if tdim == 1:
                 data.dx = np.sqrt(np.squeeze(np.sum(grad**2, axis=0))) # (Ne, num_quad)
             elif tdim == 2:
@@ -93,7 +87,7 @@ class Function(np.ndarray):
             else:
                 raise NotImplementedError
         if "n" in hint:
-            assert(self.isMeshMapping)
+            assert x is None
             if tdim == 1:
                 assert(rdim == 2)
                 t = np.squeeze(grad) / data.dx[np.newaxis, :, :]
@@ -107,7 +101,7 @@ class Function(np.ndarray):
             else:
                 raise RuntimeError("Cannot calculate the normal of a 3D cell. ")
         if "inv_grad" in hint:
-            assert(self.isMeshMapping)
+            assert x is None
             if self.fe.tdim == 1 and rdim == 1:
                 data.inv_grad = 1.0 / data.grad
             elif self.fe.tdim == 1 and rdim == 2:
