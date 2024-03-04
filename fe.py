@@ -3,8 +3,7 @@ import numpy as np
 from mesh import Mesh
 
 class Measure:
-    def __init__(self, mesh: Mesh, tdim: int, sub_id: Optional[int] = None) -> None:
-        self.mesh = mesh
+    def __init__(self, tdim: int, sub_id: Optional[int] = None) -> None:
         self.tdim = tdim
         self.sub_id = sub_id
 
@@ -70,12 +69,12 @@ class NodeElement(FiniteElement):
         self.num_dof = 1
         self.mesh = mesh
 
-    @classmethod
+    @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray:
         assert(basis_id == 0)
         return np.ones((1, qpts.shape[1]))
     
-    @classmethod
+    @staticmethod
     def _eval_grad(basis_id: int, qpts: np.ndarray) -> np.ndarray:
         raise RuntimeError("Evalating gradient of a node element. ")
 
@@ -87,6 +86,15 @@ class LineElement(FiniteElement):
     
     ref_cell = RefLine
     tdim: int = 1
+
+class LineP1(FiniteElement):
+
+    rdim: int = 1
+    degree: int = 1
+    num_dof_per_elem: int = 2
+    trace_type = [NodeElement]
+
+    # todo <<<<<<<<
 
 class LineP2(LineElement):
     
@@ -104,6 +112,49 @@ class TriElement(FiniteElement):
     
     ref_cell = RefTri
     tdim: int = 2
+
+class TriP1(TriElement):
+
+    rdim: int = 1
+    degree: int = 1
+    num_dof_per_elem: int
+    trace_type = [NodeElement, LineP1]
+
+    def __init__(self, mesh: Mesh, num_copy: int = 1) -> None:
+        self.mesh = mesh
+        assert(mesh.cell[2].shape[0] > 0)
+        self.num_copy = num_copy
+        self.num_dof_per_dim = np.array((mesh.point.shape[0]), dtype=np.uint32)
+        self.num_dof = mesh.point.shape[0]
+        self.cell_dof = [None] * 3
+        # build cell dofs
+        self.cell_dof[2] = self.mesh.cell[2]
+        # build the facet dofs
+        self.cell_dof[1] = self.mesh.cell[1]
+
+    @classmethod
+    def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # rdim(=1) * num_quad
+        x = qpts[0]
+        y = qpts[1]
+        if basis_id == 0:
+            basis = 1.0 - x - y
+        elif basis_id == 1:
+            basis = x
+        elif basis_id == 2:
+            basis = y
+        return basis.reshape(1, -1)
+    
+    @staticmethod
+    def _eval_grad(basis_id:int, qpts: np.ndarray) -> np.ndarray: # rdim(=1) * tdim(=2) * num_quad
+        x = qpts[0]
+        y = qpts[1]
+        if basis_id == 0:
+            data = np.vstack((-np.ones_like(x), -np.ones_like(y)))
+        elif basis_id == 1:
+            data = np.vstack((np.ones_like(x), np.zeros_like(y)))
+        elif basis_id == 2:
+            data = np.vstack((np.zeros_like(x), np.ones_like(y)))
+        return data[np.newaxis, :, :]
 
 class TriP2(TriElement):
 
@@ -131,7 +182,7 @@ class TriP2(TriElement):
         self.cell_dof[2][:, 3:-1] = temp.reshape(-1, 3)
         self.cell_dof[2][:, -1] = mesh.cell[2][:, -1]
         # build the facet dofs
-        self.cell_dof[1] = np.zeros((mesh.cell[1].shape[0], self.trace_type.num_dof_per_elem + 1), dtype=np.uint32)
+        self.cell_dof[1] = np.zeros((mesh.cell[1].shape[0], self.trace_type[1].num_dof_per_elem + 1), dtype=np.uint32)
         self.cell_dof[1][:, :2] = mesh.cell[1][:, :2]
         temp = np.vstack((np.min(mesh.cell[1][:, :-1], axis=1), np.max(mesh.cell[1][:, :-1], axis=1))).T
         self.cell_dof[1][:, 2] = np.array([
@@ -139,7 +190,7 @@ class TriP2(TriElement):
         ], dtype=np.uint32)
         self.cell_dof[1][:, -1] = mesh.cell[1][:, -1]
 
-    @classmethod
+    @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # rdim(=1) * num_quad
         assert(basis_id < TriP2.num_dof_per_elem)
         x = qpts[0]
@@ -158,7 +209,7 @@ class TriP2(TriElement):
             basis = -4.0*y*(x+y-1)
         return basis.reshape(1, -1)
     
-    @classmethod
+    @staticmethod
     def _eval_grad(basis_id:int, qpts: np.ndarray) -> np.ndarray: # rdim(=1) * tdim(=2) * num_quad
         assert(basis_id < TriP2.num_dof_per_elem)
         x = qpts[0]
