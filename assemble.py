@@ -44,7 +44,10 @@ class assembler:
         else:
             return None, None
 
-    def assembleFunctional(self, form, **extra_args) -> float | np.ndarray:
+    def functional(self, form, **extra_args) -> float | np.ndarray:
+        """
+        form(x, w) : x the coordinates, w the extra functions
+        """
         # convert the args into QuadData
         extra_data = dict()
         for k, v in extra_args.items():
@@ -60,17 +63,17 @@ class assembler:
         Nq = data.shape[-1]
         data = data.reshape(-1, Nq) @ self.quadTable[-1, :]
         data = data.reshape(-1, Ne).sum(axis=1) # sum over all elements
-        return data
+        return data if data.size > 1 else data.item()
 
 
-    def assembleLinear(self, form, **kwargs) -> np.ndarray:
+    def linear(self, form, **kwargs) -> np.ndarray:
         # assert(mea.tdim <= self.mesh.tdim)
         # basis_type = self.test_space
         # for _ in range(self.mesh.tdim - mea.tdim):
         #     basis_type = basis_type.trace_type
         pass
     
-    def assembleBilinear(self, form, **kwargs) -> csr_matrix:
+    def bilinear(self, form, **kwargs) -> csr_matrix:
         raise NotImplementedError
     
 def setMeshMapping(mesh: Mesh, mapping: Optional[Function] = None):
