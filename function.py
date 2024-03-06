@@ -79,11 +79,13 @@ class Function(np.ndarray):
         if "dx" in hint:
             assert x is None
             if tdim == 1:
-                data.dx = np.sqrt(np.squeeze(np.sum(grad**2, axis=0))) # (Ne, num_quad)
+                data.dx = np.linalg.norm(grad[:,0,:,:], axis=0)
+                data.dx = data.dx[np.newaxis] # (1, Ne, num_quad)
             elif tdim == 2:
                 data.dx = np.cross(grad[:, 0, :, :], grad[:, 1, :, :], axis=0)
                 if rdim == 3:
                     data.dx = np.linalg.norm(data.dx, None, axis=0) # (Ne, num_quad)
+                data.dx = data.dx[np.newaxis] # (1, Ne, num_quad)
             else:
                 raise NotImplementedError
         if "n" in hint:

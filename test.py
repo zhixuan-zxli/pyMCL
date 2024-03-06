@@ -9,7 +9,8 @@ class f1:
     hint: str = "f"
     def __call__(self, coord, w) -> np.ndarray:
         x, y = coord[0], coord[1] # (Ne, Nq)
-        return np.sin(np.pi*x) * np.cos(y) * coord.dx
+        f = np.sin(np.pi*x) * np.cos(y)
+        return f[np.newaxis] * coord.dx
 
 if __name__ == "__main__":
     mesh = Mesh()

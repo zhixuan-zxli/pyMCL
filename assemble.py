@@ -45,8 +45,8 @@ class assembler:
     def _get_basis_quad_data(self, basis_type: type, basis_id: int, rdim: int, hint) -> QuadData:
         data = None
         if "f" in hint:
-            data = np.zeros((rdim, 1, self.quadTable.shape[1]))
-            data[:,0,:] = basis_type._eval_basis(basis_id, self.quadTable) # (rdim, num_quad)
+            data = np.zeros((rdim, 1, self.quadTable.shape[1])) # (rdim, 1, num_quad)
+            data[:,0,:] = basis_type._eval_basis(basis_id, self.quadTable) 
         data = QuadData(data)
         if "grad" in hint:
             basis_grad = basis_type._eval_grad(basis_id, self.quadTable) # (rdim, tdim, num_quad)
@@ -71,11 +71,10 @@ class assembler:
         """
         form(x, w) : x the coordinates, w the extra functions
         """
-        extra_data = self._transform_extra_args(form.hint, extra_args)
-        # do quadrature
+        extra_data = self._transform_extra_args(form.hint, **extra_args)
+        Ne, Nq = self.test_dof.shape[0], self.quadTable.shape[1]
         data = self.test_space.ref_cell.dx * form(self.geom_data, extra_data) # (rdim, Ne, num_quad)
-        Ne = data.shape[1] if data.ndim > 2 else data.shape[0]
-        Nq = data.shape[-1]
+        assert data.shape[1:] == (Ne, Nq)
         data = data.reshape(-1, Nq) @ self.quadTable[-1, :]
         data = data.reshape(-1, Ne).sum(axis=1) # sum over all elements
         return data if data.size > 1 else data.item()
@@ -85,18 +84,19 @@ class assembler:
         """
         form(psi, x, w) : psi the test function, x the coordinates, w the extra functions
         """
-        extra_data = self._transform_extra_args(form.hint, extra_args)
+        extra_data = self._transform_extra_args(form.hint, **extra_args)
         # do quadrature
         num_copy = self.test_space.num_copy
         rdim = max(self.test_space.rdim, num_copy)
         num_dof_per_elem = self.test_basis.num_dof_per_elem
         Ne = self.test_dof.shape[0]
         Nq = self.quadTable.shape[1]
-        values = np.zeros_like((rdim, num_dof_per_elem, Ne), dtype=np.float64)
-        for j in range(num_dof_per_elem):
-            psi = self._get_basis_quad_data(self.test_basis, j, rdim, form.hint) # (rdim, 1, Nq)
+        values = np.zeros((rdim, num_dof_per_elem, Ne), dtype=np.float64)
+        for i in range(num_dof_per_elem):
+            psi = self._get_basis_quad_data(self.test_basis, i, rdim, form.hint) # (rdim, 1, Nq)
             form_data = form(psi, self.geom_data, extra_data) # (rdim, Ne, Nq)
-            values[:, j, :] = \
+            assert form_data.shape == (rdim, Ne, Nq)
+            values[:, i, :] = \
                 (form_data.reshape(-1, Nq) @ self.quadTable[-1, :] * self.test_basis.ref_cell.dx).reshape(rdim, Ne)
 
         indices = np.zeros((num_copy, num_dof_per_elem, Ne), dtype=np.uint32) # test here
@@ -110,8 +110,33 @@ class assembler:
         return vec
 
     
-    def bilinear(self, form, **kwargs) -> csr_matrix:
-        raise NotImplementedError
+    def bilinear(self, form, **extra_args) -> csr_matrix:
+        """
+        form(phi, psi, x, w) : 
+        phi the trial function, psi the test function, x the coordinates, w the extra functions
+        """
+        assert self.trial_space is not None
+        extra_data = self._transform_extra_args(form.hint, **extra_args)
+        num_copy = self.test_space.num_copy, self.trial_space.num_copy
+        rdim = max(self.test_space.rdim, num_copy[0]), \
+          max(self.trial_space.rdim, num_copy[1])
+        Ne = self.test_dof.shape[0]
+        assert Ne == self.trial_dof.shape[0]
+        Nq = self.quadTable.shape[1]
+        values = np.zeros(
+            (num_copy[0], num_copy[1], 
+             self.test_basis.num_dof_per_elem, self.trial_basis.num_dof_per_elem, Ne)
+             )
+        row_idx = np.zeros_like(values, dtype=np.uint32)
+        col_idx = np.zeros_like(values, dtype=np.uint32)
+        for i in range(self.test_basis.num_dof_per_elem):
+            psi = self._get_basis_quad_data(self.test_basis, i, rdim[0], form.hint) # (rdim[0], 1, Nq)
+            for j in range(self.trial_basis.num_dof_per_elem):
+                phi = self._get_basis_quad_data(self.test_basis, j, rdim[1], form.hint) # (rdim[1], 1, Nq)
+                form_data = form(phi, psi, self.geom_data, extra_data) # (rdim[0], rdim[1], Ne, Nq)
+                row_idx[:,:,i,j,:] = self.test_dof[:,i]
+                col_idx[:,:,i,j,:] = self.trial_dof[:,j]
+                # if num_copy > 0 ...
     
 
 
