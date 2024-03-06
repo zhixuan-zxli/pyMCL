@@ -31,10 +31,8 @@ class assembler:
             geom_hint = ("f", "grad", "dx", "inv_grad")
         self.geom_data = test_space.mesh.coord_map._get_quad_data(geom_basis, geom_dof, None, self.quadTable, geom_hint)
 
-    def _get_basis_and_dof(self, fe: FiniteElement) -> tuple[type, np.ndarray]:
-        """
-        A helper to get the basis type and the DOF on the provided measure, given a finite element space. 
-        """
+    # A helper to get the basis type and the DOF on the provided measure, given a finite element space.
+    def _get_basis_and_dof(self, fe: FiniteElement):
         if fe is not None:
             if fe is self.test_space:
                 return self.test_basis, self.test_dof
@@ -43,11 +41,20 @@ class assembler:
                 return basis_type, fe.getCellDof(self.mea)
         else:
             return None, None
-
-    def functional(self, form, **extra_args) -> float | np.ndarray:
-        """
-        form(x, w) : x the coordinates, w the extra functions
-        """
+        
+    def _get_basis_quad_data(self, basis_type: type, basis_id: int, rdim: int, hint) -> QuadData:
+        data = None
+        if "f" in hint:
+            data = np.zeros((rdim, 1, self.quadTable.shape[1]))
+            data[:,0,:] = basis_type._eval_basis(basis_id, self.quadTable) # (rdim, num_quad)
+        data = QuadData(data)
+        if "grad" in hint:
+            basis_grad = basis_type._eval_grad(basis_id, self.quadTable) # (rdim, tdim, num_quad)
+            data.grad = np.einsum("ij...,jk...->ik...", \
+                                  basis_grad[:,:,np.newaxis,:], self.geom_data.inv_grad) # (rdim, gdim, Ne, num_quad)
+        return data
+    
+    def _transform_extra_args(self, hint, **extra_args):
         # convert the args into QuadData
         extra_data = dict()
         for k, v in extra_args.items():
@@ -55,9 +62,17 @@ class assembler:
                 extra_data[k] = v
             elif isinstance(v, Function):
                 basis, dof = self._get_basis_and_dof(v.fe)
-                extra_data[k] = v._get_quad_data(dof, self.mea.tdim, basis, self.quadTable, form.hint)
+                extra_data[k] = v._get_quad_data(dof, self.mea.tdim, basis, self.quadTable, hint)
             else:
-                raise RuntimeError("Unable to convert extra argument to QuadData. ")
+                raise RuntimeError("Unable to convert the argument to QuadData. ")
+        return extra_data
+
+    def functional(self, form, **extra_args) -> float | np.ndarray:
+        """
+        form(x, w) : x the coordinates, w the extra functions
+        """
+        extra_data = self._transform_extra_args(form.hint, extra_args)
+        # do quadrature
         data = self.test_space.ref_cell.dx * form(self.geom_data, extra_data) # (rdim, Ne, num_quad)
         Ne = data.shape[1] if data.ndim > 2 else data.shape[0]
         Nq = data.shape[-1]
@@ -66,16 +81,41 @@ class assembler:
         return data if data.size > 1 else data.item()
 
 
-    def linear(self, form, **kwargs) -> np.ndarray:
-        # assert(mea.tdim <= self.mesh.tdim)
-        # basis_type = self.test_space
-        # for _ in range(self.mesh.tdim - mea.tdim):
-        #     basis_type = basis_type.trace_type
-        pass
+    def linear(self, form, **extra_args) -> np.ndarray:
+        """
+        form(psi, x, w) : psi the test function, x the coordinates, w the extra functions
+        """
+        extra_data = self._transform_extra_args(form.hint, extra_args)
+        # do quadrature
+        num_copy = self.test_space.num_copy
+        rdim = max(self.test_space.rdim, num_copy)
+        num_dof_per_elem = self.test_basis.num_dof_per_elem
+        Ne = self.test_dof.shape[0]
+        Nq = self.quadTable.shape[1]
+        values = np.zeros_like((rdim, num_dof_per_elem, Ne), dtype=np.float64)
+        for j in range(num_dof_per_elem):
+            psi = self._get_basis_quad_data(self.test_basis, j, rdim, form.hint) # (rdim, 1, Nq)
+            form_data = form(psi, self.geom_data, extra_data) # (rdim, Ne, Nq)
+            values[:, j, :] = \
+                (form_data.reshape(-1, Nq) @ self.quadTable[-1, :] * self.test_basis.ref_cell.dx).reshape(rdim, Ne)
+
+        indices = np.zeros((num_copy, num_dof_per_elem, Ne), dtype=np.uint32) # test here
+        indices[:, :, :] = self.test_dof.T
+        if num_copy > 1:
+            indices *= num_copy
+            for c in range(num_copy):
+                indices[c,:,:] += c
+        
+        vec = np.bincount(indices.ravel(), values.ravel(), minlength=self.test_space.num_dof * rdim)
+        return vec
+
     
     def bilinear(self, form, **kwargs) -> csr_matrix:
         raise NotImplementedError
     
+
+
+
 def setMeshMapping(mesh: Mesh, mapping: Optional[Function] = None):
     if mapping is None:
         # set an affine mapping

@@ -3,7 +3,7 @@ from mesh import Mesh
 from fe import Measure, TriP2
 from function import Function
 from assemble import assembler, setMeshMapping
-from matplotlib import pyplot
+# from matplotlib import pyplot
 
 class f1:
     hint: str = "f"
