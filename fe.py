@@ -39,6 +39,10 @@ class FiniteElement:
     mesh: Mesh
     # cell_dof
 
+    def __init__(self, mesh: Mesh, num_copy: int = 1) -> None:
+        self.mesh = mesh
+        self.num_copy = num_copy
+
     def getCellDof(self, mea: Measure) -> np.ndarray:
         if mea.tdim == 0:
             if mea.sub_id == None:
@@ -64,10 +68,9 @@ class NodeElement(FiniteElement):
     num_dof_per_elem: int = 1
     
     def __init__(self, mesh: Mesh, num_copy: int = 1) -> None:
-        self.num_copy = num_copy
+        super().__init__(mesh, num_copy)
         self.num_dof_per_dim = None
         self.num_dof = 1
-        self.mesh = mesh
 
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray:
@@ -86,6 +89,15 @@ class LineElement(FiniteElement):
     
     ref_cell = RefLine
     tdim: int = 1
+
+class LineDG0(LineElement):
+
+    rdim: int = 1
+    degree: int = 0
+    num_dof_per_elem: int = 1
+    trace_type = [NodeElement]
+
+    # todo <<<<
 
 class LineP1(FiniteElement):
 
@@ -113,6 +125,36 @@ class TriElement(FiniteElement):
     ref_cell = RefTri
     tdim: int = 2
 
+    def __init__(self, mesh: Mesh, num_copy: int = 1) -> None:
+        super().__init__(mesh, num_copy)
+        assert(mesh.cell[2].shape[0] > 0)
+        self.cell_dof = [None] * 3
+
+class TriDG0(TriElement):
+
+    rdim: int = 1
+    degree: int = 0
+    num_dof_per_elem: int = 1
+    trace_type = [NodeElement, LineDG0]
+
+    def __init__(self, mesh: Mesh, num_copy: int = 1) -> None:
+        Nt = mesh.cell[2].shape[0]
+        self.num_dof_per_dim = np.array((0, 0, Nt), dtype=np.int64)
+        self.num_dof = Nt
+        # build cell dof
+        self.cell_dof[2] = np.arange(Nt).reshape(-1, 1)
+        # build facet dof
+        # skip building facet dofs as it is not used
+
+    @staticmethod
+    def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray:
+        assert basis_id == 0
+        return np.ones((1, qpts.shape[1]))
+    
+    @staticmethod
+    def _eval_grad(basis_id: int, qpts: np.ndarray) -> np.ndarray: # rdim * tdim * num_quad
+        return np.zeros((1, 2, qpts.shape[1]))
+
 class TriP1(TriElement):
 
     rdim: int = 1
@@ -121,12 +163,9 @@ class TriP1(TriElement):
     trace_type = [NodeElement, LineP1]
 
     def __init__(self, mesh: Mesh, num_copy: int = 1) -> None:
-        self.mesh = mesh
-        assert(mesh.cell[2].shape[0] > 0)
-        self.num_copy = num_copy
+        super().__init__(mesh, num_copy)
         self.num_dof_per_dim = np.array((mesh.point.shape[0],), dtype=np.int64)
         self.num_dof = mesh.point.shape[0]
-        self.cell_dof = [None] * 3
         # build cell dofs
         self.cell_dof[2] = self.mesh.cell[2]
         # build the facet dofs
@@ -164,30 +203,23 @@ class TriP2(TriElement):
     trace_type = [NodeElement, LineP2]
 
     def __init__(self, mesh: Mesh, num_copy: int = 1) -> None:
-        self.mesh = mesh
-        assert(mesh.cell[2].shape[0] > 0)
-        self.num_copy = num_copy
+        super().__init__(mesh, num_copy)
         edge_table = mesh.get_entities(1)
-        self.num_dof_per_dim = np.array([mesh.point.shape[0], len(edge_table)], dtype=np.int64)
+        self.num_dof_per_dim = np.array([mesh.point.shape[0], edge_table.nnz], dtype=np.int64)
         self.num_dof = np.sum(self.num_dof_per_dim).item()
-        self.cell_dof = [None] * 3
         # build cell dofs
         self.cell_dof[2] = np.zeros((mesh.cell[2].shape[0], self.num_dof_per_elem+1), dtype=np.uint32)
         self.cell_dof[2][:, :3] = mesh.cell[2][:, :3]
-        temp = mesh.cell[2][:, [0,1,1,2,2,0]].reshape(-1, 3, 2)
-        temp = np.stack((np.min(temp, axis=2), np.max(temp, axis=2)), axis=2).reshape(-1, 2)
-        temp = np.array([
-            edge_table[r.tobytes()] for r in temp
-        ], dtype=np.uint32)
-        self.cell_dof[2][:, 3:-1] = temp.reshape(-1, 3) + mesh.point.shape[0]
+        tri_edges = mesh.cell[2][:, [0,1,1,2,2,0]].reshape(-1, 3, 2)
+        tri_edges = np.stack((np.min(tri_edges, axis=2), np.max(tri_edges, axis=2)), axis=2).reshape(-1, 2)
+        idx = edge_table[tri_edges[:,0], tri_edges[:,1]]
+        self.cell_dof[2][:, 3:-1] = idx.reshape(-1, 3) + mesh.point.shape[0]
         self.cell_dof[2][:, -1] = mesh.cell[2][:, -1]
         # build the facet dofs
         self.cell_dof[1] = np.zeros((mesh.cell[1].shape[0], self.trace_type[1].num_dof_per_elem + 1), dtype=np.uint32)
         self.cell_dof[1][:, :2] = mesh.cell[1][:, :2]
-        temp = np.vstack((np.min(mesh.cell[1][:, :-1], axis=1), np.max(mesh.cell[1][:, :-1], axis=1))).T
-        self.cell_dof[1][:, 2] = np.array([
-            edge_table[r.tobytes()] for r in temp
-        ], dtype=np.uint32) + mesh.point.shape[0]
+        edges = np.stack((np.min(mesh.cell[1][:, :-1], axis=1), np.max(mesh.cell[1][:, :-1], axis=1)), axis=1)
+        self.cell_dof[1][:, 2] = edge_table[edges[:,0], edges[:,1]] + mesh.point.shape[0]
         self.cell_dof[1][:, -1] = mesh.cell[1][:, -1]
 
     @staticmethod
@@ -228,5 +260,3 @@ class TriP2(TriElement):
             data = np.vstack((-4.0*y, -4.0*x-8.0*y+4.0))
         return data[np.newaxis, :, :]
         
-
-# todo : TriDG0
