@@ -228,3 +228,5 @@ class TriP2(TriElement):
             data = np.vstack((-4.0*y, -4.0*x-8.0*y+4.0))
         return data[np.newaxis, :, :]
         
+
+# todo : TriDG0
