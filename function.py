@@ -14,7 +14,7 @@ class QuadData(np.ndarray):
 
     def __new__(cls, value : Optional[np.ndarray]):
         if value is None:
-            obj = np.array([0])
+            obj = np.array([0]).view(cls)
         else:
             obj = value.view(cls)
         obj.grad = None
