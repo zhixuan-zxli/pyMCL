@@ -6,6 +6,18 @@ from mesh import Mesh
 from function import FiniteElement, QuadData, Function
 from quadrature import Quadrature
 
+class Form:
+    expr: callable
+    hint: tuple[str]
+
+    def __init__(self, expr, *hints) -> None:
+        self.expr = expr
+        if len(hints) > 0:
+            self.hint = hints
+        else:
+            self.hint = ("f", "grad")
+    def __call__(self, *args, **kwds):
+        return self.expr(*args, **kwds)
     
 class assembler:
 
@@ -67,7 +79,7 @@ class assembler:
                 raise RuntimeError("Unable to convert the argument to QuadData. ")
         return extra_data
 
-    def functional(self, form, **extra_args) -> float | np.ndarray:
+    def functional(self, form: Form, **extra_args) -> float | np.ndarray:
         """
         form(x, w) : x the coordinates, w the extra functions
         """
@@ -80,7 +92,7 @@ class assembler:
         return data if data.size > 1 else data.item()
 
 
-    def linear(self, form, **extra_args) -> np.ndarray:
+    def linear(self, form: Form, **extra_args) -> np.ndarray:
         """
         form(psi, x, w) : psi the test function, x the coordinates, w the extra functions
         """
@@ -110,7 +122,7 @@ class assembler:
         return vec
 
     
-    def bilinear(self, form, **extra_args) -> csr_matrix:
+    def bilinear(self, form: Form, **extra_args) -> csr_matrix:
         """
         form(phi, psi, x, w) : 
         phi the trial function, psi the test function, x the coordinates, w the extra functions
