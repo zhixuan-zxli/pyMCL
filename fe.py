@@ -49,11 +49,11 @@ class FiniteElement:
                     flag[self.mesh.point_tag == i] = True
                 return np.nonzero(flag)[0].astype(np.uint32)
         if mea.sub_id == None:
-            return self.cell_dof[mea.tdim]
+            return self.cell_dof[mea.tdim][:, :-1] # remove the tag
         flag = np.zeros((self.cell_dof[mea.tdim].shape[0], ), np.bool8)
         for t in mea.sub_id:
             flag[self.cell_dof[mea.tdim][:, -1] == t] = True
-        return self.cell_dof[mea.tdim][flag]
+        return self.cell_dof[mea.tdim][flag, :-1] # remove the tag
     
 class NodeElement(FiniteElement):
 
@@ -124,7 +124,7 @@ class TriP1(TriElement):
         self.mesh = mesh
         assert(mesh.cell[2].shape[0] > 0)
         self.num_copy = num_copy
-        self.num_dof_per_dim = np.array((mesh.point.shape[0]), dtype=np.uint32)
+        self.num_dof_per_dim = np.array((mesh.point.shape[0],), dtype=np.int64)
         self.num_dof = mesh.point.shape[0]
         self.cell_dof = [None] * 3
         # build cell dofs
@@ -168,8 +168,8 @@ class TriP2(TriElement):
         assert(mesh.cell[2].shape[0] > 0)
         self.num_copy = num_copy
         edge_table = mesh.get_entities(1)
-        self.num_dof_per_dim = np.array([mesh.point.shape[0], len(edge_table)], dtype=np.uint32)
-        self.num_dof = np.sum(self.num_dof_per_dim)
+        self.num_dof_per_dim = np.array([mesh.point.shape[0], len(edge_table)], dtype=np.int64)
+        self.num_dof = np.sum(self.num_dof_per_dim).item()
         self.cell_dof = [None] * 3
         # build cell dofs
         self.cell_dof[2] = np.zeros((mesh.cell[2].shape[0], self.num_dof_per_elem+1), dtype=np.uint32)
@@ -179,7 +179,7 @@ class TriP2(TriElement):
         temp = np.array([
             edge_table[r.tobytes()] for r in temp
         ], dtype=np.uint32)
-        self.cell_dof[2][:, 3:-1] = temp.reshape(-1, 3)
+        self.cell_dof[2][:, 3:-1] = temp.reshape(-1, 3) + mesh.point.shape[0]
         self.cell_dof[2][:, -1] = mesh.cell[2][:, -1]
         # build the facet dofs
         self.cell_dof[1] = np.zeros((mesh.cell[1].shape[0], self.trace_type[1].num_dof_per_elem + 1), dtype=np.uint32)
@@ -187,7 +187,7 @@ class TriP2(TriElement):
         temp = np.vstack((np.min(mesh.cell[1][:, :-1], axis=1), np.max(mesh.cell[1][:, :-1], axis=1))).T
         self.cell_dof[1][:, 2] = np.array([
             edge_table[r.tobytes()] for r in temp
-        ], dtype=np.uint32)
+        ], dtype=np.uint32) + mesh.point.shape[0]
         self.cell_dof[1][:, -1] = mesh.cell[1][:, -1]
 
     @staticmethod
