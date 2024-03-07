@@ -61,7 +61,8 @@ class assembler:
             data[:,0,:] = basis_type._eval_basis(basis_id, self.quadTable) 
         data = QuadData(data)
         if "grad" in hint:
-            basis_grad = basis_type._eval_grad(basis_id, self.quadTable) # (rdim, tdim, num_quad)
+            basis_grad = np.zeros((rdim, basis_type.tdim, self.quadTable.shape[1]))
+            basis_grad[:,:,:] = basis_type._eval_grad(basis_id, self.quadTable) # (rdim, tdim, num_quad)
             data.grad = np.einsum("ij...,jk...->ik...", \
                                   basis_grad[:,:,np.newaxis,:], self.geom_data.inv_grad) # (rdim, gdim, Ne, num_quad)
         return data
@@ -119,7 +120,7 @@ class assembler:
                 indices[c,:,:] += c
         
         vec = np.bincount(indices.ravel(), weights=values.ravel(), minlength=self.test_space.num_dof * num_copy)
-        return vec
+        return vec.reshape(-1, num_copy)
 
     
     def bilinear(self, form: Form, **extra_args) -> csr_matrix:
@@ -172,7 +173,7 @@ def setMeshMapping(mesh: Mesh, mapping: Optional[Function] = None):
             from fe import TriP1
             mesh.coord_fe = TriP1(mesh, mesh.gdim)
             mesh.coord_map = Function(mesh.coord_fe)
-            np.copyto(mesh.coord_map, mesh.point.T)
+            np.copyto(mesh.coord_map, mesh.point)
         else:
             raise NotImplementedError
     else:

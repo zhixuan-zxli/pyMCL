@@ -41,7 +41,7 @@ class Function(np.ndarray):
     fe: FiniteElement
     
     def __new__(cls, fe: FiniteElement):
-        obj = np.zeros((fe.num_copy, fe.num_dof)).view(cls)
+        obj = np.zeros((fe.num_dof, fe.num_copy)).view(cls)
         obj.fe = fe
         return obj
     
@@ -65,27 +65,29 @@ class Function(np.ndarray):
         if "f" in hint:
             data = np.zeros((rdim, cell_dof.shape[0], quadTable.shape[1]))
             for i in range(num_dof_per_elem):
-                basis = basis_type._eval_basis(i, quadTable) # (rdim, num_quad)
-                data = data + self[:, cell_dof[:,i], np.newaxis] * basis[:, np.newaxis, :]
+                basis = basis_type._eval_basis(i, quadTable) # (rdim, Nq)
+                temp = self[cell_dof[:,i], :, np.newaxis]
+                data = data + temp.transpose((1,0,2)) * basis[:, np.newaxis, :] # (rdim, Ne, Nq)
         data = QuadData(data)
         if "grad" in hint:
-            grad = np.zeros((rdim, self.fe.tdim, cell_dof.shape[0], quadTable.shape[1])) # (rdim, tdim, Ne, num_quad)
+            grad = np.zeros((rdim, self.fe.tdim, cell_dof.shape[0], quadTable.shape[1])) # (rdim, tdim, Ne, Nq)
             for i in range(num_dof_per_elem):
-                basis_grad = basis_type._eval_grad(i, quadTable) # (rdim, tdim, num_quad)
-                grad = grad + self[:, np.newaxis, cell_dof[:,i], np.newaxis] * basis_grad[:, :, np.newaxis, :]
+                basis_grad = basis_type._eval_grad(i, quadTable) # (rdim, tdim, Nq)
+                temp = self[cell_dof[:,i], :, np.newaxis, np.newaxis]
+                grad = grad + temp.transpose((1,2,0,3)) * basis_grad[:, :, np.newaxis, :]
             if x is not None:
                 grad = np.einsum("ij...,jk...->ik...", grad, x.inv_grad)
-            data.grad = grad # (rdim, gdim, Ne, num_quad)
+            data.grad = grad # (rdim, gdim, Ne, Nq)
         if "dx" in hint:
             assert x is None
             if tdim == 1:
                 data.dx = np.linalg.norm(grad[:,0,:,:], axis=0)
-                data.dx = data.dx[np.newaxis] # (1, Ne, num_quad)
+                data.dx = data.dx[np.newaxis] # (1, Ne, Nq)
             elif tdim == 2:
                 data.dx = np.cross(grad[:, 0, :, :], grad[:, 1, :, :], axis=0)
                 if rdim == 3:
-                    data.dx = np.linalg.norm(data.dx, None, axis=0) # (Ne, num_quad)
-                data.dx = data.dx[np.newaxis] # (1, Ne, num_quad)
+                    data.dx = np.linalg.norm(data.dx, ord=None, axis=0) # (Ne, Nq)
+                data.dx = data.dx[np.newaxis] # (1, Ne, Nq)
             else:
                 raise NotImplementedError
         if "n" in hint:
@@ -98,7 +100,7 @@ class Function(np.ndarray):
                 data.n[1, :] = -t[0, :]
             elif tdim == 2:
                 assert(rdim == 3)
-                temp = np.cross(grad[:, 0, :, :], grad[:, 1, :, :], axis=0) # (3, Ne, num_quad)
+                temp = np.cross(grad[:, 0, :, :], grad[:, 1, :, :], axis=0) # (3, Ne, Nq)
                 data.n = temp / data.dx[np.newaxis, :, :]
             else:
                 raise RuntimeError("Cannot calculate the normal of a 3D cell. ")
@@ -107,7 +109,7 @@ class Function(np.ndarray):
             if self.fe.tdim == 1 and rdim == 1:
                 data.inv_grad = 1.0 / data.grad
             elif self.fe.tdim == 1 and rdim == 2:
-                temp = np.squeeze(data.grad) # (2, Ne, num_quad)
+                temp = np.squeeze(data.grad) # (2, Ne, Nq)
                 data.inv_grad = (temp / data.dx[np.newaxis, :, :]**2).reshape(1, 2, data.grad.shape[2], data.grad.shape[3])
             elif self.fe.tdim == 2 and rdim == 2:
                 data.inv_grad = np.zeros_like(data.grad)
