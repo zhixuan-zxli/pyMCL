@@ -73,7 +73,7 @@ class assembler:
         """
         extra_data = self._transform_extra_args(form.hint, **extra_args)
         Ne, Nq = self.test_dof.shape[0], self.quadTable.shape[1]
-        data = self.test_space.ref_cell.dx * form(self.geom_data, extra_data) # (rdim, Ne, num_quad)
+        data = self.test_space.ref_cell.dx * form(self.geom_data, **extra_data) # (rdim, Ne, num_quad)
         assert data.shape[1:] == (Ne, Nq)
         data = data.reshape(-1, Nq) @ self.quadTable[-1, :]
         data = data.reshape(-1, Ne).sum(axis=1) # sum over all elements
@@ -94,7 +94,7 @@ class assembler:
         values = np.zeros((rdim, num_dof_per_elem, Ne), dtype=np.float64)
         for i in range(num_dof_per_elem):
             psi = self._get_basis_quad_data(self.test_basis, i, rdim, form.hint) # (rdim, 1, Nq)
-            form_data = form(psi, self.geom_data, extra_data) # (rdim, Ne, Nq)
+            form_data = form(psi, self.geom_data, **extra_data) # (rdim, Ne, Nq)
             assert form_data.shape == (rdim, Ne, Nq)
             values[:, i, :] = \
                 (form_data.reshape(-1, Nq) @ self.quadTable[-1, :] * self.test_basis.ref_cell.dx).reshape(rdim, Ne)
@@ -106,7 +106,7 @@ class assembler:
             for c in range(num_copy):
                 indices[c,:,:] += c
         
-        vec = np.bincount(indices.ravel(), values.ravel(), minlength=self.test_space.num_dof * rdim)
+        vec = np.bincount(indices.ravel(), weights=values.ravel(), minlength=self.test_space.num_dof * num_copy)
         return vec
 
     
@@ -133,12 +133,24 @@ class assembler:
             psi = self._get_basis_quad_data(self.test_basis, i, rdim[0], form.hint) # (rdim[0], 1, Nq)
             for j in range(self.trial_basis.num_dof_per_elem):
                 phi = self._get_basis_quad_data(self.test_basis, j, rdim[1], form.hint) # (rdim[1], 1, Nq)
-                form_data = form(phi, psi, self.geom_data, extra_data) # (rdim[0], rdim[1], Ne, Nq)
+                form_data = form(phi, psi, self.geom_data, **extra_data) # (rdim[0], rdim[1], Ne, Nq)
+                values[:,:,i,j,:] = \
+                  (form_data.reshape(-1, Nq) @ self.quadTable[-1,:] * self.test_basis.ref_cell.dx).reshape(rdim[0], rdim[1], Ne)
                 row_idx[:,:,i,j,:] = self.test_dof[:,i]
                 col_idx[:,:,i,j,:] = self.trial_dof[:,j]
-                # if num_copy > 0 ...
-    
-
+                # fix the indices for the multi-component case
+                if num_copy[0] > 1:
+                    row_idx[:,:,i,j,:] *= num_copy[0]
+                    for ci in range(num_copy[0]):
+                        row_idx[ci,:,i,j,:] += ci
+                if num_copy[1] > 1:
+                    col_idx[:,:,i,j,:] *= num_copy[1]
+                    for cj in range(num_copy[1]):
+                        col_idx[:,cj,i,j,:] += cj
+        #
+        shape = (self.test_space.num_dof * num_copy[0], self.trial_space.num_dof * num_copy[1])
+        mat = csr_matrix((values.ravel(), (row_idx.ravel(), col_idx.ravel())), shape=shape)
+        return mat
 
 
 def setMeshMapping(mesh: Mesh, mapping: Optional[Function] = None):
