@@ -7,8 +7,6 @@ from scipy.sparse.linalg import spsolve
 # from matplotlib import pyplot
 
 def exact(x, y) -> np.ndarray:
-    x = x.reshape(1, -1)
-    y = y.reshape(1, -1)
     return np.sin(np.pi*x) * np.cos(y)
 
 def rhs(psi, coord) -> np.ndarray:
@@ -39,14 +37,14 @@ if __name__ == "__main__":
     fdof = np.ones((u_space.num_dof, ), dtype=np.bool8)
     fdof[bdof] = False
     # interpolate
-    u_exact = exact(mesh.point[:,0], mesh.point[:,1]) # (Np,)
+    u_exact = exact(mesh.point[:,0], mesh.point[:,1]).reshape(-1, 1) # col vector
     u = Function(u_space)
-    u[0, bdof] = u_exact[0, bdof]
+    u[bdof] = u_exact[bdof]
     # homogeneize
     f = f - A @ u
     # solve
-    u_sol = spsolve(A[fdof,fdof], u[fdof], use_umfpack=True)
-    # find error
-    u[fdof] = u_sol
+    u_sol = spsolve(A[fdof][:,fdof], f[fdof])
+    # calculate error
+    u[fdof, 0] = u_sol
     u_err = u - u_exact
-    print("error = {0:.3e}", np.linalg.norm(u_err, ord=np.inf))
+    print("error = {0:.3e}".format(np.linalg.norm(u_err, ord=np.inf)))
