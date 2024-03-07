@@ -1,7 +1,6 @@
 import numpy as np
-from dolfin import *
 
-def printConvergenceTable(mesh_table, error_table):
+def printConvergenceTable(mesh_table, error_table) -> None:
     """ 
     Print the convergence table. 
     mesh_table: a list of string for mesh sizes as table headers. 
@@ -21,13 +20,4 @@ def printConvergenceTable(mesh_table, error_table):
             error_str += "{0:<10.2e}{1:<8.2f}".format(error_list[i], np.log2(error_list[i]/error_list[i+1]))
         error_str += "{0:<10.2e}".format(error_list[-1])
         print(error_str)
-
-def zeroMean(p, dx):
-    """
-    Make a function of zero mean. 
-    """
-    p_avr = assemble(p*dx) / assemble(Constant(1.0) * dx)
-    p_vec = p.vector().get_local() - p_avr
-    p.vector().set_local(p_vec)
-    p.vector().apply("")
-    return p
+    
