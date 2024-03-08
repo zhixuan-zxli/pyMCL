@@ -90,6 +90,11 @@ class LineElement(FiniteElement):
     ref_cell = RefLine
     tdim: int = 1
 
+    def __init__(self, mesh: Mesh, num_copy: int = 1) -> None:
+        super().__init__(mesh, num_copy)
+        assert(mesh.cell[1].shape[0] > 0)
+        self.cell_dof = [None] * 2
+
 class LineDG0(LineElement):
 
     rdim: int = 1
@@ -97,16 +102,40 @@ class LineDG0(LineElement):
     num_dof_per_elem: int = 1
     trace_type = [NodeElement]
 
-    # todo <<<<
+    def __init__(self, mesh: Mesh, num_copy: int = 1) -> None:
+        raise NotImplementedError
 
-class LineP1(FiniteElement):
+class LineP1(LineElement):
 
     rdim: int = 1
     degree: int = 1
     num_dof_per_elem: int = 2
     trace_type = [NodeElement]
 
-    # todo <<<<<<<<
+    def __init__(self, mesh: Mesh, num_copy: int = 1) -> None:
+        super().__init__(mesh, num_copy)
+        self.num_dof_per_dim = np.array((mesh.point.shape[0],), dtype=np.int64)
+        self.num_dof = mesh.point.shape[0]
+        # build cell dofs
+        self.cell_dof[1] = mesh.cell[1]
+
+    @staticmethod
+    def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, Nq)
+        x = qpts[0]
+        if basis_id == 0:
+            basis = 1.0 - x
+        elif basis_id == 1:
+            basis = x
+        return basis.reshape(1, -1)
+    
+    @staticmethod
+    def _eval_grad(basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, tdim, Nq)
+        x = qpts[0]
+        if basis_id == 0:
+            data = -np.ones_like(x)
+        elif basis_id == 1:
+            data = np.ones_like(x)
+        return data[np.newaxis, np.newaxis, :]
 
 class LineP2(LineElement):
     
@@ -115,7 +144,43 @@ class LineP2(LineElement):
     num_dof_per_elem: int = 3
     trace_type = [NodeElement]
 
-    # todo <<<<<<<<
+    def __init__(self, mesh: Mesh, num_copy: int = 1) -> None:
+        super().__init__(mesh, num_copy)
+        Np = mesh.point.shape[0]
+        Ne = mesh.cell[1].shape[0]
+        self.num_dof_per_dim = np.array((Np, Ne), dtype=np.int64)
+        self.num_dof = Np + Ne
+        # build cell dofs
+        self.cell_dof[1] = np.zeros((Ne, 4), dtype=np.uint32)
+        self.cell_dof[1][:,:2] = mesh.cell[1][:, :2]
+        self.cell_dof[1][:,2] = np.arange(Ne) + Np
+        self.cell_dof[1][:, -1] = mesh.cell[1][:, -1]
+        # build also dof locations
+        self.dofloc = np.zeros((self.num_dof, mesh.gdim))
+        self.dofloc[:Np, :] = mesh.point
+        self.dofloc[Np:, :] = 0.5 * (mesh.point[mesh.cell[1][:, 0], :] + mesh.point[mesh.cell[1][:, 1], :])
+
+    @staticmethod
+    def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, Nq)
+        x = qpts[0]
+        if basis_id == 0:
+            basis = 2 * (x-0.5) * (x-1.0)
+        elif basis_id == 1:
+            basis = 2 * (x-0.5) * x
+        elif basis_id == 2:
+            basis = -4.0 * x * (x-1.0)
+        return basis[np.newaxis, :]
+    
+    @staticmethod
+    def _eval_grad(basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, tdim, Nq)
+        x = qpts[0]
+        if basis_id == 0:
+            data = 4.0*x - 3.0
+        elif basis_id == 1:
+            data = 4.0*x - 1.0
+        elif basis_id == 2:
+            data = 4.0 - 8.0*x
+        return data[np.newaxis, np.newaxis, :]
 
 # =====================================================================
 # Triangular elements
@@ -167,9 +232,9 @@ class TriP1(TriElement):
         self.num_dof_per_dim = np.array((mesh.point.shape[0],), dtype=np.int64)
         self.num_dof = mesh.point.shape[0]
         # build cell dofs
-        self.cell_dof[2] = self.mesh.cell[2]
+        self.cell_dof[2] = mesh.cell[2]
         # build the facet dofs
-        self.cell_dof[1] = self.mesh.cell[1]
+        self.cell_dof[1] = mesh.cell[1]
 
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # rdim(=1) * num_quad
