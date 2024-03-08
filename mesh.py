@@ -64,7 +64,7 @@ class Mesh:
                 idx = self.cell[2][:, [0,1,1,2,2,0]].reshape(-1, 3, 2)
                 idx = np.stack((np.min(idx, axis=2), np.max(idx, axis=2)), axis=2).reshape(-1, 2)
                 m = csr_matrix((np.ones((Nt*3,), dtype=np.int64), (idx[:,0], idx[:,1])), shape=(Np, Np))
-                m.data = np.arange(m.nnz)
+                m.data = np.arange(m.nnz) + 1
                 self.entities[1] = m
             elif dim == 2:
                 raise NotImplementedError

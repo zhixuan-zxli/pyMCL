@@ -59,6 +59,8 @@ class FiniteElement:
             flag[self.cell_dof[mea.tdim][:, -1] == t] = True
         return self.cell_dof[mea.tdim][flag, :-1] # remove the tag
     
+    # todo: collapse
+    
 class NodeElement(FiniteElement):
 
     ref_cell = RefNode
@@ -68,9 +70,7 @@ class NodeElement(FiniteElement):
     num_dof_per_elem: int = 1
     
     def __init__(self, mesh: Mesh, num_copy: int = 1) -> None:
-        super().__init__(mesh, num_copy)
-        self.num_dof_per_dim = None
-        self.num_dof = 1
+        raise RuntimeError("Why are you initializing a node element?")
 
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray:
@@ -204,8 +204,9 @@ class TriP2(TriElement):
 
     def __init__(self, mesh: Mesh, num_copy: int = 1) -> None:
         super().__init__(mesh, num_copy)
+        Np = mesh.point.shape[0]
         edge_table = mesh.get_entities(1)
-        self.num_dof_per_dim = np.array([mesh.point.shape[0], edge_table.nnz], dtype=np.int64)
+        self.num_dof_per_dim = np.array((Np, edge_table.nnz), dtype=np.int64)
         self.num_dof = np.sum(self.num_dof_per_dim).item()
         # build cell dofs
         self.cell_dof[2] = np.zeros((mesh.cell[2].shape[0], self.num_dof_per_elem+1), dtype=np.uint32)
@@ -213,14 +214,19 @@ class TriP2(TriElement):
         tri_edges = mesh.cell[2][:, [0,1,1,2,2,0]].reshape(-1, 3, 2)
         tri_edges = np.stack((np.min(tri_edges, axis=2), np.max(tri_edges, axis=2)), axis=2).reshape(-1, 2)
         idx = edge_table[tri_edges[:,0], tri_edges[:,1]]
-        self.cell_dof[2][:, 3:-1] = idx.reshape(-1, 3) + mesh.point.shape[0]
+        self.cell_dof[2][:, 3:-1] = idx.reshape(-1, 3) + Np - 1
         self.cell_dof[2][:, -1] = mesh.cell[2][:, -1]
         # build the facet dofs
         self.cell_dof[1] = np.zeros((mesh.cell[1].shape[0], self.trace_type[1].num_dof_per_elem + 1), dtype=np.uint32)
         self.cell_dof[1][:, :2] = mesh.cell[1][:, :2]
         edges = np.stack((np.min(mesh.cell[1][:, :-1], axis=1), np.max(mesh.cell[1][:, :-1], axis=1)), axis=1)
-        self.cell_dof[1][:, 2] = edge_table[edges[:,0], edges[:,1]] + mesh.point.shape[0]
+        self.cell_dof[1][:, 2] = edge_table[edges[:,0], edges[:,1]] + Np - 1
         self.cell_dof[1][:, -1] = mesh.cell[1][:, -1]
+        # find also the dof locations
+        self.dofloc = np.zeros((self.num_dof, mesh.gdim))
+        self.dofloc[:Np, :] = mesh.point
+        row_idx, col_idx = edge_table.nonzero()
+        self.dofloc[Np:, :] = 0.5 * (mesh.point[row_idx, :] + mesh.point[col_idx, :])
 
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # rdim(=1) * num_quad
