@@ -7,6 +7,11 @@ class Quadrature:
         ((0.0, 1.0))
     ).T
 
+    _line_O4 = np.array(
+        ((0.21132486540518708, 1.0/2), 
+         (0.7886751345948129, 1.0/2))
+    ).T
+
     _tri_O3 = np.array(
         ((1.0/2, 0.0, 1.0/2, 1.0/3),  
         (1.0/2, 1.0/2, 0.0, 1.0/3), 
@@ -26,6 +31,11 @@ class Quadrature:
         if cellType == RefNode:
             print("Retriving quadrature table for node. ")
             return Quadrature._node
+        if cellType == RefLine:
+            if order == 3:
+                return Quadrature._line_O4
+            if order == 4:
+                return Quadrature._line_O4
         if cellType == RefTri:
             if order == 3:
                 return Quadrature._tri_O3
