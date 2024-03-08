@@ -33,7 +33,7 @@ class assembler:
         # test space
         self.test_dof = test_space.getCellDof(mea)
         self.test_basis = type(test_space) if mea.tdim == test_space.tdim else test_space.trace_type[mea.tdim]
-        self.quadTable = Quadrature.getTable(test_space.ref_cell, quadOrder)
+        self.quadTable = Quadrature.getTable(self.test_basis.ref_cell, quadOrder)
         # trial space
         self.trial_basis, self.trial_dof = self._get_basis_and_dof(trial_space)
         # geometric mapping space
