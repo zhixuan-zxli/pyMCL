@@ -66,15 +66,15 @@ class Function(np.ndarray):
             data = np.zeros((rdim, cell_dof.shape[0], quadTable.shape[1]))
             for i in range(num_dof_per_elem):
                 basis = basis_type._eval_basis(i, quadTable) # (rdim, Nq)
-                temp = self[cell_dof[:,i], :, np.newaxis]
-                data = data + temp.transpose((1,0,2)) * basis[:, np.newaxis, :] # (rdim, Ne, Nq)
+                temp = self[cell_dof[:,i], :].T
+                data = data + temp[:,:,np.newaxis] * basis[:, np.newaxis, :] # (rdim, Ne, Nq)
         data = QuadData(data)
         if "grad" in hint:
             grad = np.zeros((rdim, self.fe.tdim, cell_dof.shape[0], quadTable.shape[1])) # (rdim, tdim, Ne, Nq)
             for i in range(num_dof_per_elem):
                 basis_grad = basis_type._eval_grad(i, quadTable) # (rdim, tdim, Nq)
-                temp = self[cell_dof[:,i], :, np.newaxis, np.newaxis]
-                grad = grad + temp.transpose((1,2,0,3)) * basis_grad[:, :, np.newaxis, :]
+                temp = self[cell_dof[:,i], :].T
+                grad = grad + temp[:,np.newaxis,:,np.newaxis] * basis_grad[:, :, np.newaxis, :]
             if x is not None:
                 grad = np.einsum("ij...,jk...->ik...", grad, x.inv_grad)
             data.grad = grad # (rdim, gdim, Ne, Nq)
