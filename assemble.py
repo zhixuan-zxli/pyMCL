@@ -75,7 +75,7 @@ class assembler:
                 extra_data[k] = v
             elif isinstance(v, Function):
                 basis, dof = self._get_basis_and_dof(v.fe)
-                extra_data[k] = v._get_quad_data(dof, self.mea.tdim, basis, self.quadTable, hint)
+                extra_data[k] = v._get_quad_data(basis, dof, self.geom_data, self.quadTable, hint)
             else:
                 raise RuntimeError("Unable to convert the argument to QuadData. ")
         return extra_data
