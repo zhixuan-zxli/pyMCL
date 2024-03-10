@@ -39,7 +39,7 @@ if __name__ == "__main__":
     mesh = Mesh()
     mesh.load("mesh/unit_square.msh")
     setMeshMapping(mesh)
-    u_space = TriP1(mesh)
+    u_space = TriP2(mesh)
     asm_2 = assembler(u_space, u_space, Measure(2, None), 3)
     f = asm_2.linear(Form(rhs, "f"))
     A = asm_2.bilinear(Form(a, "grad"))
@@ -50,15 +50,16 @@ if __name__ == "__main__":
     u_err[:] = u_sol
     u_err -= asm_2.functional(Form(integral, "f"), u=u_err) / 1.0
     #
-    fig = pyplot.figure()
-    ax_sol = fig.add_subplot(1, 2, 1, projection="3d")
-    ax_sol.plot_trisurf(mesh.point[:,0], mesh.point[:,1], u_err.ravel(), triangles=mesh.cell[2][:,:-1], cmap=pyplot.cm.Spectral)
+    # fig = pyplot.figure()
+    # ax_sol = fig.add_subplot(1, 2, 1, projection="3d")
+    # ax_sol.plot_trisurf(mesh.point[:,0], mesh.point[:,1], u_err.ravel(), triangles=mesh.cell[2][:,:-1], cmap=pyplot.cm.Spectral)
     #
-    u_exact = exact(mesh.point[:, 0], mesh.point[:, 1]).reshape(-1, 1)
+    # u_exact = exact(mesh.point[:, 0], mesh.point[:, 1]).reshape(-1, 1) # For P1
+    u_exact = exact(u_space.dofloc[:, 0], u_space.dofloc[:, 1]).reshape(-1, 1) # For P2
     u_err -= u_exact
     u_err = u_err - asm_2.functional(Form(integral, "f"), u=u_err) / 1.0
     #
-    ax_err = fig.add_subplot(1, 2, 2, projection="3d")
-    ax_err.plot_trisurf(mesh.point[:,0], mesh.point[:,1], u_err.ravel(), triangles=mesh.cell[2][:,:-1], cmap=pyplot.cm.Spectral)
+    # ax_err = fig.add_subplot(1, 2, 2, projection="3d")
+    # ax_err.plot_trisurf(mesh.point[:,0], mesh.point[:,1], u_err.ravel(), triangles=mesh.cell[2][:,:-1], cmap=pyplot.cm.Spectral)
     # pyplot.show()
     print("Max-norm of error = {0:.3e}".format(np.linalg.norm(u_err, ord=np.inf)))
