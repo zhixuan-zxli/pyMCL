@@ -1,6 +1,6 @@
 import meshio
 import numpy as np
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_array
 from matplotlib import pyplot
 
 class Mesh:
@@ -63,7 +63,7 @@ class Mesh:
                 Np, Nt = self.point.shape[0], self.cell[2].shape[0]
                 idx = self.cell[2][:, [0,1,1,2,2,0]].reshape(-1, 3, 2)
                 idx = np.stack((np.min(idx, axis=2), np.max(idx, axis=2)), axis=2).reshape(-1, 2)
-                m = csr_matrix((np.ones((Nt*3,), dtype=np.int64), (idx[:,0], idx[:,1])), shape=(Np, Np))
+                m = csr_array((np.ones((Nt*3,), dtype=np.int64), (idx[:,0], idx[:,1])), shape=(Np, Np))
                 m.data = np.arange(m.nnz) + 1
                 self.entities[1] = m
             elif dim == 2:

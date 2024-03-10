@@ -1,6 +1,6 @@
 from typing import Optional
 import numpy as np
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_array
 from fe import Measure
 from mesh import Mesh
 from function import FiniteElement, QuadData, Function
@@ -25,7 +25,7 @@ class assembler:
                  test_space: FiniteElement, 
                  trial_space: Optional[FiniteElement], 
                  mea: Measure, 
-                 quadOrder: int, 
+                 order: int, 
                  geom_hint = None) -> None:
         self.test_space = test_space
         self.trial_space = trial_space
@@ -33,7 +33,7 @@ class assembler:
         # test space
         self.test_dof = test_space.getCellDof(mea)
         self.test_basis = type(test_space) if mea.tdim == test_space.tdim else test_space.trace_type[mea.tdim]
-        self.quadTable = Quadrature.getTable(self.test_basis.ref_cell, quadOrder)
+        self.quadTable = Quadrature.getTable(self.test_basis.ref_cell, order)
         # trial space
         self.trial_basis, self.trial_dof = self._get_basis_and_dof(trial_space)
         # geometric mapping space
@@ -123,7 +123,7 @@ class assembler:
         return vec.reshape(-1, num_copy)
 
     
-    def bilinear(self, form: Form, **extra_args) -> csr_matrix:
+    def bilinear(self, form: Form, **extra_args) -> csr_array:
         """
         form(phi, psi, x, w) : 
         phi the trial function, psi the test function, x the coordinates, w the extra functions
@@ -162,7 +162,7 @@ class assembler:
                         col_idx[:,cj,i,j,:] += cj
         #
         shape = (self.test_space.num_dof * num_copy[0], self.trial_space.num_dof * num_copy[1])
-        mat = csr_matrix((values.ravel(), (row_idx.ravel(), col_idx.ravel())), shape=shape)
+        mat = csr_array((values.ravel(), (row_idx.ravel(), col_idx.ravel())), shape=shape)
         return mat
 
     
