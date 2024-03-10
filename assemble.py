@@ -165,17 +165,4 @@ class assembler:
         mat = csr_matrix((values.ravel(), (row_idx.ravel(), col_idx.ravel())), shape=shape)
         return mat
 
-
-def setMeshMapping(mesh: Mesh, mapping: Optional[Function] = None):
-    if mapping is None:
-        # set an affine mapping
-        if mesh.tdim == 2:
-            from fe import TriP1
-            mesh.coord_fe = TriP1(mesh, mesh.gdim)
-            mesh.coord_map = Function(mesh.coord_fe)
-            np.copyto(mesh.coord_map, mesh.point)
-        else:
-            raise NotImplementedError
-    else:
-        mesh.mapping = mapping
     

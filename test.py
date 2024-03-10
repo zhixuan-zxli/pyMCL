@@ -1,8 +1,9 @@
 import numpy as np
 from mesh import Mesh
+from mesh_util import splitRefine, setMeshMapping
 from fe import Measure, TriP1, TriP2
 from function import Function
-from assemble import assembler, Form, setMeshMapping
+from assemble import assembler, Form
 from scipy.sparse.linalg import spsolve
 from matplotlib import pyplot
 
@@ -38,28 +39,31 @@ def integral(coord, u) -> np.ndarray:
 if __name__ == "__main__":
     mesh = Mesh()
     mesh.load("mesh/unit_square.msh")
-    setMeshMapping(mesh)
-    u_space = TriP2(mesh)
-    asm_2 = assembler(u_space, u_space, Measure(2, None), 3)
-    f = asm_2.linear(Form(rhs, "f"))
-    A = asm_2.bilinear(Form(a, "grad"))
-    asm_1 = assembler(u_space, None, Measure(1, (2,)), 3, ("f", "grad", "dx", "n"))
-    g = asm_1.linear(Form(bc, "f"))
-    u_sol = spsolve(A, f + g).reshape(-1, 1)
-    u_err = Function(u_space)
-    u_err[:] = u_sol
-    u_err -= asm_2.functional(Form(integral, "f"), u=u_err) / 1.0
+    mesh_2 = splitRefine(mesh)
+    mesh_2.draw()
+    pyplot.show()
+    # setMeshMapping(mesh)
+    # u_space = TriP2(mesh)
+    # asm_2 = assembler(u_space, u_space, Measure(2, None), 3)
+    # f = asm_2.linear(Form(rhs, "f"))
+    # A = asm_2.bilinear(Form(a, "grad"))
+    # asm_1 = assembler(u_space, None, Measure(1, (2,)), 3, ("f", "grad", "dx", "n"))
+    # g = asm_1.linear(Form(bc, "f"))
+    # u_sol = spsolve(A, f + g).reshape(-1, 1)
+    # u_err = Function(u_space)
+    # u_err[:] = u_sol
+    # u_err -= asm_2.functional(Form(integral, "f"), u=u_err) / 1.0
     #
     # fig = pyplot.figure()
     # ax_sol = fig.add_subplot(1, 2, 1, projection="3d")
     # ax_sol.plot_trisurf(mesh.point[:,0], mesh.point[:,1], u_err.ravel(), triangles=mesh.cell[2][:,:-1], cmap=pyplot.cm.Spectral)
     #
     # u_exact = exact(mesh.point[:, 0], mesh.point[:, 1]).reshape(-1, 1) # For P1
-    u_exact = exact(u_space.dofloc[:, 0], u_space.dofloc[:, 1]).reshape(-1, 1) # For P2
-    u_err -= u_exact
-    u_err = u_err - asm_2.functional(Form(integral, "f"), u=u_err) / 1.0
+    # u_exact = exact(u_space.dofloc[:, 0], u_space.dofloc[:, 1]).reshape(-1, 1) # For P2
+    # u_err -= u_exact
+    # u_err = u_err - asm_2.functional(Form(integral, "f"), u=u_err) / 1.0
     #
     # ax_err = fig.add_subplot(1, 2, 2, projection="3d")
     # ax_err.plot_trisurf(mesh.point[:,0], mesh.point[:,1], u_err.ravel(), triangles=mesh.cell[2][:,:-1], cmap=pyplot.cm.Spectral)
     # pyplot.show()
-    print("Max-norm of error = {0:.3e}".format(np.linalg.norm(u_err, ord=np.inf)))
+    # print("Max-norm of error = {0:.3e}".format(np.linalg.norm(u_err, ord=np.inf)))
