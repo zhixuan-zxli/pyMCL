@@ -118,6 +118,8 @@ class LineP1(LineElement):
         self.num_dof = mesh.point.shape[0]
         # build cell dofs
         self.cell_dof[1] = mesh.cell[1]
+        # build also doflocs
+        self.dofloc = mesh.point
 
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, Nq)
@@ -235,6 +237,8 @@ class TriP1(TriElement):
         self.cell_dof[2] = mesh.cell[2]
         # build the facet dofs
         self.cell_dof[1] = mesh.cell[1]
+        # also set the doflocs
+        self.dofloc = mesh.point
 
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # rdim(=1) * num_quad
