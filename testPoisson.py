@@ -47,7 +47,7 @@ def L2(coord, u) -> np.ndarray:
 
 if __name__ == "__main__":
 
-    num_hier = 4
+    num_hier = 3
     mesh_table = tuple(f"{i}" for i in range(num_hier))
     error_table = {"infty" : [0.0] * num_hier, "L2" : [0.0] * num_hier}
     mesh = Mesh()
@@ -58,8 +58,15 @@ if __name__ == "__main__":
             mesh.load("mesh/unit_square.msh")
         else:
             mesh = splitRefine(mesh)
+        # Affine mesh
         setMeshMapping(mesh)
-        fe = TriP1(mesh)
+        # P2 Isoparametric mapping
+        # coord_fe = TriP2(mesh, num_copy=mesh.gdim)
+        # coord_map = Function(coord_fe)
+        # coord_map[:] = coord_fe.dofloc
+        # setMeshMapping(mesh, coord_map)
+
+        fe = TriP2(mesh)
 
         asm_2 = assembler(fe, fe, Measure(2, None), order=4)
         f = asm_2.linear(Form(rhs, "f"))
@@ -79,8 +86,8 @@ if __name__ == "__main__":
         u[:] = u_sol[:-1]
 
         u_err = Function(fe)
-        u_err[:] = exact(mesh.point[:, 0], mesh.point[:, 1]).reshape(-1, 1) # For P1
-        # u_err[:] = exact(fe.dofloc[:, 0], fe.dofloc[:, 1]).reshape(-1, 1) # For P2
+        # u_err[:] = exact(mesh.point[:, 0], mesh.point[:, 1]).reshape(-1, 1) # For P1
+        u_err[:] = exact(fe.dofloc[:, 0], fe.dofloc[:, 1]).reshape(-1, 1) # For P2
         u_err -= u
         u_err -= asm_2.functional(Form(integral, "f"), u=u_err) / 1.0
         
@@ -91,3 +98,4 @@ if __name__ == "__main__":
         error_table["L2"][m] = np.sqrt(asm_2.functional(Form(L2, "f"), u=u_err))
 
     printConvergenceTable(mesh_table, error_table)
+    

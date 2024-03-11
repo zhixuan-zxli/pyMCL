@@ -42,4 +42,5 @@ def setMeshMapping(mesh: Mesh, mapping: Optional[Function] = None):
         else:
             raise NotImplementedError
     else:
-        mesh.mapping = mapping
+        mesh.coord_fe = mapping.fe
+        mesh.coord_map = mapping
