@@ -205,11 +205,14 @@ class TriDG0(TriElement):
     trace_type = [NodeElement, LineDG0]
 
     def __init__(self, mesh: Mesh, num_copy: int = 1) -> None:
+        super().__init__(mesh, num_copy)
         Nt = mesh.cell[2].shape[0]
         self.num_dof_per_dim = np.array((0, 0, Nt), dtype=np.int64)
         self.num_dof = Nt
         # build cell dof
-        self.cell_dof[2] = np.arange(Nt).reshape(-1, 1)
+        self.cell_dof[2] = np.zeros((Nt, 2), dtype=np.uint32)
+        self.cell_dof[2][:,0] = np.arange(Nt)
+        self.cell_dof[2][:,1] = mesh.cell[2][:,-1]
         # build facet dof
         # skip building facet dofs as it is not used
 

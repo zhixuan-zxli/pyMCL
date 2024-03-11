@@ -32,12 +32,10 @@ class Quadrature:
             print("Retriving quadrature table for node. ")
             return Quadrature._node
         if cellType == RefLine:
-            if order == 3:
-                return Quadrature._line_O4
-            if order == 4:
+            if order <= 4:
                 return Quadrature._line_O4
         if cellType == RefTri:
-            if order == 3:
+            if order <= 3:
                 return Quadrature._tri_O3
             if order == 4:
                 return Quadrature._tri_O4
