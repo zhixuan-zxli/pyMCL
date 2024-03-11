@@ -2,7 +2,7 @@ import numpy as np
 from mesh import Mesh
 from mesh_util import splitRefine, setMeshMapping
 from fe import Measure, TriDG0, TriP1, TriP2
-from function import Function
+from function import Function, split_fn, group_fn
 from assemble import assembler, Form
 from scipy import sparse
 from scipy.sparse.linalg import spsolve
@@ -59,7 +59,7 @@ def L2(coord, u) -> np.ndarray:
 
 if __name__ == "__main__":
 
-    num_hier = 4
+    num_hier = 3
     mesh_table = tuple(f"{i}" for i in range(num_hier))
     error_head = ("u infty", "u L2", "p infty", "p L2")
     error_table = {k: [1.0] * num_hier for k in error_head}
@@ -73,11 +73,6 @@ if __name__ == "__main__":
             mesh = splitRefine(mesh)
         # Affine mesh
         setMeshMapping(mesh)
-        # P2 Isoparametric mapping
-        # coord_fe = TriP2(mesh, num_copy=mesh.gdim)
-        # coord_map = Function(coord_fe)
-        # coord_map[:] = coord_fe.dofloc
-        # setMeshMapping(mesh, coord_map)
 
         u_space, p_space = TriP2(mesh, 2), TriP1(mesh)
 
@@ -93,7 +88,7 @@ if __name__ == "__main__":
         p = Function(p_space)
         pp = sparse.csr_array((p.shape[0], p.shape[0]))
         Aa = sparse.bmat(((A, B), (B.T, pp)), format="csr")
-        La = np.vstack((L.reshape(-1, 1), p))
+        La = group_fn(L, p)
 
         print("Dimension of saddle point system = {}".format(Aa.shape))
 
@@ -107,14 +102,13 @@ if __name__ == "__main__":
         u_ex = u_exact(u_space.dofloc[:,0], u_space.dofloc[:,1]).T
         u = Function(u_space)
         u[bdof, :] = u_ex[bdof, :]
-        sol_vec = np.vstack((u.reshape(-1, 1), p))
+        sol_vec = group_fn(u, p)
         Lah = La - Aa @ sol_vec
         z = spsolve(Aa[fdof][:,fdof], Lah[fdof])
         sol_vec[fdof, 0] = z
 
         # extract the solutions
-        u[:] = sol_vec[:2*u_space.num_dof].reshape(-1, 2)
-        p[:] = sol_vec[2*u_space.num_dof:]
+        split_fn(sol_vec, u, p)
 
         # calculate the error
         u_err = u - u_ex

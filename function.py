@@ -34,6 +34,8 @@ class QuadData(np.ndarray):
         # invalidate the attributes
         return np.array(out_arr)
 
+
+
 class Function(np.ndarray):
     """
     Array of size num_dof. 
@@ -127,6 +129,19 @@ class Function(np.ndarray):
         return data
 
 
-class Expression:
-    pass
+# =============================================================
     
+def group_fn(*fnlist: Function) -> np.ndarray:
+    v_size = sum(f.size for f in fnlist)
+    vec = np.zeros((v_size, 1))
+    index = 0
+    for f in fnlist:
+        vec[index:index+f.size] = f.reshape(-1, 1)
+        index += f.size
+    return vec
+
+def split_fn(vec, *fnlist: Function) -> None:
+    index = 0
+    for f in fnlist:
+        f[:] = vec[index:index+f.size, 0].reshape(f.shape)
+        index += f.size
