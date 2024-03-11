@@ -50,8 +50,11 @@ def b(p, v, coord) -> np.ndarray:
 def l(v, coord) -> np.ndarray:
     return f_exact(coord[0], coord[1]) * v * coord.dx
 
-def integral(coord, u) -> np.ndarray:
-    return u * coord.dx
+def integral_P1P0(coord, p1, p0) -> np.ndarray:
+    return (p1 + p0) * coord.dx
+
+def L2_P1P0(coord, p1, p0) -> np.ndarray:
+    return np.sum((p1+p0)**2, axis=0, keepdims=True) * coord.dx
 
 def L2(coord, u) -> np.ndarray:
     return np.sum(u**2, axis=0, keepdims=True) * coord.dx
@@ -61,7 +64,8 @@ if __name__ == "__main__":
 
     num_hier = 3
     mesh_table = tuple(f"{i}" for i in range(num_hier))
-    error_head = ("u infty", "u L2", "p infty", "p L2")
+    # error_head = ("u infty", "u L2", "p infty", "p L2")
+    error_head = ("u infty", "u L2", "p L2")
     error_table = {k: [1.0] * num_hier for k in error_head}
     mesh = Mesh()
 
@@ -74,21 +78,22 @@ if __name__ == "__main__":
         # Affine mesh
         setMeshMapping(mesh)
 
-        u_space, p_space = TriP2(mesh, 2), TriP1(mesh)
+        u_space, p1_space, p0_space = TriP2(mesh, 2), TriP1(mesh), TriDG0(mesh)
 
         # assemble the form
         asm_uu = assembler(u_space, u_space, Measure(2), order=3)
-        asm_up = assembler(u_space, p_space, Measure(2), order=3)
-        asm_p = assembler(p_space, None, Measure(2), order=3)
+        asm_p = assembler(p1_space, None, Measure(2), order=3)
+
         A = asm_uu.bilinear(Form(a, "grad"))
         L = asm_uu.linear(Form(l, "f"))
-        B = asm_up.bilinear(Form(b, "f", "grad"))
+        B1 = assembler(u_space, p1_space, Measure(2), order=3).bilinear(Form(b, "f", "grad"))
+        B0 = assembler(u_space, p0_space, Measure(2), order=2).bilinear(Form(b, "f", "grad"))
 
         # assemble the saddle point system
-        p = Function(p_space)
-        pp = sparse.csr_array((p.shape[0], p.shape[0]))
-        Aa = sparse.bmat(((A, B), (B.T, pp)), format="csr")
-        La = group_fn(L, p)
+        p1 = Function(p1_space)
+        p0 = Function(p0_space)
+        Aa = sparse.bmat(((A, B1, B0), (B1.T, None, None), (B0.T, None, None)), format="csr")
+        La = group_fn(L, p1, p0)
 
         print("Dimension of saddle point system = {}".format(Aa.shape))
 
@@ -97,29 +102,31 @@ if __name__ == "__main__":
         fdof = np.ones((La.shape[0], ), dtype=np.bool8)
         fdof[bdof*2] = False
         fdof[bdof*2+1] = False
-        fdof[2*u_space.num_dof] = False # fix the first dof for pressure
+        fdof[2*u_space.num_dof] = False # fix the dofs for pressure
+        fdof[2*u_space.num_dof + p1_space.num_dof] = False
 
         u_ex = u_exact(u_space.dofloc[:,0], u_space.dofloc[:,1]).T
         u = Function(u_space)
-        u[bdof, :] = u_ex[bdof, :]
-        sol_vec = group_fn(u, p)
-        Lah = La - Aa @ sol_vec
-        z = spsolve(Aa[fdof][:,fdof], Lah[fdof])
+        u[bdof] = u_ex[bdof]
+        sol_vec = group_fn(u, p1, p0)
+        La = La - Aa @ sol_vec
+        z = spsolve(Aa[fdof][:,fdof], La[fdof])
         sol_vec[fdof, 0] = z
 
         # extract the solutions
-        split_fn(sol_vec, u, p)
+        split_fn(sol_vec, u, p1, p0)
 
         # calculate the error
         u_err = u - u_ex
-        p_ex = p_exact(p_space.dofloc[:, 0], p_space.dofloc[:, 1]).reshape(-1, 1)
-        p_err = p - p_ex
-        p_err -= asm_p.functional(Form(integral, "f"), u = p_err)
-
         error_table["u infty"][m] = np.linalg.norm(u_err.ravel(), ord=np.inf)
         error_table["u L2"][m] = np.sqrt(asm_uu.functional(Form(L2, "f"), u = u_err))
-        error_table["p infty"][m] = np.linalg.norm(p_err, ord=np.inf)
-        error_table["p L2"][m] = np.sqrt(asm_p.functional(Form(L2, "f"), u = p_err))
+
+        p_ex = p_exact(p1_space.dofloc[:, 0], p1_space.dofloc[:, 1]).reshape(-1, 1)
+        p_err = p1 - p_ex
+        p_err -= asm_p.functional(Form(integral_P1P0, "f"), p1 = p_err, p0 = p0)
+
+        # error_table["p infty"][m] = np.linalg.norm(p_err, ord=np.inf)
+        error_table["p L2"][m] = np.sqrt(asm_p.functional(Form(L2_P1P0, "f"), p1 = p_err, p0 = p0))
 
     printConvergenceTable(mesh_table, error_table)
     
