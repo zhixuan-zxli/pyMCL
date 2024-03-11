@@ -10,10 +10,10 @@ class Form:
     expr: callable
     hint: tuple[str]
 
-    def __init__(self, expr, *hints) -> None:
+    def __init__(self, expr, *hint) -> None:
         self.expr = expr
-        if len(hints) > 0:
-            self.hint = hints
+        if len(hint) > 0:
+            self.hint = hint
         else:
             self.hint = ("f", "grad")
     def __call__(self, *args, **kwds):
@@ -145,7 +145,7 @@ class assembler:
         for i in range(self.test_basis.num_dof_per_elem):
             psi = self._get_basis_quad_data(self.test_basis, i, rdim[0], form.hint) # (rdim[0], 1, Nq)
             for j in range(self.trial_basis.num_dof_per_elem):
-                phi = self._get_basis_quad_data(self.test_basis, j, rdim[1], form.hint) # (rdim[1], 1, Nq)
+                phi = self._get_basis_quad_data(self.trial_basis, j, rdim[1], form.hint) # (rdim[1], 1, Nq)
                 form_data = form(phi, psi, self.geom_data, **extra_data) # (rdim[0], rdim[1], Ne, Nq)
                 values[:,:,i,j,:] = \
                   (form_data.reshape(-1, Nq) @ self.quadTable[-1,:] * self.test_basis.ref_cell.dx).reshape(rdim[0], rdim[1], Ne)
