@@ -1,3 +1,4 @@
+from sys import argv
 import numpy as np
 from mesh import Mesh
 from mesh_util import setMeshMapping
@@ -46,7 +47,7 @@ def l1(chi, coord, x_m) -> np.ndarray:
 
 if __name__ == "__main__":
 
-    plot_or_not = True
+    plot_or_not = len(argv) >= 2 and argv[1] == "yes"
 
     mesh = Mesh()
     mesh.load("mesh/dumbbell.msh")
@@ -58,7 +59,7 @@ if __name__ == "__main__":
     x = Function(X_space)
     k = Function(K_space)
 
-    params = {"dt" : 1.0/1000, "maxStep" : 50}
+    params = {"dt" : 1.0/1000, "maxStep" : 60}
     geom_hint = ("f", "grad", "dx", "inv_grad", "n")
     
     # visualize
