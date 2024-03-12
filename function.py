@@ -142,7 +142,7 @@ def group_fn(*fnlist: Function) -> np.ndarray:
 
 def split_fn(vec: np.ndarray, *fnlist: Function) -> None:
     index = 0
-    # vflat = vec.reshape(-1)
     for f in fnlist:
         f[:] = vec[index:index+f.size].reshape(f.shape)
         index += f.size
+    assert index == vec.size
