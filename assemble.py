@@ -71,13 +71,11 @@ class assembler:
         # convert the args into QuadData
         extra_data = dict()
         for k, v in extra_args.items():
-            if isinstance(v, QuadData):
-                extra_data[k] = v
-            elif isinstance(v, Function):
+            if isinstance(v, Function):
                 basis, dof = self._get_basis_and_dof(v.fe)
                 extra_data[k] = v._get_quad_data(basis, dof, self.geom_data, self.quadTable, hint)
             else:
-                raise RuntimeError("Unable to convert the argument to QuadData. ")
+                extra_data[k] = v # for other data, leave it as it is
         return extra_data
 
     def functional(self, form: Form, **extra_args) -> float | np.ndarray:
@@ -119,7 +117,7 @@ class assembler:
             for c in range(num_copy):
                 indices[c,:,:] += c
         
-        vec = np.bincount(indices.ravel(), weights=values.ravel(), minlength=self.test_space.num_dof * num_copy)
+        vec = np.bincount(indices.reshape(-1), weights=values.reshape(-1), minlength=self.test_space.num_dof * num_copy)
         return vec.reshape(-1, num_copy)
 
     
@@ -162,7 +160,7 @@ class assembler:
                         col_idx[:,cj,i,j,:] += cj
         #
         shape = (self.test_space.num_dof * num_copy[0], self.trial_space.num_dof * num_copy[1])
-        mat = csr_array((values.ravel(), (row_idx.ravel(), col_idx.ravel())), shape=shape)
+        mat = csr_array((values.reshape(-1), (row_idx.reshape(-1), col_idx.reshape(-1))), shape=shape)
         return mat
 
     
