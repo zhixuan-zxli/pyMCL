@@ -15,6 +15,12 @@ def u_exact(x, y) -> np.ndarray:
          -np.sin(2*np.pi*x) * np.sin(np.pi*y)**2)
     )
 
+def du_exact(x, y) -> np.ndarray:
+    return np.array(
+        ((np.pi * np.sin(2.0*np.pi*x) * np.sin(2.0*np.pi*y), 2.0*np.pi * np.sin(np.pi*x)**2 * np.cos(2.0*np.pi*y)), 
+         (-2*np.pi * np.cos(2.0*np.pi*x) * np.sin(np.pi*y)**2, -np.pi * np.sin(2.0*np.pi*x) * np.sin(2.0*np.pi*y)))
+    )
+
 def p_exact(x, y) -> np.ndarray:
     return np.exp(np.pi*x) * np.cos(np.pi*y)
 
@@ -50,6 +56,16 @@ def b(p, v, coord) -> np.ndarray:
 def l(v, coord) -> np.ndarray:
     return f_exact(coord[0], coord[1]) * v * coord.dx
 
+def g(v, coord) -> np.ndarray:
+    x, y = coord[0], coord[1]
+    du = du_exact(x, y) # (2, 2, Ne, Nq)
+    Du = du + du.transpose((1,0,2,3)) # 2 times sym grad
+    p = p_exact(x, y) # (Ne, Nq)
+    # coord.n : (2, Ne, Nq)
+    Tn = np.sum(Du * coord.n[np.newaxis], axis=1) + p[np.newaxis] * coord.n # (2, Ne, Nq)
+    # v : (2, 1, Nq)
+    return Tn * v * coord.dx
+
 def integral_P1P0(coord, p1, p0) -> np.ndarray:
     return (p1 + p0) * coord.dx
 
@@ -62,7 +78,7 @@ def L2(coord, u) -> np.ndarray:
 
 if __name__ == "__main__":
 
-    num_hier = 3
+    num_hier = 4
     mesh_table = tuple(f"{i}" for i in range(num_hier))
     # error_head = ("u infty", "u L2", "p infty", "p L2")
     error_head = ("u infty", "u L2", "p L2")
@@ -70,13 +86,14 @@ if __name__ == "__main__":
     mesh = Mesh()
 
     for m in range(num_hier):
-        print(f"Testing level {m}...")
+        print(f"Testing level {m}... ", end="")
         if m == 0:
             mesh.load("mesh/unit_square.msh")
         else:
             mesh = splitRefine(mesh)
         # Affine mesh
         setMeshMapping(mesh)
+        # mesh boundary: left=6, right=7, bottom=8, top=9
 
         u_space, p1_space, p0_space = TriP2(mesh, 2), TriP1(mesh), TriDG0(mesh)
 
@@ -88,30 +105,35 @@ if __name__ == "__main__":
         L = asm_uu.linear(Form(l, "f"))
         B1 = assembler(u_space, p1_space, Measure(2), order=3).bilinear(Form(b, "f", "grad"))
         B0 = assembler(u_space, p0_space, Measure(2), order=2).bilinear(Form(b, "f", "grad"))
+        G = assembler(u_space, None, Measure(1, (6,7)), 3).linear(Form(g, "f"))
 
         # assemble the saddle point system
         p1 = Function(p1_space)
         p0 = Function(p0_space)
         Aa = sparse.bmat(((A, B1, B0), (B1.T, None, None), (B0.T, None, None)), format="csr")
-        La = group_fn(L, p1, p0)
-
-        print("Dimension of saddle point system = {}".format(Aa.shape))
+        # La = group_fn(L, p1, p0)
+        La = group_fn(L+G, p1, p0)
 
         # impose the Dirichlet condition
-        bdof = np.unique(u_space.getCellDof(Measure(1, (2, ))))
+        bdof = np.unique(u_space.getCellDof(Measure(1, (8, 9))))
+        # bdof = np.unique(u_space.getCellDof(Measure(1, (8, 9))))
         fdof = np.ones((La.shape[0], ), dtype=np.bool8)
         fdof[bdof*2] = False
         fdof[bdof*2+1] = False
         fdof[2*u_space.num_dof] = False # fix the dofs for pressure
         fdof[2*u_space.num_dof + p1_space.num_dof] = False
-
         u_ex = u_exact(u_space.dofloc[:,0], u_space.dofloc[:,1]).T
         u = Function(u_space)
         u[bdof] = u_ex[bdof]
+        p1[0] = p_exact(p1_space.dofloc[0,0], p1_space.dofloc[0,1]) # need to set this pressure dof <<<<<<<
+        
+        print("Dimension of saddle point system = {}".format(fdof.sum()))
+
+        # Homogeneize and then solve the system
         sol_vec = group_fn(u, p1, p0)
         La = La - Aa @ sol_vec
         z = spsolve(Aa[fdof][:,fdof], La[fdof])
-        sol_vec[fdof, 0] = z
+        sol_vec[fdof] = z
 
         # extract the solutions
         split_fn(sol_vec, u, p1, p0)
