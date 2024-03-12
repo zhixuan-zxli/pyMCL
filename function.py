@@ -133,15 +133,16 @@ class Function(np.ndarray):
     
 def group_fn(*fnlist: Function) -> np.ndarray:
     v_size = sum(f.size for f in fnlist)
-    vec = np.zeros((v_size, 1))
+    vec = np.zeros((v_size, ))
     index = 0
     for f in fnlist:
-        vec[index:index+f.size] = f.reshape(-1, 1)
+        vec[index:index+f.size] = f.reshape(-1)
         index += f.size
     return vec
 
-def split_fn(vec, *fnlist: Function) -> None:
+def split_fn(vec: np.ndarray, *fnlist: Function) -> None:
     index = 0
+    # vflat = vec.reshape(-1)
     for f in fnlist:
-        f[:] = vec[index:index+f.size, 0].reshape(f.shape)
+        f[:] = vec[index:index+f.size].reshape(f.shape)
         index += f.size
