@@ -56,6 +56,19 @@ class Mesh:
             else:
                 raise RuntimeError("Unrecognized cell type. ")
             
+        # 3. read periodicity. 
+        if hasattr(msh, "gmsh_periodic"):
+            corr = [item[3] for item in msh.gmsh_periodic if item[0] == self.tdim-1]
+            corr = np.vstack(corr)
+            p_map = np.arange(self.point.shape[0], dtype=np.uint32)
+            p_update = p_map.copy()
+            while True:
+                p_update[corr[:,0]] = p_map[corr[:,1]]
+                if np.all(p_update == p_map):
+                    break
+                p_map[:] = p_update
+            self.p_map = p_map
+            
     def get_entities(self, dim: int) -> dict:
         assert(dim > 0)
         if self.entities[dim] is None:
