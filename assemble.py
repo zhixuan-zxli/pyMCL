@@ -118,7 +118,7 @@ class assembler:
                 indices[c,:,:] += c
         
         vec = np.bincount(indices.reshape(-1), weights=values.reshape(-1), minlength=self.test_space.num_dof * num_copy)
-        return vec.reshape(-1, num_copy)
+        return vec
 
     
     def bilinear(self, form: Form, **extra_args) -> csr_array:
