@@ -91,10 +91,15 @@ def build_unit_square(h: float) -> None:
     gmsh.model.geo.synchronize()
     # add physical group
     gmsh.model.setPhysicalName(2, gmsh.model.addPhysicalGroup(2, [s_1]), "domain")
-    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, e_id), "boundary")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [e_id[0]]), "bottom")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [e_id[1]]), "right")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [e_id[2]]), "top")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [e_id[3]]), "left")
     # add periodicity
-    translation = [1.0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
-    gmsh.model.mesh.setPeriodic(1, [e_id[1]], [e_id[3]], translation)
+    translation = (1.0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
+    gmsh.model.mesh.setPeriodic(1, (e_id[1],), (e_id[3],), translation)
+    translation = (1.0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1)
+    gmsh.model.mesh.setPeriodic(1, (e_id[2],), (e_id[0],), translation)
     # generate and save
     gmsh.model.mesh.generate(dim = 2)
     gmsh.write("mesh/unit_square.msh")
