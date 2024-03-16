@@ -56,6 +56,12 @@ class Function(np.ndarray):
         out_arr.fe = self.fe
         return out_arr
     
+    def update(self) -> None:
+        # Update self to account for periodic BC. 
+        if self.fe.periodic:
+            temp = self.copy()
+            self[:] = temp[self.fe.dof_remap]
+    
     def _get_quad_data(self, basis_type, cell_dof: np.ndarray, x: Optional[QuadData], quadTable: np.ndarray, hint) -> QuadData:
         """
         See the doc of QuadData for hints. 

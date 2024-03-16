@@ -38,6 +38,7 @@ class FiniteElement:
     num_dof_per_dim: np.ndarray
     num_dof: int
     mesh: Mesh
+    periodic: bool
     # cell_dof
 
     def __init__(self, mesh: Mesh, num_copy: int = 1, periodic: bool = False) -> None:
@@ -126,8 +127,9 @@ class LineP1(LineElement):
         self.dofloc = mesh.point
         # apply remap for periodic
         if periodic:
-            self.cell_dof[1][:,:-1] = mesh.point_remap[mesh.cell[1][:,:-1]]
-            self.dof_remap = mesh.point_remap
+            point_remap = mesh._get_point_remap()
+            self.cell_dof[1][:,:-1] = point_remap[mesh.cell[1][:,:-1]]
+            self.dof_remap = point_remap
 
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, Nq)
@@ -171,9 +173,10 @@ class LineP2(LineElement):
         self.dofloc[Np:, :] = 0.5 * (mesh.point[mesh.cell[1][:, 0], :] + mesh.point[mesh.cell[1][:, 1], :])
         # apply remap for periodic BC
         if periodic:
-            self.cell_dof[1][:,:2] = mesh.point_remap[mesh.cell[1][:,:2]]
+            point_remap = mesh._get_point_remap()
+            self.cell_dof[1][:,:2] = point_remap[mesh.cell[1][:,:2]]
             self.dof_remap = np.arange(self.num_dof, dtype=np.uint32)
-            self.dof_remap[:Np] = mesh.point_remap
+            self.dof_remap[:Np] = point_remap
 
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, Nq)
@@ -258,9 +261,10 @@ class TriP1(TriElement):
         self.dofloc = mesh.point
         # apply remap for periodic BC
         if periodic:
-            self.cell_dof[2][:,:-1] = mesh.point_remap[mesh.cell[2][:,:-1]]
-            self.cell_dof[1][:,:-1] = mesh.point_remap[mesh.cell[1][:,:-1]]
-            self.dof_remap = mesh.point_remap
+            point_remap = mesh._get_point_remap()
+            self.cell_dof[2][:,:-1] = point_remap[mesh.cell[2][:,:-1]]
+            self.cell_dof[1][:,:-1] = point_remap[mesh.cell[1][:,:-1]]
+            self.dof_remap = point_remap
 
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # rdim(=1) * num_quad
@@ -336,6 +340,7 @@ class TriP2(TriElement):
         self.dofloc[Np:, :] = 0.5 * (mesh.point[row_idx, :] + mesh.point[col_idx, :])
         # apply remap for periodic BC
         if periodic:
+            point_remap = mesh._get_point_remap()
             edge_remap = np.arange(self.edge_map.nnz, dtype=np.uint32)
             for corr in mesh.constraint_table:
                 point_map = np.arange(Np, dtype=np.uint32)
@@ -346,7 +351,7 @@ class TriP2(TriElement):
                 temp = self.edge_map[np.minimum(row_remap[idx], col_remap[idx]), np.maximum(row_remap[idx], col_remap[idx])]
                 assert np.all(temp >= 1)
                 edge_remap[idx] = temp - 1
-            self.dof_remap = np.concatenate((mesh.point_remap, edge_remap + Np))
+            self.dof_remap = np.concatenate((point_remap, edge_remap + Np))
             self.cell_dof[2][:,:-1] = self.dof_remap[self.cell_dof[2][:,:-1]]
             self.cell_dof[1][:,:-1] = self.dof_remap[self.cell_dof[1][:,:-1]]
 

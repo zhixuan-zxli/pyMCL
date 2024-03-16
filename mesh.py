@@ -73,16 +73,23 @@ class Mesh:
             self.constraint_table = []
         self.constraint_table.append(con)
 
-    def collapse_point_remap(self) -> None:
-        corr = np.vstack(self.constraint_table)
-        remap = np.arange(self.point.shape[0], dtype=np.uint32)
-        p_update = remap.copy()
-        while True:
-            p_update[corr[:,0]] = remap[corr[:,1]]
-            if np.all(p_update == remap):
-                break
-            remap[:] = p_update
-        self.point_remap = remap
+    def _get_point_remap(self) -> None:
+        """
+        Link the slave points to the master points. 
+        Ensure that there is no intermediate slave poitns. 
+        """
+        assert hasattr(self, "constraint_table"), "Why get point remap if there is no constraint?"
+        if not hasattr(self, "point_remap"):
+            con = np.vstack(self.constraint_table)
+            remap = np.arange(self.point.shape[0], dtype=np.uint32)
+            p_update = remap.copy()
+            while True:
+                p_update[con[:,0]] = remap[con[:,1]]
+                if np.all(p_update == remap):
+                    break
+                remap[:] = p_update
+            self.point_remap = remap
+        return self.point_remap
     
     def draw(self) -> None:
         if self.tdim == 3:
