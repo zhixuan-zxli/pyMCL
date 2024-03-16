@@ -45,7 +45,7 @@ class FiniteElement:
         self.num_copy = num_copy
         self.periodic = periodic
         if periodic:
-            assert hasattr(mesh, "periodic_table")
+            assert hasattr(mesh, "constraint_table")
 
     def getCellDof(self, mea: Measure) -> np.ndarray:
         if mea.tdim == 0:
@@ -337,7 +337,7 @@ class TriP2(TriElement):
         # apply remap for periodic BC
         if periodic:
             edge_remap = np.arange(self.edge_map.nnz, dtype=np.uint32)
-            for corr in mesh.periodic_table:
+            for corr in mesh.constraint_table:
                 point_map = np.arange(Np, dtype=np.uint32)
                 point_map[corr[:,0]] = corr[:,1]
                 row_remap = point_map[row_idx]

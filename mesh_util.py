@@ -37,10 +37,10 @@ def setMeshMapping(mesh: Mesh, mapping: Optional[Function] = None):
         # set an affine mapping
         if mesh.tdim == 2:
             mesh.coord_fe = TriP1(mesh, mesh.gdim)
-            mesh.coord_map = Function(mesh.coord_fe)
-            np.copyto(mesh.coord_map, mesh.point)
         else:
             raise NotImplementedError
+        mesh.coord_map = Function(mesh.coord_fe)
+        np.copyto(mesh.coord_map, mesh.point)
     else:
         mesh.coord_fe = mapping.fe
         mesh.coord_map = mapping

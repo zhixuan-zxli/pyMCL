@@ -55,19 +55,34 @@ class Mesh:
             else:
                 raise RuntimeError("Unrecognized cell type. ")
             
-        # 3. read periodicity. 
-        if hasattr(msh, "gmsh_periodic"):
-            self.periodic_table = [item[3] for item in msh.gmsh_periodic if item[0] == self.tdim-1]
-            corr = np.vstack(self.periodic_table)
-            # collapse the point corespondence
-            remap = np.arange(self.point.shape[0], dtype=np.uint32)
-            p_update = remap.copy()
-            while True:
-                p_update[corr[:,0]] = remap[corr[:,1]]
-                if np.all(p_update == remap):
-                    break
-                remap[:] = p_update
-            self.point_remap = remap
+    def add_constraint(self, master_marker, slave_marker, transform, tol: float = 1e-14) -> None:
+        master_idx = np.nonzero(master_marker(self.point))[0] # master indices
+        master_data = np.hstack((transform(self.point[master_idx]), master_idx[:,np.newaxis]))
+        slave_idx = np.nonzero(slave_marker(self.point))[0] # slave indices
+        slave_data = np.hstack((self.point[slave_idx], -slave_idx[:,np.newaxis]-1))
+        assert master_data.shape[0] == slave_data.shape[0], "Number of nodes unmatched. "
+        data = np.vstack((master_data, slave_data))
+        si = np.lexsort((data[:,2], data[:,1], data[:,0]))
+        data = data[si, :]
+        error = data[::2, :2] - data[1::2, :2]
+        assert np.linalg.norm(error.reshape(-1), ord=np.inf) < tol
+        con = data[:, 2].astype(np.int32).reshape(-1, 2)
+        con = np.vstack((np.min(con, axis=1), np.max(con, axis=1))).T #(x,2)
+        con[:,0] = -con[:,0] - 1
+        if not hasattr(self, "constraint_table"):
+            self.constraint_table = []
+        self.constraint_table.append(con)
+
+    def collapse_point_remap(self) -> None:
+        corr = np.vstack(self.constraint_table)
+        remap = np.arange(self.point.shape[0], dtype=np.uint32)
+        p_update = remap.copy()
+        while True:
+            p_update[corr[:,0]] = remap[corr[:,1]]
+            if np.all(p_update == remap):
+                break
+            remap[:] = p_update
+        self.point_remap = remap
     
     def draw(self) -> None:
         if self.tdim == 3:
