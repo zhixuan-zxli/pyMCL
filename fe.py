@@ -45,7 +45,7 @@ class FiniteElement:
         self.num_copy = num_copy
         self.periodic = periodic
         if periodic:
-            assert hasattr(mesh, "point_remap")
+            assert hasattr(mesh, "periodic_table")
 
     def getCellDof(self, mea: Measure) -> np.ndarray:
         if mea.tdim == 0:
@@ -121,7 +121,7 @@ class LineP1(LineElement):
         self.num_dof_per_dim = np.array((mesh.point.shape[0],), dtype=np.int64)
         self.num_dof = mesh.point.shape[0]
         # build cell dofs
-        self.cell_dof[1] = mesh.cell[1]
+        self.cell_dof[1] = mesh.cell[1].copy()
         # build also doflocs
         self.dofloc = mesh.point
         # apply remap for periodic
@@ -251,14 +251,15 @@ class TriP1(TriElement):
         self.num_dof_per_dim = np.array((mesh.point.shape[0],), dtype=np.int64)
         self.num_dof = mesh.point.shape[0]
         # build cell dofs
-        self.cell_dof[2] = mesh.cell[2]
+        self.cell_dof[2] = mesh.cell[2].copy()
         # build the facet dofs
-        self.cell_dof[1] = mesh.cell[1]
+        self.cell_dof[1] = mesh.cell[1].copy()
         # also set the doflocs
         self.dofloc = mesh.point
         # apply remap for periodic BC
         if periodic:
             self.cell_dof[2][:,:-1] = mesh.point_remap[mesh.cell[2][:,:-1]]
+            self.cell_dof[1][:,:-1] = mesh.point_remap[mesh.cell[1][:,:-1]]
             self.dof_remap = mesh.point_remap
 
     @staticmethod
@@ -304,9 +305,7 @@ class TriP2(TriElement):
         """
         edges = twocells[:, [0,1,1,2,2,0]].reshape(-1, 3, 2)
         edges = np.stack((np.min(edges, axis=2), np.max(edges, axis=2)), axis=2).reshape(-1, 2)
-        m = csr_array((np.ones((Nt*3,), dtype=np.int64), 
-                       (edges[:,0], edges[:,1].reshape(-1))), 
-                       shape=(Np, Np))
+        m = csr_array((np.ones((Nt*3,), dtype=np.int64), (edges[:,0], edges[:,1])), shape=(Np, Np))
         m.data = np.arange(m.nnz) + 1
         return m, edges
 
@@ -323,6 +322,7 @@ class TriP2(TriElement):
         # set the num dof now
         self.num_dof_per_dim = np.array((Np, self.edge_map.nnz), dtype=np.int64)
         self.num_dof = Np + self.edge_map.nnz
+        assert self.edge_map.nnz == Np + Nt - 1
         # build the facet dofs
         self.cell_dof[1] = np.zeros((mesh.cell[1].shape[0], self.trace_type[1].num_dof_per_elem + 1), dtype=np.uint32)
         self.cell_dof[1][:, :2] = mesh.cell[1][:, :2]
@@ -336,11 +336,17 @@ class TriP2(TriElement):
         self.dofloc[Np:, :] = 0.5 * (mesh.point[row_idx, :] + mesh.point[col_idx, :])
         # apply remap for periodic BC
         if periodic:
-            row_idx = mesh.point_remap[row_idx]
-            col_idx = mesh.point_remap[col_idx]
-            edge_remap = self.edge_map[np.minimum(row_idx, col_idx), np.maximum(row_idx, col_idx)]
-            assert np.all(edge_remap >= 1)
-            self.dof_remap = np.concatenate((mesh.point_remap, edge_remap-1))
+            edge_remap = np.arange(self.edge_map.nnz, dtype=np.uint32)
+            for corr in mesh.periodic_table:
+                point_map = np.arange(Np, dtype=np.uint32)
+                point_map[corr[:,0]] = corr[:,1]
+                row_remap = point_map[row_idx]
+                col_remap = point_map[col_idx]
+                idx = np.nonzero((row_remap != row_idx) & (col_remap != col_idx))[0]
+                temp = self.edge_map[np.minimum(row_remap[idx], col_remap[idx]), np.maximum(row_remap[idx], col_remap[idx])]
+                assert np.all(temp >= 1)
+                edge_remap[idx] = temp - 1
+            self.dof_remap = np.concatenate((mesh.point_remap, edge_remap + Np))
             self.cell_dof[2][:,:-1] = self.dof_remap[self.cell_dof[2][:,:-1]]
             self.cell_dof[1][:,:-1] = self.dof_remap[self.cell_dof[1][:,:-1]]
 

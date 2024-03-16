@@ -57,16 +57,17 @@ class Mesh:
             
         # 3. read periodicity. 
         if hasattr(msh, "gmsh_periodic"):
-            corr = [item[3] for item in msh.gmsh_periodic if item[0] == self.tdim-1]
-            corr = np.vstack(corr)
-            p_map = np.arange(self.point.shape[0], dtype=np.uint32)
-            p_update = p_map.copy()
+            self.periodic_table = [item[3] for item in msh.gmsh_periodic if item[0] == self.tdim-1]
+            corr = np.vstack(self.periodic_table)
+            # collapse the point corespondence
+            remap = np.arange(self.point.shape[0], dtype=np.uint32)
+            p_update = remap.copy()
             while True:
-                p_update[corr[:,0]] = p_map[corr[:,1]]
-                if np.all(p_update == p_map):
+                p_update[corr[:,0]] = remap[corr[:,1]]
+                if np.all(p_update == remap):
                     break
-                p_map[:] = p_update
-            self.point_remap = p_map
+                remap[:] = p_update
+            self.point_remap = remap
     
     def draw(self) -> None:
         if self.tdim == 3:
