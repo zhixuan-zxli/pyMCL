@@ -78,7 +78,7 @@ def L2(coord, u) -> np.ndarray:
 
 if __name__ == "__main__":
 
-    num_hier = 4
+    num_hier = 3
     mesh_table = tuple(f"{i}" for i in range(num_hier))
     # error_head = ("u infty", "u L2", "p infty", "p L2")
     error_head = ("u infty", "u L2", "p L2")
@@ -105,7 +105,7 @@ if __name__ == "__main__":
         L = asm_uu.linear(Form(l, "f"))
         B1 = assembler(u_space, p1_space, Measure(2), order=3).bilinear(Form(b, "f", "grad"))
         B0 = assembler(u_space, p0_space, Measure(2), order=2).bilinear(Form(b, "f", "grad"))
-        G = assembler(u_space, None, Measure(1, (6,7)), 3).linear(Form(g, "f"))
+        G = assembler(u_space, None, Measure(1, (2,4)), 3).linear(Form(g, "f"))
 
         # assemble the saddle point system
         p1 = Function(p1_space)
@@ -115,8 +115,7 @@ if __name__ == "__main__":
         La = group_fn(L+G, p1, p0)
 
         # impose the Dirichlet condition
-        bdof = np.unique(u_space.getCellDof(Measure(1, (8, 9))))
-        # bdof = np.unique(u_space.getCellDof(Measure(1, (8, 9))))
+        bdof = np.unique(u_space.getCellDof(Measure(1, (3,5))))
         fdof = np.ones((La.shape[0], ), dtype=np.bool8)
         fdof[bdof*2] = False
         fdof[bdof*2+1] = False
