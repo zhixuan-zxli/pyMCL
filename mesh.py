@@ -1,6 +1,5 @@
 import meshio
 import numpy as np
-from scipy.sparse import csr_array
 from matplotlib import pyplot
 
 class Mesh:
@@ -67,21 +66,7 @@ class Mesh:
                 if np.all(p_update == p_map):
                     break
                 p_map[:] = p_update
-            self.p_map = p_map
-            
-    def get_entities(self, dim: int) -> dict:
-        assert(dim > 0)
-        if self.entities[dim] is None:
-            if dim == 1:
-                Np, Nt = self.point.shape[0], self.cell[2].shape[0]
-                idx = self.cell[2][:, [0,1,1,2,2,0]].reshape(-1, 3, 2)
-                idx = np.stack((np.min(idx, axis=2), np.max(idx, axis=2)), axis=2).reshape(-1, 2)
-                m = csr_array((np.ones((Nt*3,), dtype=np.int64), (idx[:,0], idx[:,1])), shape=(Np, Np))
-                m.data = np.arange(m.nnz) + 1
-                self.entities[1] = m
-            elif dim == 2:
-                raise NotImplementedError
-        return self.entities[dim]
+            self.point_remap = p_map
     
     def draw(self) -> None:
         if self.tdim == 3:
