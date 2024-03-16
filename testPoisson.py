@@ -73,11 +73,11 @@ if __name__ == "__main__":
         A = asm_2.bilinear(Form(a, "grad"))
         v = asm_2.linear(Form(test, "f"))
 
-        asm_1 = assembler(fe, None, Measure(1, (6,7,8,9)), order=3, geom_hint=("f", "grad", "dx", "n"))
+        asm_1 = assembler(fe, None, Measure(1, (2,3,4,5)), order=3, geom_hint=("f", "grad", "dx", "n"))
         g = asm_1.linear(Form(bc, "f"))
 
         # build the augmented system
-        Aa = sparse.bmat(((A, v),(v.T, 0.0)), format="csr")
+        Aa = sparse.bmat(((A, v),(v.T, None)), format="csr")
         fg = np.vstack((f+g, 0.0))
 
         u_sol = spsolve(Aa, fg).reshape(-1, 1)
