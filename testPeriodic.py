@@ -56,7 +56,7 @@ if __name__ == "__main__":
         #                     tol=1e-11)
         
         # fe = TriP1(mesh, 1, periodic=False)
-        fe = TriP2(mesh, 1, periodic=True)
+        fe = TriP1(mesh, 1, periodic=True)
 
         asm_2 = assembler(fe, fe, Measure(2), order=3)
         f = asm_2.linear(Form(rhs, "f"))
