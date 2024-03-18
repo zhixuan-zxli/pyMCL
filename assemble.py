@@ -1,8 +1,7 @@
 from typing import Optional
 import numpy as np
 from scipy.sparse import csr_array
-from fe import Measure
-from mesh import Mesh
+from mesh import Measure
 from function import FiniteElement, QuadData, Function
 from quadrature import Quadrature
 
@@ -162,5 +161,4 @@ class assembler:
         shape = (self.test_space.num_dof * num_copy[0], self.trial_space.num_dof * num_copy[1])
         mat = csr_array((values.reshape(-1), (row_idx.reshape(-1), col_idx.reshape(-1))), shape=shape)
         return mat
-
     

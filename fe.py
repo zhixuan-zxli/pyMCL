@@ -1,12 +1,6 @@
-from typing import Optional
 import numpy as np
-from mesh import Mesh
+from mesh import Mesh, Measure
 from scipy.sparse import csr_array
-
-class Measure:
-    def __init__(self, tdim: int, sub_id: Optional[int] = None) -> None:
-        self.tdim = tdim
-        self.sub_id = sub_id
 
 class RefCell:
     tdim: int
@@ -309,27 +303,13 @@ class TriP2(TriElement):
 
     edge_map: csr_array
 
-    @staticmethod
-    def _get_edge_map(Np, Nt, twocells):
-        """
-        Build the edge map e -> id, 
-        where e = (p1, p2) with p1 < p2 represents an edge, 
-        and id is 1-based and unique among the edges. 
-        Return: m: csr_array, edges: (Nt*3, 2)
-        """
-        edges = twocells[:, [0,1,1,2,2,0]].reshape(-1, 3, 2)
-        edges = np.stack((np.min(edges, axis=2), np.max(edges, axis=2)), axis=2).reshape(-1, 2)
-        m = csr_array((np.ones((Nt*3,), dtype=np.int64), (edges[:,0], edges[:,1])), shape=(Np, Np))
-        m.data = np.arange(m.nnz) + 1
-        return m, edges
-
     def __init__(self, mesh: Mesh, num_copy: int = 1, periodic: bool = False) -> None:
         super().__init__(mesh, num_copy, periodic)
         Np, Nt = mesh.point.shape[0], mesh.cell[2].shape[0]
         # build cell dofs
         self.cell_dof[2] = np.zeros((Nt, self.num_dof_per_elem+1), dtype=np.uint32)
         self.cell_dof[2][:, :3] = mesh.cell[2][:, :3]
-        self.edge_map, edges = self._get_edge_map(Np, Nt, mesh.cell[2])
+        self.edge_map, edges = mesh._get_edges_from_tri(Np, mesh.cell[2])
         idx = self.edge_map[edges[:,0], edges[:,1]]
         self.cell_dof[2][:, 3:-1] = idx.reshape(-1, 3) + Np - 1
         self.cell_dof[2][:, -1] = mesh.cell[2][:, -1]
