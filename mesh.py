@@ -163,11 +163,18 @@ class Mesh:
             print("Unable to visualize 3D mesh. ")
         elif self.tdim == 2:
             if self.gdim == 2:
-                pyplot.triplot(self.point[:,0], self.point[:,1], self.cell[2][:, :-1])
+                pyplot.triplot(self.point[:,0], self.point[:,1], triangles=self.cell[2][:, :-1])
             elif self.gdim == 3:
                 # use plot_trisurf
                 raise NotImplementedError
         elif self.tdim == 1:
-            raise NotImplementedError
+            if self.gdim ==  2:
+                from matplotlib.collections import LineCollection
+                p0 = self.point[self.cell[1][:,0]]
+                p1 = self.point[self.cell[1][:,1]]
+                segs = np.concatenate((p0[:,np.newaxis], p1[:,np.newaxis]), axis=1) # (nseg x 2 x 2)
+                pyplot.gca().add_collection(LineCollection(segments=segs))
+            else:
+                raise NotImplementedError
         pyplot.axis("equal")
 
