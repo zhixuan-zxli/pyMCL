@@ -14,7 +14,7 @@ class RefCell:
 
 class RefNode(RefCell):
     tdim: int = 0
-    dx: float = 0.0
+    dx: float = 1.0
 
 class RefLine(RefCell):
     tdim: int = 1
@@ -108,6 +108,14 @@ class LineDG0(LineElement):
     trace_type = [NodeElement]
 
     def __init__(self, mesh: Mesh, num_copy: int = 1, periodic: bool = False) -> None:
+        raise NotImplementedError
+    
+    @staticmethod
+    def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, Nq)
+        raise NotImplementedError
+    
+    @staticmethod
+    def _eval_grad(basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, tdim, Nq)
         raise NotImplementedError
 
 class LineP1(LineElement):
@@ -229,9 +237,11 @@ class TriDG0(TriElement):
         self.cell_dof[2] = np.zeros((Nt, 2), dtype=np.uint32)
         self.cell_dof[2][:,0] = np.arange(Nt)
         self.cell_dof[2][:,1] = mesh.cell[2][:,-1]
-        # nothing changes even if periodic ...
         # build facet dof
-        # skip building facet dofs as it is not used
+        # todo
+        #
+        if periodic:
+            pass
 
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray:
