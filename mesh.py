@@ -128,7 +128,7 @@ class Mesh:
             keep_idx[2] = np.nonzero(flag)[0]
             # find out the edges to be preserved
             edge_map, _ = self._get_edges_from_tri(self.point.shape[0], self.cell[2][keep_idx[2], :])
-            edge_flag = edge_map[np.min(self.cell[1][:, :-1], axis=1), np.max(self.cell[1][:, :-1])] > 0
+            edge_flag = edge_map[np.min(self.cell[1][:, :-1], axis=1), np.max(self.cell[1][:, :-1], axis=1)] > 0
             keep_idx[1] = np.nonzero(edge_flag)[0]
             # find out the vertices to be preserved
             keep_idx[0] = np.unique(self.cell[2][keep_idx[2], :-1])
