@@ -45,12 +45,12 @@ class FiniteElement:
     def getCellDof(self, mea: Measure) -> np.ndarray:
         if mea.tdim == 0:
             if mea.sub_id == None:
-                return np.arange(self.num_dof_per_dim[0], dtype=np.uint32)
+                return np.arange(self.num_dof_per_dim[0], dtype=np.uint32).reshape(-1, 1)
             else:
                 flag = np.zeros((self.mesh.point.shape[0], ), np.bool8)
                 for i in mea.sub_id:
                     flag[self.mesh.point_tag == i] = True
-                return np.nonzero(flag)[0].astype(np.uint32)
+                return np.nonzero(flag)[0].astype(np.uint32).reshape(-1, 1)
         if mea.sub_id == None:
             return self.cell_dof[mea.tdim][:, :-1] # remove the tag
         flag = np.zeros((self.cell_dof[mea.tdim].shape[0], ), np.bool8)
@@ -77,8 +77,9 @@ class NodeElement(FiniteElement):
         return np.ones((1, qpts.shape[1]))
     
     @staticmethod
-    def _eval_grad(basis_id: int, qpts: np.ndarray) -> np.ndarray:
-        raise RuntimeError("Evalating gradient of a node element. ")
+    def _eval_grad(basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, tdim, Nq)
+        assert(basis_id == 0)
+        return np.zeros((1, 0, qpts.shape[1]))
 
 
 # =====================================================================
