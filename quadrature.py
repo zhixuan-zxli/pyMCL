@@ -4,7 +4,7 @@ from fe import RefCell, RefNode, RefLine, RefTri
 class Quadrature:
 
     _node = np.array(
-        ((0.0, 1.0))
+        ((0.0, 1.0),)
     ).T
 
     _line_O4 = np.array(
@@ -35,7 +35,6 @@ class Quadrature:
     @staticmethod
     def getTable(cellType: type, order: int) -> np.array:
         if cellType == RefNode:
-            print("Retriving quadrature table for node. ")
             return Quadrature._node
         if cellType == RefLine:
             if order <= 4:
