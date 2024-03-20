@@ -39,7 +39,7 @@ class assembler:
         geom_space = test_space.mesh.coord_fe
         geom_basis, geom_dof = self._get_basis_and_dof(geom_space)
         if geom_hint is None:
-            geom_hint = ("f", "grad", "dx", "inv_grad") if mea.tdim == test_space.tdim else ("f", "grad", "dx", "inv_grad", "n")
+            geom_hint = ("f", "grad", "dx", "inv_grad") if mea.tdim == test_space.mesh.gdim else ("f", "grad", "dx", "inv_grad", "n")
         self.geom_data = test_space.mesh.coord_map._get_quad_data(geom_basis, geom_dof, None, self.quadTable, geom_hint)
 
     # A helper to get the basis type and the DOF on the provided measure, given a finite element space.
