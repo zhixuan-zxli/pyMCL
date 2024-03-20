@@ -37,7 +37,7 @@ def f_exact(x, y) -> np.ndarray:
     )
     return diffu - dp_exact(x, y)
 
-def a(u, v, coord) -> np.ndarray:
+def a(v, u, coord) -> np.ndarray:
     # grad: (2, 2, Ne, Nq)
     z = np.zeros_like(u.grad)
     z[0,0,:,:] = 2.0 * v.grad[0,0,:,:] * u.grad[0,0,:,:] + v.grad[0,1,:,:] * u.grad[0,1,:,:]
@@ -46,7 +46,7 @@ def a(u, v, coord) -> np.ndarray:
     z[1,1,:,:] = v.grad[1,0,:,:] * u.grad[1,0,:,:] + 2.0 * v.grad[1,1,:,:] * u.grad[1,1,:,:]
     return z * coord.dx[np.newaxis]
 
-def b(p, v, coord) -> np.ndarray:
+def b(v, p, coord) -> np.ndarray:
     # v.grad: (2,2,Ne,Nq)
     z = np.zeros((2, 1, coord.shape[1], coord.shape[2]))
     z[0,0,:,:] = v.grad[0,0,:,:] * p[0,:,:]

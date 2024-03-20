@@ -122,7 +122,7 @@ class assembler:
     
     def bilinear(self, form: Form, **extra_args) -> csr_array:
         """
-        form(phi, psi, x, w) : 
+        form(psi, phi, x, w) : 
         phi the trial function, psi the test function, x the coordinates, w the extra functions
         """
         assert self.trial_space is not None
@@ -143,7 +143,7 @@ class assembler:
             psi = self._get_basis_quad_data(self.test_basis, i, rdim[0], form.hint) # (rdim[0], 1, Nq)
             for j in range(self.trial_basis.num_dof_per_elem):
                 phi = self._get_basis_quad_data(self.trial_basis, j, rdim[1], form.hint) # (rdim[1], 1, Nq)
-                form_data = form(phi, psi, self.geom_data, **extra_data) # (rdim[0], rdim[1], Ne, Nq)
+                form_data = form(psi, phi, self.geom_data, **extra_data) # (rdim[0], rdim[1], Ne, Nq)
                 values[:,:,i,j,:] = \
                   (form_data.reshape(-1, Nq) @ self.quadTable[-1,:] * self.test_basis.ref_cell.dx).reshape(rdim[0], rdim[1], Ne)
                 row_idx[:,:,i,j,:] = self.test_dof[:,i]
