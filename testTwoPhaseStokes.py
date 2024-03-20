@@ -39,7 +39,7 @@ def a_wk(w, kappa, coord) -> np.ndarray:
     z = coord.n * w * kappa * coord.dx # (2, Ne, Nq)
     return z[:, np.newaxis]
 
-def g_slip(w, u, coord, beta) -> np.ndarray:
+def a_slip_wu(w, u, coord, beta) -> np.ndarray:
     # u, w: (2, 1, Nq)
     # beta: (Ne, )
     z = np.zeros((2, 2, coord.shape[1], coord.shape[2]))
@@ -66,7 +66,7 @@ def a_psiu(psi, u, coord) -> np.ndarray:
 # def a_psiu(psi, u, coord) -> np.ndarray:
 #     return a_psix(psi, u, coord)
 
-def l_psix(psi, coord, x_m) -> np.ndarray:
+def l_psi_x(psi, coord, x_m) -> np.ndarray:
     # x_m: (2, Ne, Nq)
     # coord.n: (2, Ne, Nq)
     # psi: (1, 1, Nq)
@@ -79,19 +79,20 @@ def a_slip_gx(g, x, coord) -> np.ndarray:
     z[0,0] = g[0] * x[0]
     return z
 
-def g_slip_gx(g, coord, x_m) -> np.ndarray:
+def l_slip_g_x(g, coord, x_m) -> np.ndarray:
     # g: (2, 1, Nq)
     # x_m: (2, Ne, Nq)
-    # coord.dx: (1, Ne, Nq)
-    z = g[0] * x_m[0]
-    return z[np.newaxis] * coord.dx
+    z = np.zeros((2, coord.shape[1], coord.shape[2]))
+    z[0] = g[0] * x_m[0] # (Ne, Nq)
+    return z
 
-def l_g(g, coord, costh) -> np.ndarray:
-    # costh: scalar
+def l_g(g, coord, cosY) -> np.ndarray:
+    # cosY: scalar
     # coord: (2, Ne, Nq)
     # g: (2, 1, Nq)
-    z = costh * np.where(coord[0] > 0, g[0], -g[0]) # (Ne, Nq)
-    return z[np.newaxis] * coord.dx
+    z = np.zeros((2, coord.shape[1], coord.shape[2]))
+    z[0] = cosY * np.where(coord[0] > 0, g[0], -g[0]) # (Ne, Nq)
+    return z
 
 
 class PhysicalParameters:
@@ -120,10 +121,10 @@ if __name__ == "__main__":
     setMeshMapping(i_mesh)
 
     mixed_fe = (TriP2(mesh, 2, periodic=True),  # U
-              TriP1(mesh, 1, periodic=True),  # P1
-              TriDG0(mesh, 1, periodic=True), # P0
-              LineP1(i_mesh, 2),              # X
-              LineP1(i_mesh))                 # K
+              TriP1(mesh, 1, periodic=True),    # P1
+              TriDG0(mesh, 1, periodic=True),   # P0
+              i_mesh.coord_fe,                  # X
+              LineP1(i_mesh))                   # K
 
     phys = PhysicalParameters()
     solp = SolverParemeters()
@@ -139,20 +140,35 @@ if __name__ == "__main__":
     B_wp1 = assembler(mixed_fe[0], mixed_fe[1], Measure(2), order=3).bilinear(Form(b_wp))
     B_wp0 = assembler(mixed_fe[0], mixed_fe[2], Measure(2), order=2).bilinear(Form(b_wp))
     A_wk = assembler(mixed_fe[0], mixed_fe[4], Measure(1, (3,)), order=4).bilinear(Form(a_wk, "f"))
-    g_wu = assembler(mixed_fe[0], mixed_fe[0], Measure(1, (4, 5)), order=5).bilinear(Form(g_slip, "f"), beta=beta)
+    S_wu = assembler(mixed_fe[0], mixed_fe[0], Measure(1, (4, 5)), order=5).bilinear(Form(a_slip_wu, "f"), beta=beta)
 
     A_gx = assembler(mixed_fe[3], mixed_fe[3], Measure(1), order=3).bilinear(Form(a_gx, "grad"))
     A_gk = assembler(mixed_fe[3], mixed_fe[4], Measure(1), order=3).bilinear(Form(a_wk, "f"))
     A_psiu = assembler(mixed_fe[4], mixed_fe[0], Measure(1, (3,)), order=4).bilinear(Form(a_psiu, "f"))
-    g_gx = assembler(mixed_fe[3], mixed_fe[3], Measure(0, (9,)), order=1, geom_hint=("f", )).bilinear(Form(a_slip_gx, "f"))
+    S_gx = assembler(mixed_fe[3], mixed_fe[3], Measure(0, (9,)), order=1, geom_hint=("f", )).bilinear(Form(a_slip_gx, "f"))
 
-    A = sparse.bmat(((A_wu + 1.0/phys.l_s*g_wu, -B_wp1, -B_wp0, None, -1.0/phys.Ca*A_wk), 
+    A = sparse.bmat(((A_wu + 1.0/phys.l_s*S_wu, -B_wp1, -B_wp0, None, -1.0/phys.Ca*A_wk), 
                      (B_wp1.T, None, None, None, None), 
                      (B_wp0.T, None, None, None, None), 
-                     (None, None, None, A_gx + phys.beta_s*phys.Ca/solp.dt*g_gx, A_gk), 
+                     (None, None, None, A_gx + phys.beta_s*phys.Ca/solp.dt*S_gx, A_gk), 
                      (-solp.dt*A_psiu, None, None, A_gk.T, None)), 
                      format="csr")
     print("dimension = {}".format(A.shape))
 
-    pass
+    u = Function(mixed_fe[0])
+    p1 = Function(mixed_fe[1])
+    p0 = Function(mixed_fe[2])
+    x_m = Function(mixed_fe[3])
+    kappa = Function(mixed_fe[4])
 
+    asm_g_0 = assembler(mixed_fe[3], None, Measure(0, (9, )), order=1, geom_hint=("f", ))
+    L_g = asm_g_0.linear(Form(l_g, "f"), cosY=phys.cosY)
+    L_g_x = asm_g_0.linear(Form(l_slip_g_x, "f"), x_m=x_m)
+    L_psi_x = assembler(mixed_fe[4], None, Measure(1, (3, )), order=3).linear(Form(l_psi_x, "f"), x_m=x_m)
+
+    L = group_fn(u, p1, p0, L_g + phys.beta_s*phys.Ca/solp.dt*L_g_x, solp.dt*L_psi_x)
+
+    # impose Dirichlet condition
+    # todo ...
+    
+    pass
