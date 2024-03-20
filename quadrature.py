@@ -12,6 +12,12 @@ class Quadrature:
          (0.7886751345948129, 1.0/2))
     ).T
 
+    _line_O6 = np.array(
+        ((0.1127016653792583, 5.0/18),
+         (0.5, 4.0/9), 
+         (0.8872983346207417, 5.0/18))
+    ).T
+
     _tri_O3 = np.array(
         ((1.0/2, 0.0, 1.0/2, 1.0/3),  
         (1.0/2, 1.0/2, 0.0, 1.0/3), 
@@ -34,6 +40,8 @@ class Quadrature:
         if cellType == RefLine:
             if order <= 4:
                 return Quadrature._line_O4
+            if order <= 6:
+                return Quadrature._line_O6
         if cellType == RefTri:
             if order <= 3:
                 return Quadrature._tri_O3
