@@ -1,7 +1,7 @@
 from typing import Optional
 import numpy as np
 from mesh import Mesh
-from fe import TriP1, LineP2, TriP2
+from fe import LineP1, TriP1, LineP2, TriP2
 from function import Function
 
 def splitRefine(mesh: Mesh) -> Mesh:
@@ -37,8 +37,8 @@ def setMeshMapping(mesh: Mesh, mapping: Optional[Function] = None):
         # set an affine mapping
         if mesh.tdim == 2:
             mesh.coord_fe = TriP1(mesh, mesh.gdim)
-        else:
-            raise NotImplementedError
+        elif mesh.tdim == 1:
+            mesh.coord_fe = LineP1(mesh, mesh.gdim)
         mesh.coord_map = Function(mesh.coord_fe)
         np.copyto(mesh.coord_map, mesh.point)
     else:
