@@ -53,6 +53,8 @@ def build_two_phase_mesh(bbox:np.ndarray, markers:np.ndarray, h_size, dist_max =
     gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
     gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
 
+    gmsh.option.setNumber("Mesh.Binary", 1)
+
     # add physical group
     gmsh.model.setPhysicalName(2, gmsh.model.addPhysicalGroup(2, [fluid_1]), "fluid_1")
     gmsh.model.setPhysicalName(2, gmsh.model.addPhysicalGroup(2, [fluid_2]), "fluid_2")
@@ -100,6 +102,9 @@ def build_unit_square(h: float) -> None:
     gmsh.model.mesh.setPeriodic(1, (e_id[1],), (e_id[3],), translation)
     # translation = (1.0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1)
     # gmsh.model.mesh.setPeriodic(1, (e_id[2],), (e_id[0],), translation)
+    
+    gmsh.option.setNumber("Mesh.Binary", 1)
+
     # generate and save
     gmsh.model.mesh.generate(dim = 2)
     gmsh.write("mesh/unit_square.msh")
