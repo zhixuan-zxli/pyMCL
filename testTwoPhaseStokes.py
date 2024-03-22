@@ -208,6 +208,7 @@ if __name__ == "__main__":
     if solp.vis:
         pyplot.ion()
         fig, ax = pyplot.subplots()
+        ax.axis("equal")
 
     m = solp.startStep
     while True:
@@ -277,15 +278,17 @@ if __name__ == "__main__":
         # print("Interface displacement = {}".format(np.linalg.norm(i_disp.reshape(-1), np.inf)))
 
         # solve the displacement on the substrate
+        cl_dof = cl_dof.reshape(-1)
         if x[cl_dof[0], 0] > x[cl_dof[1], 0]: # make sure [0] on the left, [1] on the right
             cl_dof = cl_dof[::-1]
         # set up the dirichlet condition
         Yg[:] = 0.0
         Y0_m = mesh.coord_map[Y_bot_dof, 0] # the x coordinate of the grid points on the substrate
+        cl_pos = (x_m[cl_dof[0], 0], x_m[cl_dof[1], 0])
         Yg[Y_bot_dof, 0] = np.where(
-            Y0_m < x_m[cl_dof[0], 0], (Y0_m + 1.0) / (x_m[cl_dof[0],0] + 1.0) * i_disp[cl_dof[0],0], 
-            np.where(Y0_m > x_m[cl_dof[1],0], (1.0 - Y0_m) / (1.0 - x_m[cl_dof[1],0]) * i_disp[cl_dof[1],0], 
-                     i_disp[cl_dof[0],0] + i_disp[cl_dof[1],0] * (Y0_m - x_m[cl_dof[0],0]) / (x_m[cl_dof[1],0]-x_m[cl_dof[0],0]))
+            Y0_m < cl_pos[0], (Y0_m + 1.0) / (cl_pos[0] + 1.0) * i_disp[cl_dof[0],0], 
+            np.where(Y0_m > cl_pos[1], (1.0 - Y0_m) / (1.0 - cl_pos[1]) * i_disp[cl_dof[1],0], 
+                     (i_disp[cl_dof[0],0] * (cl_pos[1] - Y0_m) + i_disp[cl_dof[1],0] * (Y0_m - cl_pos[0])) / (cl_pos[1] - cl_pos[0]))
         )
         Yg[Y_int_dof] = i_disp
 
