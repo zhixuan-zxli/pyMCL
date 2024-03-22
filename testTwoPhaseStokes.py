@@ -86,12 +86,11 @@ def l_slip_g_x(g, coord, x_m) -> np.ndarray:
     z[0] = g[0] * x_m[0] # (Ne, Nq)
     return z
 
-def l_g(g, coord, cosY) -> np.ndarray:
-    # cosY: scalar
+def l_g(g, coord) -> np.ndarray:
     # coord: (2, Ne, Nq)
     # g: (2, 1, Nq)
     z = np.zeros((2, coord.shape[1], coord.shape[2]))
-    z[0] = cosY * np.where(coord[0] > 0, g[0], -g[0]) # (Ne, Nq)
+    z[0] = np.where(coord[0] > 0, g[0], -g[0]) # (Ne, Nq)
     return z
 
 
@@ -148,7 +147,7 @@ if __name__ == "__main__":
         assembler(mixed_fe[0], mixed_fe[0], Measure(1, (4, 5)), order=5), # [4]: for navier slip
         assembler(mixed_fe[3], mixed_fe[3], Measure(1), order=3), 
         assembler(mixed_fe[3], mixed_fe[4], Measure(1), order=3), 
-        assembler(mixed_fe[4], mixed_fe[0], Measure(1, (3,)), order=4), 
+        assembler(mixed_fe[4], mixed_fe[0], Measure(1, (3,)), order=4),  # [7]: for advection by u
         assembler(mixed_fe[3], mixed_fe[3], Measure(0, (9,)), order=1, geom_hint=("f", )), # [8]: slip at cl
     )
 
@@ -195,14 +194,14 @@ if __name__ == "__main__":
                         format="csr")
         
         # assemble the RHS
-        L_g = asms[8].linear(Form(l_g, "f"), cosY=phys.cosY)
+        L_g = asms[8].linear(Form(l_g, "f"))
         L_g_x = asms[8].linear(Form(l_slip_g_x, "f"), x_m=x_m)
         L_psi_x = asms[7].linear(Form(l_psi_x, "f"), x_m=x_m)
 
         u[:] = 0.0
         p1[:] = 0.0
         p0[:] = 0.0
-        L = group_fn(u, p1, p0, L_g + phys.beta_s*phys.Ca/solp.dt*L_g_x, solp.dt*L_psi_x)
+        L = group_fn(u, p1, p0, phys.cosY*L_g + phys.beta_s*phys.Ca/solp.dt*L_g_x, L_psi_x)
 
         # Since the essential conditions are all homogeneous,
         # we don't need to homogeneize the system
@@ -211,16 +210,18 @@ if __name__ == "__main__":
         # determine the fixed dof and free dof
         top_dof = np.unique(mixed_fe[0].getCellDof(Measure(1, (7, ))))
         bot_dof = np.unique(mixed_fe[0].getCellDof(Measure(1, (4, 5))))
-        period_dof = np.nonzero(mixed_fe[0].dof_remap != np.arange(mixed_fe[0].num_dof))[0]
+        u_period_dof = np.nonzero(mixed_fe[0].dof_remap != np.arange(mixed_fe[0].num_dof))[0]
+        p1_period_dof = np.nonzero(mixed_fe[1].dof_remap != np.arange(mixed_fe[1].num_dof))[0]
         cl_dof = mixed_fe[3].getCellDof(Measure(0, (9,)))
 
         # let's hope the first dof in P1, P0 is not a slave
         assert mixed_fe[1].dof_remap[0] == 0
         zero_dof = np.array((0,), dtype=np.uint32)
+        assert not hasattr(mixed_fe[2], "dof_remap")
 
         fixed_dof_list = (
-            ((top_dof, period_dof), (top_dof, period_dof, bot_dof)), 
-            (zero_dof, ), 
+            ((top_dof, u_period_dof), (top_dof, u_period_dof, bot_dof)), 
+            (zero_dof, p1_period_dof), 
             (zero_dof, ), 
             (None, (cl_dof, )), 
             None
