@@ -1,6 +1,6 @@
 from typing import Optional
 import numpy as np
-from fe import FiniteElement
+from .fe import FiniteElement
 
 class QuadData(np.ndarray):
     """

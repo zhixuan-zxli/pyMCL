@@ -1,13 +1,13 @@
 import numpy as np
-from mesh import Mesh
-from mesh_util import splitRefine, setMeshMapping
-from fe import Measure, TriDG0, TriP1, TriP2
-from function import Function, split_fn, group_fn
-from assemble import assembler, Form
+from fem.mesh import Mesh
+from fem.mesh_util import splitRefine, setMeshMapping
+from fem.fe import Measure, TriDG0, TriP1, TriP2
+from fem.function import Function, split_fn, group_fn
+from fem.assemble import assembler, Form
 from scipy import sparse
 from scipy.sparse.linalg import spsolve
 from matplotlib import pyplot
-from util import printConvergenceTable
+from fem.util import printConvergenceTable
 
 def u_exact(x, y) -> np.ndarray:
     return np.array(

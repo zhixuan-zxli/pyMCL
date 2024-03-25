@@ -1,5 +1,5 @@
 import numpy as np
-from mesh import Mesh, Measure
+from .mesh import Mesh, Measure
 from scipy.sparse import csr_array
 
 class RefCell:

@@ -1,9 +1,9 @@
 from typing import Optional
 import numpy as np
 from scipy.sparse import csr_array
-from mesh import Measure
-from function import FiniteElement, QuadData, Function
-from quadrature import Quadrature
+from .mesh import Measure
+from .function import FiniteElement, QuadData, Function
+from .quadrature import Quadrature
 
 class Form:
     expr: callable
