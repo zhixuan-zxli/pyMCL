@@ -32,15 +32,23 @@ def splitRefine(mesh: Mesh) -> Mesh:
         fine_mesh.cell[2] = fine_mesh.cell[2].reshape((4*Nt, 4))
     return fine_mesh
 
-def setMeshMapping(mesh: Mesh, mapping: Optional[Function] = None):
-    if mapping is None:
-        # set an affine mapping
-        if mesh.tdim == 2:
+def setMeshMapping(mesh: Mesh, order: int = 1):
+    """
+    Set up the P-x (x=1,2) isoparametric mapping for the mesh. 
+    """
+    mesh.coord_fe = None
+    # set an affine mapping
+    if mesh.tdim == 2:
+        if order == 1:
             mesh.coord_fe = TriP1(mesh, mesh.gdim)
-        elif mesh.tdim == 1:
+        elif order == 2:
+            mesh.coord_fe = TriP2(mesh, mesh.gdim)
+    elif mesh.tdim == 1:
+        if order == 1:
             mesh.coord_fe = LineP1(mesh, mesh.gdim)
-        mesh.coord_map = Function(mesh.coord_fe)
-        np.copyto(mesh.coord_map, mesh.point)
-    else:
-        mesh.coord_fe = mapping.fe
-        mesh.coord_map = mapping
+        elif order == 2:
+            mesh.coord_fe = LineP2(mesh, mesh.gdim)
+    if mesh.coord_fe is None:
+        raise RuntimeError("Unsupported mesh mapping order. ")
+    mesh.coord_map = Function(mesh.coord_fe)
+    np.copyto(mesh.coord_map, mesh.coord_fe.dofloc)
