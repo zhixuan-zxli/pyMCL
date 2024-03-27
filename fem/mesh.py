@@ -146,7 +146,7 @@ class Mesh:
         # copy the nodes
         submesh.point = self.point[keep_idx[0]]
         submesh.point_tag = self.point_tag[keep_idx[0]]
-        submesh.parent_point = keep_idx[0]
+        submesh.parent_point = keep_idx[0] # child-to-parent information saved here
         Np = submesh.point.shape[0]
         # remap the nodes
         point_remap = np.zeros((self.point.shape[0], ), dtype=np.uint32)
