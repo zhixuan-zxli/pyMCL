@@ -1,5 +1,7 @@
 __pycache__/
+build/
 .vscode/
+*.so
 *.ini
 *.h5
 *.xdmf
