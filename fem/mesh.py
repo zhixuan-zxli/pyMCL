@@ -19,13 +19,8 @@ class Mesh:
     # cell_entity[d] is the d-dimensional sub-entity of a cell of tdim dimensions. 
 
     inv_bdry: np.ndarray
-
-    # entity_list: list[np.ndarray]
-    # # entity[d] stores the d-dimensional entities in a N-by-(d+1) array, 
-    # # where N is the number of entities and each row contains the nodes of one entity. 
-    # entity_tag: list[np.ndarray]
-    # # entity_tag[d] is just a translation from cell[d]. 
-    # # It is an N-by-2 array, each row being the ID of the entity and the tag. 
+    # mapping from facets to elements, (2, 2, num_facets)
+    #[positive/negaive side, element id/facet id, *] 
 
     coord_fe: Any  # the finite element space for the mesh mapping
     coord_map: Any # the finite element function for the mesh mapping
@@ -115,11 +110,11 @@ class Mesh:
             cell[d], idx, inv_idx = np.unique(all_entities, return_index=True, return_inverse=True, axis=0)
             cell_entity[d] = inv_idx.reshape(num_cell, -1).astype(np.int32) # (num_cell, tdim+1)
             if d == tdim-1: # get the inverse of the boundary map for co-dimension one entity   
-                inv_bdry = np.zeros((2, 2, cell[d].shape[0]), dtype=np.int32) #[positive/negaive side, element id/facet id, *]       
-                inv_bdry[0,0], inv_bdry[0,1] = np.divmod(idx, sub_ent.shape[0])
+                inv_bdry = np.zeros((2, 2, cell[d].shape[0]), dtype=np.int32)   
+                inv_bdry[0,0], inv_bdry[0,1] = np.divmod(idx, cell_entity[d].shape[1])
                 _, idx = np.unique(all_entities[::-1], return_index=True, axis=0) # find the second occurences
                 idx = all_entities.shape[0] - idx - 1
-                inv_bdry[1,0], inv_bdry[1,1] = np.divmod(idx, sub_ent.shape[0])
+                inv_bdry[1,0], inv_bdry[1,1] = np.divmod(idx, cell_entity[d].shape[1])
         return cell, cell_entity, inv_bdry
     
     # set boundary orientation ...
@@ -169,8 +164,6 @@ class Mesh:
         for d in range(1, dim+1):
             submesh.cell[d] = point_remap[submesh.cell[d]]
             assert np.all(submesh.cell[d] >= 0)
-        if dim == 1:
-            submesh.inv_bdry = submesh.inv_bdry[:,:,submesh.cell[0]]
         # submesh.cell[0] = None
         return submesh
 
