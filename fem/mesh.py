@@ -92,10 +92,12 @@ class Mesh:
         self.cell.append(mesh_cell[self.tdim])
         # reset the tags
         for d in range(1, self.tdim):
+            mesh_cell[d].sort(axis=1)
             idx = binsearchkw(self.cell[d], mesh_cell[d])
             assert np.all(idx >= 0)
-            self.cell_tag[d] = np.zeros((self.cell.shape[0],), dtype=np.int32)
+            self.cell_tag[d] = np.zeros((self.cell[d].shape[0],), dtype=np.int32)
             self.cell_tag[d][idx] = mesh_tag[d]
+        self.cell_tag[self.tdim] = mesh_tag[self.tdim]
 
             
     def build_cells(self, elem_cell: np.ndarray):
@@ -107,17 +109,17 @@ class Mesh:
         ref_cell = ref_doms[tdim]
         num_cell = elem_cell.shape[0]
         # prepare the output
-        cell = [None] * (tdim-1)
-        cell_entity = [None] * (tdim-1)
-        inv_bdry = np.array((2, 2, num_cell), dtype=np.int32) #[positive/negaive side, element id/facet id, *]
+        cell = [None] * tdim
+        cell_entity = [None] * tdim
         # collect the entities from dimension 1, ..., tdim-1
         for d in range(tdim-1, 0, -1):
             sub_ent = ref_cell.sub_entities[d]
-            all_entities = elem_cell[tdim][:, sub_ent.ravel()].reshape(-1, sub_ent.shape[1])
-            np.sort(all_entities, axis=1)
+            all_entities = elem_cell[:, sub_ent.ravel()].reshape(-1, sub_ent.shape[1])
+            all_entities.sort(axis=1)
             cell[d], idx, inv_idx = np.unique(all_entities, return_index=True, return_inverse=True, axis=0)
-            cell_entity[d] = inv_idx.reshape(num_cell, -1) # (num_cell, tdim+1)
-            if d == tdim-1: # get the inverse of the boundary map for co-dimension one entity          
+            cell_entity[d] = inv_idx.reshape(num_cell, -1).astype(np.int32) # (num_cell, tdim+1)
+            if d == tdim-1: # get the inverse of the boundary map for co-dimension one entity   
+                inv_bdry = np.zeros((2, 2, cell[d].shape[0]), dtype=np.int32) #[positive/negaive side, element id/facet id, *]       
                 inv_bdry[0,0], inv_bdry[0,1] = np.divmod(idx, sub_ent.shape[0])
                 _, idx = np.unique(all_entities[::-1], return_index=True, axis=0) # find the second occurences
                 idx = all_entities.shape[0] - idx - 1
