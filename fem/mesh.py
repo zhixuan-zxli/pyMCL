@@ -5,11 +5,6 @@ from .refdom import ref_doms
 from tools.binsearchkw import binsearchkw
 from matplotlib import pyplot
 
-# class Measure:
-#     def __init__(self, tdim: int, sub_id: Optional[tuple[int]] = None) -> None:
-#         self.tdim = tdim
-#         self.sub_id = sub_id
-
 class Mesh:
 
     gdim: int
@@ -41,9 +36,6 @@ class Mesh:
         self.tdim = 0
         self.point = None
         self.point_tag = None
-        self.cell = [None] * 4
-        self.cell_tag = [None] * 4
-        self.cell_entity = [None] * 3
         self.coord_fe = None
         self.coord_map = None
 
@@ -91,6 +83,7 @@ class Mesh:
         self.cell, self.cell_entity, self.inv_bdry = self.build_cells(mesh_cell[self.tdim])
         self.cell.append(mesh_cell[self.tdim])
         # reset the tags
+        self.cell_tag = [None] * (self.tdim+1)
         for d in range(1, self.tdim):
             mesh_cell[d].sort(axis=1)
             idx = binsearchkw(self.cell[d], mesh_cell[d])
@@ -99,8 +92,8 @@ class Mesh:
             self.cell_tag[d][idx] = mesh_tag[d]
         self.cell_tag[self.tdim] = mesh_tag[self.tdim]
 
-            
-    def build_cells(self, elem_cell: np.ndarray):
+    @staticmethod
+    def build_cells(elem_cell: np.ndarray):
         """
         elem_cell: the list of cells of the highest topological dimension in this mesh. 
         """
@@ -111,11 +104,14 @@ class Mesh:
         # prepare the output
         cell = [None] * tdim
         cell_entity = [None] * tdim
-        # collect the entities from dimension 1, ..., tdim-1
-        for d in range(tdim-1, 0, -1):
-            sub_ent = ref_cell.sub_entities[d]
-            all_entities = elem_cell[:, sub_ent.ravel()].reshape(-1, sub_ent.shape[1])
-            all_entities.sort(axis=1)
+        # collect the entities from dimension 0, ..., tdim-1
+        for d in range(tdim-1, -1, -1):
+            if d > 0:
+                sub_ent = ref_cell.sub_entities[d]
+                all_entities = elem_cell[:, sub_ent.ravel()].reshape(-1, sub_ent.shape[1])
+                all_entities.sort(axis=1)
+            else:
+                all_entities = elem_cell.ravel()
             cell[d], idx, inv_idx = np.unique(all_entities, return_index=True, return_inverse=True, axis=0)
             cell_entity[d] = inv_idx.reshape(num_cell, -1).astype(np.int32) # (num_cell, tdim+1)
             if d == tdim-1: # get the inverse of the boundary map for co-dimension one entity   
@@ -125,8 +121,59 @@ class Mesh:
                 idx = all_entities.shape[0] - idx - 1
                 inv_bdry[1,0], inv_bdry[1,1] = np.divmod(idx, sub_ent.shape[0])
         return cell, cell_entity, inv_bdry
+    
+    # set boundary orientation ...
+    
+    def view(self, dim: int, sub_ids: Optional[tuple[int]] = None) -> "Mesh":
+        submesh = Mesh()
+        submesh.tdim = dim
+        submesh.gdim = self.gdim
+        if dim == 0:
+            keep_idx = np.zeros((self.point_tag.shape[0],), dtype=np.bool8)
+            if sub_ids == None:
+                keep_idx = True
+            else:
+                assert isinstance(sub_ids, tuple)
+                for t in sub_ids:
+                    keep_idx[self.point_tag == t] = True
+            submesh.point = self.point[keep_idx]
+            submesh.point_tag = self.point_tag[keep_idx]
+            return submesh
+        # 1. select the entities of the highest dimension to preserve
+        keep_idx = np.zeros((self.cell_tag[dim].shape[0],), dtype=np.bool8)
+        if sub_ids == None:
+            keep_idx = True
+        else:
+            assert isinstance(sub_ids, tuple)
+            for t in sub_ids:
+                keep_idx[self.cell_tag[dim] == t] = True
+        elem_cell = self.cell[dim][keep_idx]
+        # 2. Collect the entites of lower dimensions
+        submesh.cell, submesh.cell_entity, submesh.inv_bdry = self.build_cells(elem_cell)
+        submesh.cell.append(elem_cell)
+        # 3. Calculate the remap for the nodes.
+        submesh.point = self.point[submesh.cell[0]]
+        submesh.point_tag = self.point_tag[submesh.cell[0]]
+        point_remap = -np.ones((self.point.shape[0],), dtype=np.int32)
+        point_remap[submesh.cell[0]] = np.arange(submesh.point.shape[0], dtype=np.int32)
+        # 4. Reset the cell tags. xxx
+        submesh.cell_tag = [None] * (dim+1)
+        for d in range(1, dim):
+            valid_tag = self.cell_tag[d][self.cell_tag[d] != 0]
+            tagged_cell = self.cell[d][self.cell_tag[d] != 0]
+            idx = binsearchkw(submesh.cell[d], tagged_cell)
+            submesh.cell_tag[d] = np.zeros((submesh.cell[d].shape[0],), dtype=np.int32)
+            submesh.cell_tag[d][idx[idx >= 0]] = valid_tag[idx >= 0]
+        submesh.cell_tag[dim] = self.cell_tag[dim][keep_idx]
+        # 4. Remap the nodes. 
+        for d in range(1, dim+1):
+            submesh.cell[d] = point_remap[submesh.cell[d]]
+            assert np.all(submesh.cell[d] >= 0)
+        if dim == 1:
+            submesh.inv_bdry = submesh.inv_bdry[:,:,submesh.cell[0]]
+        # submesh.cell[0] = None
+        return submesh
 
-            
     # def add_constraint(self, master_marker, slave_marker, transform, tol: float = 1e-14) -> None:
     #     master_idx = np.nonzero(master_marker(self.point))[0] if callable(master_marker) else master_marker # master indices
     #     master_data = np.hstack((transform(self.point[master_idx]), master_idx[:,np.newaxis]))
@@ -145,70 +192,7 @@ class Mesh:
     #     con[:,0] = -con[:,0] - 1
     #     if not hasattr(self, "constraint_table"):
     #         self.constraint_table = []
-    #     self.constraint_table.append(con)
-
-    # def _get_point_remap(self) -> None:
-    #     """
-    #     Link the slave points to the master points. 
-    #     Ensure that there is no intermediate slave poitns. 
-    #     """
-    #     assert hasattr(self, "constraint_table"), "Why get point remap if there is no constraint?"
-    #     if not hasattr(self, "point_remap"):
-    #         con = np.vstack(self.constraint_table)
-    #         remap = np.arange(self.point.shape[0], dtype=np.uint32)
-    #         temp = remap.copy()
-    #         while True:
-    #             temp[con[:,0]] = remap[con[:,1]]
-    #             if np.all(temp == remap):
-    #                 break
-    #             remap[:] = temp
-    #         self.point_remap = remap
-    #     return self.point_remap
-    
-    # def view(self, mea: Measure) -> "Mesh":
-    #     submesh = Mesh()
-    #     submesh.tdim = mea.tdim
-    #     submesh.gdim = self.gdim
-    #     # select the entities to preserve
-    #     keep_idx = [None] * 4
-    #     if mea.tdim == 3:
-    #         raise NotImplementedError
-    #     elif mea.tdim == 2:
-    #         flag = np.zeros((self.cell[2].shape[0], ), dtype=np.bool8)
-    #         for t in mea.sub_id:
-    #             flag[self.cell[2][:,-1] == t] = True
-    #         keep_idx[2] = np.nonzero(flag)[0]
-    #         # find out the edges to be preserved
-    #         edge_map, _ = self._get_edges_from_tri(self.point.shape[0], self.cell[2][keep_idx[2], :])
-    #         edge_flag = edge_map[np.min(self.cell[1][:, :-1], axis=1), np.max(self.cell[1][:, :-1], axis=1)] > 0
-    #         keep_idx[1] = np.nonzero(edge_flag)[0]
-    #         # find out the vertices to be preserved
-    #         keep_idx[0] = np.unique(self.cell[2][keep_idx[2], :-1])
-    #     elif mea.tdim == 1:
-    #         flag = np.zeros((self.cell[1].shape[0], ), dtype=np.bool8)
-    #         for t in mea.sub_id:
-    #             flag[self.cell[1][:, -1] == t] = True
-    #         keep_idx[1] = np.nonzero(flag)[0]
-    #         keep_idx[0] = np.unique(self.cell[1][keep_idx[1], :-1])
-    #     elif mea.tdim == 0:
-    #         flag = np.zeros((self.point.shape[0], ), dtype=np.bool8)
-    #         for t in mea.sub_id:
-    #             flag[self.point_tag == t] = True
-    #         keep_idx[0] = np.nonzero(flag)[0]
-    #     # copy the nodes
-    #     submesh.point = self.point[keep_idx[0]]
-    #     submesh.point_tag = self.point_tag[keep_idx[0]]
-    #     submesh.parent_point = keep_idx[0] # child-to-parent information saved here
-    #     Np = submesh.point.shape[0]
-    #     # remap the nodes
-    #     point_remap = np.zeros((self.point.shape[0], ), dtype=np.uint32)
-    #     point_remap[keep_idx[0]] = np.arange(Np)
-    #     for d in (1,2,3):
-    #         if keep_idx[d] is not None and keep_idx[d].size > 0:
-    #             submesh.cell[d] = np.zeros((keep_idx[d].shape[0], self.cell[d].shape[1]), dtype=np.uint32)
-    #             submesh.cell[d][:, :-1] = point_remap[self.cell[d][keep_idx[d], :-1]]
-    #             submesh.cell[d][:, -1] = self.cell[d][keep_idx[d], -1]
-    #     return submesh
+    #     self.constraint_table.append(con)    
     
     def draw(self) -> None:
         if self.tdim == 3:
