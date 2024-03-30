@@ -2,11 +2,10 @@ import numpy as np
 from .mesh import Mesh
 from .element import Element
 
-class Dof:
+class FiniteElement:
 
     mesh: Mesh
     elem: Element
-    num_copy: int
     periodic: bool
     
     entity_dof: list[np.ndarray]
@@ -15,10 +14,9 @@ class Dof:
 
     # dofloc
 
-    def __init__(self, mesh: Mesh, elem: Element, num_copy: int = 1, periodic: bool = False) -> None:
+    def __init__(self, mesh: Mesh, elem: Element, periodic: bool = False) -> None:
         self.mesh = mesh
         self.elem = elem
-        self.num_copy = num_copy
         self.periodic = periodic
 
         tdim = elem.tdim

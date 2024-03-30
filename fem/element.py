@@ -7,7 +7,15 @@ class Element:
     tdim: int
     rdim: int
     degree: int
-    num_dof_per_ent: tuple[int] # of length tdim+1
+    num_dof_per_ent: tuple[int] # of length tdim+1    
+    
+    @staticmethod
+    def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, Nq)
+        raise NotImplementedError # will be implemented by subclasses
+    
+    @staticmethod
+    def _eval_grad(basis_id: int, qpts: np.ndarray) -> np.ndarray:  # (rdim, tdim, Nq)
+        raise NotImplementedError # will be implemented by subclasses
     
 class NodeElement(Element):
 
@@ -23,7 +31,7 @@ class NodeElement(Element):
         return np.ones((1, qpts.shape[1]))
     
     @staticmethod
-    def _eval_grad(basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, tdim, Nq)
+    def _eval_grad(basis_id: int, qpts: np.ndarray) -> np.ndarray: 
         assert(basis_id == 0)
         return np.zeros((1, 0, qpts.shape[1]))
 
@@ -43,11 +51,11 @@ class LineDG0(LineElement):
     num_dof_per_ent: tuple[int] = (0, 1)
     
     @staticmethod
-    def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, Nq)
+    def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: 
         raise NotImplementedError
     
     @staticmethod
-    def _eval_grad(basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, tdim, Nq)
+    def _eval_grad(basis_id: int, qpts: np.ndarray) -> np.ndarray: 
         raise NotImplementedError
 
 class LineP1(LineElement):
@@ -57,7 +65,7 @@ class LineP1(LineElement):
     num_dof_per_ent: tuple[int] = (1, 0)
 
     @staticmethod
-    def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, Nq)
+    def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: 
         x = qpts[0]
         if basis_id == 0:
             basis = 1.0 - x
@@ -66,7 +74,7 @@ class LineP1(LineElement):
         return basis.reshape(1, -1)
     
     @staticmethod
-    def _eval_grad(basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, tdim, Nq)
+    def _eval_grad(basis_id: int, qpts: np.ndarray) -> np.ndarray: 
         x = qpts[0]
         if basis_id == 0:
             data = -np.ones_like(x)
@@ -81,7 +89,7 @@ class LineP2(LineElement):
     num_dof_per_ent: tuple[int] = (1, 1)
 
     @staticmethod
-    def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, Nq)
+    def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: 
         x = qpts[0]
         if basis_id == 0:
             basis = 2 * (x-0.5) * (x-1.0)
@@ -92,7 +100,7 @@ class LineP2(LineElement):
         return basis[np.newaxis, :]
     
     @staticmethod
-    def _eval_grad(basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, tdim, Nq)
+    def _eval_grad(basis_id: int, qpts: np.ndarray) -> np.ndarray: 
         x = qpts[0]
         if basis_id == 0:
             data = 4.0*x - 3.0
@@ -122,7 +130,7 @@ class TriDG0(TriElement):
         return np.ones((1, qpts.shape[1]))
     
     @staticmethod
-    def _eval_grad(basis_id: int, qpts: np.ndarray) -> np.ndarray: # rdim * tdim * num_quad
+    def _eval_grad(basis_id: int, qpts: np.ndarray) -> np.ndarray:
         return np.zeros((1, 2, qpts.shape[1]))
 
 class TriP1(TriElement):
@@ -132,7 +140,7 @@ class TriP1(TriElement):
     num_dof_per_ent: tuple[int] = (1, 0, 0)
 
     @staticmethod
-    def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # rdim(=1) * num_quad
+    def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray:
         x = qpts[0]
         y = qpts[1]
         if basis_id == 0:
@@ -144,7 +152,7 @@ class TriP1(TriElement):
         return basis.reshape(1, -1)
     
     @staticmethod
-    def _eval_grad(basis_id:int, qpts: np.ndarray) -> np.ndarray: # rdim(=1) * tdim(=2) * num_quad
+    def _eval_grad(basis_id:int, qpts: np.ndarray) -> np.ndarray:
         x = qpts[0]
         y = qpts[1]
         if basis_id == 0:
@@ -162,7 +170,7 @@ class TriP2(TriElement):
     num_dof_per_ent: tuple[int] = (1,1,0)
 
     @staticmethod
-    def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # rdim(=1) * num_quad
+    def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray:
         x = qpts[0]
         y = qpts[1]
         if basis_id == 0:
@@ -180,7 +188,7 @@ class TriP2(TriElement):
         return basis.reshape(1, -1)
     
     @staticmethod
-    def _eval_grad(basis_id:int, qpts: np.ndarray) -> np.ndarray: # rdim(=1) * tdim(=2) * num_quad
+    def _eval_grad(basis_id:int, qpts: np.ndarray) -> np.ndarray:
         x = qpts[0]
         y = qpts[1]
         if basis_id == 0:
@@ -196,3 +204,18 @@ class TriP2(TriElement):
         elif basis_id == 5:
             data = np.vstack((-4.0*y, -4.0*x-8.0*y+4.0))
         return data[np.newaxis, :, :]
+    
+# ====================================================
+# derived element
+
+class VectorElement(Element):
+    
+    ref_cell: type
+    tdim: int
+    rdim: int
+    degree: int
+    num_dof_per_ent: tuple[int] # of length tdim+1
+
+    def __init__(self, base_elem: Element) -> None:
+        assert base_elem.rdim == 1
+        raise NotImplementedError
