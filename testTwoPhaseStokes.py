@@ -2,7 +2,7 @@ import numpy as np
 from math import cos
 from fem.mesh import Mesh, Measure
 from fem.mesh_util import setMeshMapping
-from fem.fe import TriDG0, TriP1, TriP2, LineP1, group_dof
+from fem.element import TriDG0, TriP1, TriP2, LineP1, group_dof
 from fem.function import Function, split_fn, group_fn
 from fem.assemble import assembler, Form
 from scipy import sparse

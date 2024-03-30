@@ -1,7 +1,7 @@
 import numpy as np
 from fem.mesh import Mesh
 from fem.mesh_util import splitRefine, setMeshMapping
-from fem.fe import Measure, TriDG0, TriP1, TriP2
+from fem.element import Measure, TriDG0, TriP1, TriP2
 from fem.function import Function, split_fn, group_fn
 from fem.assemble import assembler, Form
 from scipy import sparse

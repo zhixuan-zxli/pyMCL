@@ -1,5 +1,5 @@
 import numpy as np
-from .fe import RefNode, RefLine, RefTri
+from .refdom import RefNode, RefLine, RefTri
 
 class Quadrature:
 

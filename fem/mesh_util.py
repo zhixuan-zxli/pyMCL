@@ -1,7 +1,7 @@
 from typing import Optional
 import numpy as np
 from .mesh import Mesh
-from .fe import LineP1, TriP1, LineP2, TriP2
+from .element import LineP1, TriP1, LineP2, TriP2
 from .function import Function
 
 def splitRefine(mesh: Mesh) -> Mesh:
