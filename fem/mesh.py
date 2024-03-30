@@ -77,7 +77,8 @@ class Mesh:
         # 3. interpret the mesh data
         self.cell, self.cell_entity, self.inv_bdry = self.build_cells(mesh_cell[self.tdim])
         self.cell.append(mesh_cell[self.tdim])
-        # reset the tags
+        
+        # 4. Set the cell tags. 
         self.cell_tag = [None] * (self.tdim+1)
         for d in range(1, self.tdim):
             mesh_cell[d].sort(axis=1)
@@ -86,6 +87,7 @@ class Mesh:
             self.cell_tag[d] = np.zeros((self.cell[d].shape[0],), dtype=np.int32)
             self.cell_tag[d][idx] = mesh_tag[d]
         self.cell_tag[self.tdim] = mesh_tag[self.tdim]
+        self.fix_facet_orientation()
 
     @staticmethod
     def build_cells(elem_cell: np.ndarray):
@@ -117,7 +119,15 @@ class Mesh:
                 inv_bdry[1,0], inv_bdry[1,1] = np.divmod(idx, cell_entity[d].shape[1])
         return cell, cell_entity, inv_bdry
     
-    # set boundary orientation ...
+    def fix_facet_orientation(self):
+        """
+        Fix the facet orientation such that 
+        the outward normal of the element inv_bdry[0,0] points to the domain with the larger tag. 
+        Call this routine only after self.cell_tag is properly set. 
+        """
+        tags = self.cell_tag[self.tdim][self.inv_bdry[:,0]] # (2, num_facet)
+        flipped = tags[0] > tags[1]
+        self.inv_bdry[:,:,flipped] = self.inv_bdry[::-1,:,flipped]
     
     def view(self, dim: int, sub_ids: Optional[tuple[int]] = None) -> "Mesh":
         submesh = Mesh()
@@ -160,6 +170,7 @@ class Mesh:
             submesh.cell_tag[d] = np.zeros((submesh.cell[d].shape[0],), dtype=np.int32)
             submesh.cell_tag[d][idx[idx >= 0]] = valid_tag[idx >= 0]
         submesh.cell_tag[dim] = self.cell_tag[dim][keep_idx]
+        submesh.fix_facet_orientation()
         # 4. Remap the nodes. 
         for d in range(1, dim+1):
             submesh.cell[d] = point_remap[submesh.cell[d]]
