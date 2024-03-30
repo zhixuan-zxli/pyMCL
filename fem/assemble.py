@@ -2,7 +2,7 @@ from typing import Optional
 import numpy as np
 from scipy.sparse import csr_array
 from .mesh import Measure
-from .function import FiniteElement, QuadData, Function
+from .function import FiniteElement, FieldData, Function
 from .quadrature import Quadrature
 
 class Form:
@@ -64,12 +64,12 @@ class assembler:
         else:
             return None, None
         
-    def _get_basis_quad_data(self, basis_type: type, basis_id: int, rdim: int, hint) -> QuadData:
+    def _get_basis_quad_data(self, basis_type: type, basis_id: int, rdim: int, hint) -> FieldData:
         data = None
         if "f" in hint:
             data = np.zeros((rdim, 1, self.quadTable.shape[1])) # (rdim, 1, num_quad)
             data[:,0,:] = basis_type._eval_basis(basis_id, self.quadTable) 
-        data = QuadData(data)
+        data = FieldData(data)
         if "grad" in hint:
             basis_grad = np.zeros((rdim, basis_type.tdim, self.quadTable.shape[1]))
             basis_grad[:,:,:] = basis_type._eval_grad(basis_id, self.quadTable) # (rdim, tdim, num_quad)
