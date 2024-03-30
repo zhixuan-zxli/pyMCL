@@ -2,21 +2,6 @@ import numpy as np
 from .mesh import Mesh, Measure
 from scipy.sparse import csr_array
 
-class RefCell:
-    tdim: int
-    dx: float
-
-class RefNode(RefCell):
-    tdim: int = 0
-    dx: float = 1.0
-
-class RefLine(RefCell):
-    tdim: int = 1
-    dx: float = 1.0
-
-class RefTri(RefCell):
-    tdim: int = 2
-    dx: float = 1.0/2
 
 class FiniteElement:
 

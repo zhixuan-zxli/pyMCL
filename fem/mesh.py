@@ -23,12 +23,14 @@ class Mesh:
     cell_entity: list[np.ndarray]
     # cell_entity[d] is the d-dimensional sub-entity of a cell of tdim dimensions. 
 
-    entity_list: list[np.ndarray]
-    # entity[d] stores the d-dimensional entities in a N-by-(d+1) array, 
-    # where N is the number of entities and each row contains the nodes of one entity. 
-    entity_tag: list[np.ndarray]
-    # entity_tag[d] is just a translation from cell[d]. 
-    # It is an N-by-2 array, each row being the ID of the entity and the tag. 
+    inv_bdry: np.ndarray
+
+    # entity_list: list[np.ndarray]
+    # # entity[d] stores the d-dimensional entities in a N-by-(d+1) array, 
+    # # where N is the number of entities and each row contains the nodes of one entity. 
+    # entity_tag: list[np.ndarray]
+    # # entity_tag[d] is just a translation from cell[d]. 
+    # # It is an N-by-2 array, each row being the ID of the entity and the tag. 
 
     coord_fe: Any  # the finite element space for the mesh mapping
     coord_map: Any # the finite element function for the mesh mapping
@@ -39,21 +41,9 @@ class Mesh:
         self.tdim = 0
         self.point = None
         self.point_tag = None
-        self.cell = [
-            None, 
-            np.zeros((0, 2), dtype=np.int32), # edge
-            np.zeros((0, 3), dtype=np.int32), # triangle
-            np.zeros((0, 4), dtype=np.int32)  # tetrahedra           
-        ]
-        self.cell_tag = [
-            None, 
-            np.zeros((0,), dtype=np.int32), # edge tag
-            np.zeros((0,), dtype=np.int32), # triangle tag
-            np.zeros((0,), dtype=np.int32)  # tet tag
-        ]
+        self.cell = [None] * 4
+        self.cell_tag = [None] * 4
         self.cell_entity = [None] * 3
-        self.entity_list = [None] * 4
-        self.entity_tag = [None] * 4
         self.coord_fe = None
         self.coord_map = None
 
@@ -72,39 +62,67 @@ class Mesh:
         # 2. read the higher-dimensional entities
         assert("gmsh:physical" in msh.cell_data)
 
+        dim_map = {"line": 1, "triangle": 2}
+
+        mesh_cell = [
+            None, 
+            np.zeros((0, 2), dtype=np.int32), 
+            np.zeros((0, 3), dtype=np.int32)
+        ]
+
+        mesh_tag = [
+            None, 
+            np.zeros((0,), dtype=np.int32), 
+            np.zeros((0,), dtype=np.int32)
+        ]
+
         for cell, data in zip(msh.cells, msh.cell_data["gmsh:physical"]):
             cell.data = cell.data.astype(np.int32)
             data = data.astype(np.int32)
             if cell.type == "vertex":
                 self.point_tag[cell.data] = data
-            elif cell.type == "line":
-                self.cell[1] = np.vstack((self.cell[1], cell.data))
-                self.cell_tag[1] = np.concatenate((self.cell_tag[1], data))
-                if self.tdim < 1: 
-                    self.tdim = 1
-            elif cell.type == "triangle":
-                self.cell[2] = np.vstack((self.cell[2], cell.data))
-                self.cell_tag[2] = np.concatenate((self.cell_tag[2], data))
-                if self.tdim < 2:
-                    self.tdim = 2
             else:
-                raise RuntimeError("Unrecognized cell type. ")
-            
-    def build_topology(self) -> None:
-        ref_cell = ref_doms[self.tdim]
-        num_cell = self.cell[self.tdim].shape[0]
-        for d in range(self.tdim-1, 0, -1):
-            sub_ent = ref_cell.sub_entities[d]
-            all_entities = self.cell[self.tdim][:, sub_ent.ravel()].reshape(-1, sub_ent.shape[1])
-            self.entity_list[d], inv_idx = np.unique(all_entities, return_index=False, return_inverse=True, axis=0)
-            self.cell_entity[d] = inv_idx.reshape(num_cell, -1)
-            # convert the cell tag to entity tag
-            idx = binsearchkw(self.entity_list[d], self.cell[d])
+                d = dim_map[cell.type]
+                mesh_cell[d] = np.vstack((mesh_cell[d], cell.data))
+                mesh_tag[d] = np.concatenate((mesh_tag[d], data))
+                self.tdim = max(self.tdim, d)
+
+        # 3. interpret the mesh data
+        self.cell, self.cell_entity, self.inv_bdry = self.build_cells(mesh_cell[self.tdim])
+        self.cell.append(mesh_cell[self.tdim])
+        # reset the tags
+        for d in range(1, self.tdim):
+            idx = binsearchkw(self.cell[d], mesh_cell[d])
             assert np.all(idx >= 0)
-            self.entity_tag[d] = np.zeros((self.entity_list[d].shape[0],), dtype=np.int32)
-            self.entity_tag[d][idx] = self.cell_tag[d]
-        # self.cell_entity[0] = self.cell[self.tdim]
-                
+            self.cell_tag[d] = np.zeros((self.cell.shape[0],), dtype=np.int32)
+            self.cell_tag[d][idx] = mesh_tag[d]
+
+            
+    def build_cells(self, elem_cell: np.ndarray):
+        """
+        elem_cell: the list of cells of the highest topological dimension in this mesh. 
+        """
+        tdim = elem_cell.shape[1]-1
+        assert tdim >= 1
+        ref_cell = ref_doms[tdim]
+        num_cell = elem_cell.shape[0]
+        # prepare the output
+        cell = [None] * (tdim-1)
+        cell_entity = [None] * (tdim-1)
+        inv_bdry = np.array((2, 2, num_cell), dtype=np.int32) #[positive/negaive side, element id/facet id, *]
+        # collect the entities from dimension 1, ..., tdim-1
+        for d in range(tdim-1, 0, -1):
+            sub_ent = ref_cell.sub_entities[d]
+            all_entities = elem_cell[tdim][:, sub_ent.ravel()].reshape(-1, sub_ent.shape[1])
+            np.sort(all_entities, axis=1)
+            cell[d], idx, inv_idx = np.unique(all_entities, return_index=True, return_inverse=True, axis=0)
+            cell_entity[d] = inv_idx.reshape(num_cell, -1) # (num_cell, tdim+1)
+            if d == tdim-1: # get the inverse of the boundary map for co-dimension one entity          
+                inv_bdry[0,0], inv_bdry[0,1] = np.divmod(idx, sub_ent.shape[0])
+                _, idx = np.unique(all_entities[::-1], return_index=True, axis=0) # find the second occurences
+                idx = all_entities.shape[0] - idx - 1
+                inv_bdry[1,0], inv_bdry[1,1] = np.divmod(idx, sub_ent.shape[0])
+        return cell, cell_entity, inv_bdry
 
             
     # def add_constraint(self, master_marker, slave_marker, transform, tol: float = 1e-14) -> None:
