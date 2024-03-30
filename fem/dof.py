@@ -1,4 +1,54 @@
+import numpy as np
+from .mesh import Mesh
+from .element import Element
+
+class Dof:
+
+    mesh: Mesh
+    elem: Element
+    num_copy: int
+    periodic: bool
     
+    entity_dof: list[np.ndarray]
+    elem_dof: np.ndarray
+    num_dof: int
+
+    # dofloc
+
+    def __init__(self, mesh: Mesh, elem: Element, num_copy: int = 1, periodic: bool = False) -> None:
+        self.mesh = mesh
+        self.elem = elem
+        self.num_copy = num_copy
+        self.periodic = periodic
+
+        tdim = elem.tdim
+        assert mesh.tdim == tdim
+
+        # build the dof for entities of each dimension
+        offset = 0
+        self.entity_dof = [None] * (tdim+1)
+        for d in range(tdim+1):
+            num_entity = mesh.cell[d].shape[0] if d > 0 else mesh.point.shape[0]
+            per_ent = elem.num_dof_per_ent[d]
+            self.entity_dof[d] = \
+                np.arange(per_ent * num_entity, dtype=np.int32) \
+                .reshape(per_ent, num_entity) + offset
+            offset += num_entity * per_ent
+        self.num_dof = offset
+
+        # collect the dof for each element
+        num_elem = mesh.cell[tdim].shape[0]
+        self.elem_dof = np.zeros((0, num_elem), dtype=np.int32)
+        for d in range(tdim):
+            num_sub_ent = mesh.cell_entity[d].shape[1]
+            for i in range(num_sub_ent):
+                self.elem_dof = np.vstack(
+                    (self.elem_dof, 
+                    self.entity_dof[d][:, mesh.cell_entity[d][:,i]])
+                )
+        self.elem_dof = np.vstack((self.elem_dof, self.entity_dof[-1]))
+
+
 # def group_dof(mixed_fe: tuple[Element], dof_list) -> np.ndarray:
 #     """
 #     Get the free dof (as a bool mask) for a mixed finite element space. 

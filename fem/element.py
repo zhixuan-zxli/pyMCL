@@ -7,7 +7,7 @@ class Element:
     tdim: int
     rdim: int
     degree: int
-    num_dof_per_elem: tuple[int] # of length tdim+1
+    num_dof_per_ent: tuple[int] # of length tdim+1
     
 class NodeElement(Element):
 
@@ -15,7 +15,7 @@ class NodeElement(Element):
     tdim: int = 0
     rdim: int = 1
     degree: int = 0
-    num_dof_per_elem: tuple[int] = (1,)
+    num_dof_per_ent: tuple[int] = (1,)
 
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray:
@@ -40,7 +40,7 @@ class LineDG0(LineElement):
 
     rdim: int = 1
     degree: int = 0
-    num_dof_per_elem: tuple[int] = (0, 1)
+    num_dof_per_ent: tuple[int] = (0, 1)
     
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, Nq)
@@ -54,7 +54,7 @@ class LineP1(LineElement):
 
     rdim: int = 1
     degree: int = 1
-    num_dof_per_elem: tuple[int] = (1, 0)
+    num_dof_per_ent: tuple[int] = (1, 0)
 
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, Nq)
@@ -78,7 +78,7 @@ class LineP2(LineElement):
     
     rdim: int = 1
     degree: int = 2
-    num_dof_per_elem: tuple[int] = (1, 1)
+    num_dof_per_ent: tuple[int] = (1, 1)
 
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, Nq)
@@ -114,7 +114,7 @@ class TriDG0(TriElement):
 
     rdim: int = 1
     degree: int = 0
-    num_dof_per_elem: tuple[int] = (0, 0, 1)
+    num_dof_per_ent: tuple[int] = (0, 0, 1)
 
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray:
@@ -129,7 +129,7 @@ class TriP1(TriElement):
 
     rdim: int = 1
     degree: int = 1
-    num_dof_per_elem: tuple[int] = (1, 0, 0)
+    num_dof_per_ent: tuple[int] = (1, 0, 0)
 
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # rdim(=1) * num_quad
@@ -159,7 +159,7 @@ class TriP2(TriElement):
 
     rdim: int = 1
     degree: int = 2
-    num_dof_per_elem: tuple[int] = (1,1,0)
+    num_dof_per_ent: tuple[int] = (1,1,0)
 
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # rdim(=1) * num_quad
