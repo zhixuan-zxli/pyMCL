@@ -7,6 +7,15 @@ class RefCell:
     vertices: np.ndarray
     sub_entities: Any
 
+    @staticmethod
+    def _broadcast_facet(quad_pts: np.ndarray) -> np.ndarray:
+        """
+        quad_pts: (Nd, Nq)
+        return: (Nd, num_facet, Nq)
+        """
+        # implementation by subclass
+        raise NotImplementedError
+
 class RefNode(RefCell):
     tdim: int = 0
     dx: float = 1.0
@@ -23,6 +32,15 @@ class RefLine(RefCell):
         None, # nodes
     )
 
+    @staticmethod
+    def _broadcast_facet(quad_pts: np.ndarray) -> np.ndarray:
+        # quad_pts: (1, 1)
+        # return: (1, 2, 1)
+        r = np.zeros((1,2,1))
+        r[0,1,0] = 1.0
+        return r
+
+
 class RefTri(RefCell):
     tdim: int = 2
     dx: float = 1.0/2
@@ -33,6 +51,16 @@ class RefTri(RefCell):
         None, # nodes
         np.array(((0,1), (1,2), (2,0)), dtype=np.int32) # edges
     )
+
+    @staticmethod
+    def _broadcast_facet(quad_pts: np.ndarray) -> np.ndarray:
+        # quad_pts: (1, Nq)
+        # return: (2, 3, Nq)
+        r = np.zeros((2, 3, quad_pts.shape[1]))
+        r[0,0] = quad_pts
+        r[0,1] = 1.0 - quad_pts
+        r[1,1] = quad_pts
+        r[1,2] = 1.0 - quad_pts
 
 # the collection of all the reference domains by dimension
 ref_doms = (RefNode, RefLine, RefTri, None)

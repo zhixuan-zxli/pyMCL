@@ -29,20 +29,58 @@ class FieldData(np.ndarray):
         # invalidate the attributes
         return np.array(out_arr)
 
-class Measure:
+
+
+class CellMeasure:
+    """
+    Represent the volume measure whose dimension equals the topological dimension of the mesh. 
+    """
 
     mesh: Mesh
-    tdim: int
     elem_ix: Union[np.ndarray, slice]
-    # facet_ix: Optional[np.ndarray]
 
-    def __init__(self, mesh: Mesh, tdim: int, ix = None) -> None:
+    def __init__(self, mesh: Mesh, tags: Optional[tuple[int]] = None) -> None:
         self.mesh = mesh
-        self.tdim = tdim
-        if ix is not None:
-            self.elem_ix = ix
+        if tags is None:
+            self.elem_ix = slice(None) # select all the elements
         else:
-            self.elem_ix = slice(None)
+            # select the elements with the provided tags
+            elem_tag = mesh.cell_tag[mesh.tdim]
+            flag = np.zeros((elem_tag.shape[0],), dtype=np.bool8)
+            for t in tags:
+                flag[elem_tag == t] = True
+            self.elem_ix = np.nonzero(flag)[0]
+
+class FaceMeasure:
+    """
+    Represent the surface measure whose dimension is one less than the topological dimension of the mesh. 
+    """
+    
+    mesh: Mesh
+    facet_ix: tuple[np.ndarray]
+    elem_ix: tuple[np.ndarray]
+    facet_id: tuple[np.ndarray]
+
+    def __init__(self, mesh: Mesh, tags: Optional[tuple[int]] = None, interior: bool = False) -> None:
+        self.mesh = mesh
+        if tags is None:
+            self.facet_ix = slice(None)
+        else:
+            # select the facets with the provided tags
+            facet_tag = mesh.cell_tag[mesh.tdim-1]
+            flag = np.zeros((facet_tag.shape[0],), dtype=np.bool8)
+            for t in tags:
+                flag[facet_tag == t] = True
+            self.facet_ix = np.nonzero(flag)[0]
+        #
+        elem_ix = []
+        facet_id = []
+        for k in range(1+interior):
+            elem_ix.append(mesh.inv_bdry[k,0,self.facet_ix])
+            facet_id.append(mesh.inv_bdry[k,1,self.facet_ix])
+        self.elem_ix = tuple(elem_ix)
+        self.facet_id = tuple(facet_id)
+
 
 
 class Function(np.ndarray):
@@ -70,9 +108,8 @@ class Function(np.ndarray):
         if self.fe.periodic:
             raise NotImplementedError
     
-    def interpolate(self, mea: Measure, quad_tab: np.ndarray, x: Optional[FieldData] = None) -> FieldData:
-        tdim = mea.tdim
-        rdim = self.fe.elem.rdim
+    def _interpolate_cell(self, mea: CellMeasure, quad_tab: np.ndarray, x: Optional[FieldData] = None) -> FieldData:
+        tdim, rdim = self.fe.elem.tdim, self.fe.elem.rdim
         elem_dof = self.fe.elem_dof[:, mea.elem_ix]
         Ne = elem_dof.shape[1]
         Nq = quad_tab.shape[1]
@@ -82,10 +119,10 @@ class Function(np.ndarray):
             temp = self.view(np.ndarray)[elem_dof[i]] # (Ne, )
             # interpolate function values
             basis_data = self.fe.elem._eval_basis(i, quad_tab) # (rdim, Nq)
-            data += temp[:, np.newaxis] * basis_data[:, np.newaxis] # (rdim, Ne, Nq)
+            data += temp[np.newaxis] * basis_data[:, np.newaxis] # (rdim, Ne, Nq)
             # interpolate the gradients
             grad_data = self.fe.elem._eval_grad(i, quad_tab) # (rdim, elem.tdim, Nq)
-            grad_temp = temp[:, :, np.newaxis] * grad_data[:,:,np.newaxis] # (rdim, elem.tdim, Ne, Nq)
+            grad_temp = temp[np.newaxis, np.newaxis] * grad_data[:,:,np.newaxis] # (rdim, elem.tdim, Ne, Nq)
             if x is not None:
                 grad_temp = np.einsum("ij...,jk...->ik...", grad_temp, x.inv_grad)
             grad += grad_temp
@@ -95,6 +132,34 @@ class Function(np.ndarray):
         data = FieldData(data)
         data.grad = grad
         return data
+    
+    def _interpolate_facet(self, mea: FaceMeasure, quad_tab: np.ndarray, x: Optional[FieldData] = None) -> FieldData:
+        tdim, rdim = self.fe.elem.tdim, self.fe.elem.rdim
+        Nq = quad_tab.shape[1]
+        # transform the quadrature locations via facet_id here
+        quad_tab = self.fe.elem.ref_cell._broadcast_facet(quad_tab) # (tdim, num_facet, Nq)
+        res = []
+        for elem_ix, facet_id in zip(mea.elem_ix, mea.facet_id):
+            # facet_id: (Ne, )
+            elem_dof = self.fe.elem_dof[:, elem_ix]
+            Ne = elem_dof.shape[1]
+            data = np.zeros((rdim, Ne, Nq))
+            for i in range(elem_dof.shape[0]):
+                temp = self.view(np.ndarray)[elem_dof[i]] # (Ne, )
+                # interpolate function values
+                basis_data = self.fe.elem._eval_basis(i, quad_tab.reshape(tdim, -1)).reshape(rdim, -1, Nq) # (rdim, num_facet, Nq)
+                data += temp[np.newaxis] * basis_data[:, facet_id, :]
+                # interpolate the gradients
+                grad_data = self.fe.elem._eval_grad(i, quad_tab.reshape(tdim, -1)).reshape(rdim, tdim, -1, Nq) 
+                grad_temp = temp[np.newaxis, np.newaxis] * grad_data[:,:,facet_id,:] # (rdim, tdim, Ne, Nq)
+                if x is not None:
+                    grad_temp = np.einsum("ij...,jk...->ik...", grad_temp, x.inv_grad)
+                # interpolate other things
+                if x is None:
+                    pass
+            res.append(data)
+        return res if len(res) > 1 else res[0]
+
 
 
 # =============================================================
