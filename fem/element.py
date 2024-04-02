@@ -1,13 +1,14 @@
 import numpy as np
-from .refdom import RefNode, RefLine, RefTri
+from .refdom import RefCell, RefNode, RefLine, RefTri
 
 class Element:
 
-    ref_cell: type
+    ref_cell: RefCell
     tdim: int
     rdim: int
     degree: int
     num_dof_per_ent: tuple[int] # of length tdim+1    
+    dof_loc: tuple[np.ndarray] # of length tdim+1; the t-th array is (num_dof_per_ent[t], t+1)
     
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, Nq)
@@ -19,11 +20,14 @@ class Element:
     
 class NodeElement(Element):
 
-    ref_cell: type = RefNode
+    ref_cell: RefCell = RefNode()
     tdim: int = 0
     rdim: int = 1
     degree: int = 0
     num_dof_per_ent: tuple[int] = (1,)
+    dof_loc: tuple[np.ndarray] = (
+        np.array((1.0,)), # node
+    )
 
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray:
@@ -41,7 +45,7 @@ class NodeElement(Element):
 
 class LineElement(Element):
     
-    ref_cell: type = RefLine
+    ref_cell: RefCell = RefLine()
     tdim: int = 1
 
 class LineDG0(LineElement):
@@ -49,6 +53,10 @@ class LineDG0(LineElement):
     rdim: int = 1
     degree: int = 0
     num_dof_per_ent: tuple[int] = (0, 1)
+    dof_loc: tuple[np.ndarray] = (
+        None, # node, 
+        np.array(((1.0/2, 1.0/2), )) # edge
+    )
     
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: 
@@ -63,6 +71,10 @@ class LineP1(LineElement):
     rdim: int = 1
     degree: int = 1
     num_dof_per_ent: tuple[int] = (1, 0)
+    dof_loc: tuple[np.ndarray] = (
+        np.array((1.0,)), # node
+        None # edge
+    )
 
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: 
@@ -87,6 +99,10 @@ class LineP2(LineElement):
     rdim: int = 1
     degree: int = 2
     num_dof_per_ent: tuple[int] = (1, 1)
+    dof_loc: tuple[np.ndarray] = (
+        np.array((1.0,)), # node
+        np.array(((1.0/2, 1.0/2), )) # edge
+    )
 
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray: 
@@ -115,7 +131,7 @@ class LineP2(LineElement):
 
 class TriElement(Element):
     
-    ref_cell: type = RefTri
+    ref_cell: RefCell = RefTri()
     tdim: int = 2
 
 class TriDG0(TriElement):
@@ -123,6 +139,11 @@ class TriDG0(TriElement):
     rdim: int = 1
     degree: int = 0
     num_dof_per_ent: tuple[int] = (0, 0, 1)
+    dof_loc: tuple[np.ndarray] = (
+        None, # node
+        None, # edge
+        np.array(((1.0/3, 1.0/3, 1.0/3),)) # tri
+    )
 
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray:
@@ -138,6 +159,11 @@ class TriP1(TriElement):
     rdim: int = 1
     degree: int = 1
     num_dof_per_ent: tuple[int] = (1, 0, 0)
+    dof_loc: tuple[np.ndarray] = (
+        np.array((1.0,)), # node
+        None, # edge
+        None # tri
+    )
 
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray:
@@ -168,6 +194,11 @@ class TriP2(TriElement):
     rdim: int = 1
     degree: int = 2
     num_dof_per_ent: tuple[int] = (1,1,0)
+    dof_loc: tuple[np.ndarray] = (
+        np.array((1.0,)), # node
+        np.array(((1.0/2, 1.0/2), )), # edge
+        None # tri
+    )
 
     @staticmethod
     def _eval_basis(basis_id: int, qpts: np.ndarray) -> np.ndarray:
@@ -210,12 +241,26 @@ class TriP2(TriElement):
 
 class VectorElement(Element):
     
-    ref_cell: type
-    tdim: int
-    rdim: int
-    degree: int
-    num_dof_per_ent: tuple[int] # of length tdim+1
+    base_elem: Element
 
     def __init__(self, base_elem: Element, num_copy: int) -> None:
-        assert base_elem.rdim == 1
-        raise NotImplementedError
+        assert base_elem.rdim == 1, "Cannot build vector element from vector element. "
+        self.base_elem = base_elem
+        # modify the properties accordingly
+        self.ref_cell = base_elem.ref_cell
+        self.tdim = base_elem.tdim
+        self.rdim = num_copy
+        self.degree = base_elem.degree
+        self.num_dof_per_ent = tuple(2*n for n in base_elem.num_dof_per_ent)
+        self.dof_loc = tuple(np.repeat(a, 2, axis=0) for a in base_elem.dof_loc)
+    
+    def _eval_basis(self, basis_id: int, qpts: np.ndarray) -> np.ndarray: # (rdim, Nq)
+        r = np.zeros((self.rdim, qpts.shape[1]))
+        r[basis_id % self.rdim] = self.base_elem._eval_basis(basis_id // self.rdim, qpts)[0]
+        return r
+
+    def _eval_grad(self, basis_id: int, qpts: np.ndarray) -> np.ndarray:  # (rdim, tdim, Nq)
+        r = np.zeros((self.rdim, self.tdim, qpts.shape[1]))
+        r[basis_id % self.rdim] = self.base_elem._eval_grad(basis_id // self.rdim, qpts)[0]
+        return r
+        

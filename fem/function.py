@@ -121,6 +121,7 @@ class Function(np.ndarray):
             raise NotImplementedError
     
     def _interpolate_cell(self, mea: CellMeasure, quad_tab: np.ndarray, x: Optional[QuadData] = None) -> QuadData:
+        assert self.fe.mesh is mea.mesh
         tdim, rdim = self.fe.elem.tdim, self.fe.elem.rdim
         elem_dof = self.fe.elem_dof[:, mea.elem_ix]
         Ne = elem_dof.shape[1]
@@ -145,6 +146,7 @@ class Function(np.ndarray):
         return data
     
     def _interpolate_facet(self, mea: FaceMeasure, quad_tab: np.ndarray, x: Optional[QuadData] = None) -> tuple[QuadData]:
+        assert self.fe.mesh is mea.mesh
         tdim, rdim = self.fe.elem.tdim, self.fe.elem.rdim
         Nq = quad_tab.shape[1]
         # transform the quadrature locations via facet_id here
