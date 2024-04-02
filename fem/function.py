@@ -1,7 +1,7 @@
 from typing import Union, Optional
 import numpy as np
 from .mesh import Mesh
-from .fe import FiniteElement
+from .funcspace import FunctionSpace
 
 class QuadData(np.ndarray):
     """
@@ -99,9 +99,9 @@ class Function(np.ndarray):
     """
     Array of size num_dof. 
     """
-    fe: FiniteElement
+    fe: FunctionSpace
     
-    def __new__(cls, fe: FiniteElement):
+    def __new__(cls, fe: FunctionSpace):
         obj = np.zeros((fe.num_dof,)).view(cls)
         obj.fe = fe
         return obj
@@ -174,7 +174,7 @@ class Function(np.ndarray):
     
 class MeshMapping(Function):
 
-    def __new__(cls, fe: FiniteElement):
+    def __new__(cls, fe: FunctionSpace):
         obj = np.zeros((fe.num_dof,)).view(cls)
         obj.fe = fe
         return obj

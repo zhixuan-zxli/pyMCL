@@ -1,8 +1,7 @@
 from typing import Optional
 import numpy as np
 from scipy.sparse import csr_array
-from .mesh import Measure
-from .function import FiniteElement, QuadData, Function
+from .function import FunctionSpace, QuadData, Function, CellMeasure, FaceMeasure
 from .quadrature import Quadrature
 
 class Form:
@@ -21,8 +20,8 @@ class Form:
 class assembler:
 
     def __init__(self, 
-                 test_space: FiniteElement, 
-                 trial_space: Optional[FiniteElement], 
+                 test_space: FunctionSpace, 
+                 trial_space: Optional[FunctionSpace], 
                  mea: Measure, 
                  order: int, 
                  geom_hint = None) -> None:
@@ -54,7 +53,7 @@ class assembler:
         self.geom_data = coord_map._get_quad_data(self.geom_basis, self.geom_dof, None, self.quadTable, self.geom_hint)
 
     # A helper to get the basis type and the DOF on the provided measure, given a finite element space.
-    def _get_basis_and_dof(self, fe: FiniteElement):
+    def _get_basis_and_dof(self, fe: FunctionSpace):
         if fe is not None:
             if fe is self.test_space:
                 return self.test_basis, self.test_dof

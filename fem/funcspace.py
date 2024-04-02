@@ -2,7 +2,7 @@ import numpy as np
 from .mesh import Mesh
 from .element import Element
 
-class FiniteElement:
+class FunctionSpace:
 
     mesh: Mesh
     elem: Element

@@ -216,6 +216,6 @@ class VectorElement(Element):
     degree: int
     num_dof_per_ent: tuple[int] # of length tdim+1
 
-    def __init__(self, base_elem: Element) -> None:
+    def __init__(self, base_elem: Element, num_copy: int) -> None:
         assert base_elem.rdim == 1
         raise NotImplementedError
