@@ -4,7 +4,9 @@ import numpy as np
 class RefCell:
     tdim: int
     dx: float
+    ds: np.ndarray # (num_facet,)
     vertices: np.ndarray
+    facet_normal: np.ndarray # (tdim, num_facet)
     sub_entities: Any
 
     @staticmethod
@@ -20,6 +22,8 @@ class RefNode(RefCell):
     tdim: int = 0
     dx: float = 1.0
     vertices: np.ndarray = np.array((0.0,))
+    ds: np.ndarray = np.ones((0,))
+    facet_normal: np.ndarray = np.ones((0,0))
     sub_entities = tuple()
 
 class RefLine(RefCell):
@@ -28,6 +32,8 @@ class RefLine(RefCell):
     vertices: np.ndarray = np.array(
         ((0.0,), (1.0,))
     )
+    ds: np.ndarray = np.array((1.0, 1.0))
+    facet_normal: np.ndarray = np.array(((-1.0, 1.0),))
     sub_entities = (
         None, # nodes
     )
@@ -46,6 +52,11 @@ class RefTri(RefCell):
     dx: float = 1.0/2
     vertices: np.ndarray = np.array(
         ((0.0, 0.0), (1.0, 0.0), (0.0, 1.0))
+    )
+    ds: np.ndarray = np.array((1.0, 1.4142135623730951, 1.0))
+    facet_normal: np.ndarray = np.array(
+        (0.0, 0.7071067811865475, -1.0), 
+        (-1.0, 0.7071067811865475, 0.0)
     )
     sub_entities = (
         None, # nodes
