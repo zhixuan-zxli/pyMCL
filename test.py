@@ -7,11 +7,12 @@ from matplotlib import pyplot
 
 if __name__ == "__main__":
     mesh = Mesh()
-    mesh.load("mesh/unit_square.msh")
-    space = FunctionSpace(mesh, TriP1)
-    mea = CellMeasure(mesh)
-    u = MeshMapping(space)
-    q = Quadrature.getTable(RefTri, 3)
-    u._interpolate_cell(mea, q)
+    mesh.load("mesh/two-phase.msh")
+    i_mesh = mesh.view(1, (3,))
+    # space = FunctionSpace(mesh, TriP1)
+    # mea = CellMeasure(mesh)
+    # u = MeshMapping(space)
+    # q = Quadrature.getTable(RefTri, 3)
+    # u._interpolate_cell(mea, q)
     pass
     
