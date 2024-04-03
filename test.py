@@ -9,6 +9,8 @@ if __name__ == "__main__":
     mesh = Mesh()
     mesh.load("mesh/two-phase.msh")
     i_mesh = mesh.view(1, (3,))
+    e = VectorElement(TriP2, 2)
+    print(e.dof_name)
     # space = FunctionSpace(mesh, TriP1)
     # mea = CellMeasure(mesh)
     # u = MeshMapping(space)
