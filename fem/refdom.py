@@ -35,7 +35,7 @@ class RefLine(RefCell):
     ds: np.ndarray = np.array((1.0, 1.0))
     facet_normal: np.ndarray = np.array(((-1.0, 1.0),))
     sub_entities = (
-        None, # nodes
+        np.array(((0,), (1,)), dtype=np.int32), # nodes
     )
 
     @staticmethod
@@ -55,11 +55,11 @@ class RefTri(RefCell):
     )
     ds: np.ndarray = np.array((1.0, 1.4142135623730951, 1.0))
     facet_normal: np.ndarray = np.array(
-        (0.0, 0.7071067811865475, -1.0), 
-        (-1.0, 0.7071067811865475, 0.0)
+        ((0.0, 0.7071067811865475, -1.0), 
+        (-1.0, 0.7071067811865475, 0.0), )
     )
     sub_entities = (
-        None, # nodes
+        np.array(((0,), (1,), (2,)), dtype=np.int32), # nodes
         np.array(((0,1), (1,2), (2,0)), dtype=np.int32) # edges
     )
 
