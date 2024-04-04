@@ -74,19 +74,22 @@ class Mesh:
             return
         self.facet_ref = np.zeros((2, 2, self.cell[self.tdim-1].shape[0]), dtype=np.int32)
         # collect all the facets
-        sub_ent = ref_doms[self.tdim].sub_entities[-1] # facets on the reference domain
-        all_facets = self.cell[self.tdim][:, sub_ent.ravel()].reshape(-1, sub_ent.shape[1])
-        all_facets.sort(axis=1)
+        all_facets = ref_doms[self.tdim]._get_sub_entities(self.cell[self.tdim], dim=self.tdim-1) # (Ne, num_sub_ent, tdim-1+1)
+        num_facet = all_facets.shape[1]
+        # sub_ent = ref_doms[self.tdim].sub_entities[-1] # facets on the reference domain
+        # all_facets = self.cell[self.tdim][:, sub_ent.ravel()].reshape(-1, sub_ent.shape[1])
+        all_facets = all_facets.reshape(-1, self.tdim)
+        all_facets.sort(axis=1) # maybe need manual sort for better performance
         tagged_facets = np.sort(self.cell[self.tdim-1], axis=1)
         # the first facet
         uq_facets, idx = np.unique(all_facets, return_index=True, axis=0)
         sub_idx = binsearchkw(uq_facets.astype(np.int32), tagged_facets)
         assert np.all(sub_idx != -1)
-        self.facet_ref[0,0], self.facet_ref[0,1] = np.divmod(idx[sub_idx], sub_ent.shape[0])
+        self.facet_ref[0,0], self.facet_ref[0,1] = np.divmod(idx[sub_idx], num_facet)
         # the second facet
         _, idx = np.unique(all_facets[::-1], return_index=True, axis=0)
         idx = all_facets.shape[0] - idx - 1
-        self.facet_ref[1,0], self.facet_ref[1,1] = np.divmod(idx[sub_idx], sub_ent.shape[0])
+        self.facet_ref[1,0], self.facet_ref[1,1] = np.divmod(idx[sub_idx], num_facet)
         # fix the facet orientation
         tags = self.cell_tag[self.tdim][self.facet_ref[:,0]] # (2, num_facet)
         flipped = tags[0] > tags[1]

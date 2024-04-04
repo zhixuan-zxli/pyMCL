@@ -11,6 +11,7 @@ class Element:
     # of length tdim+1; the t-th tuple is of length num_dof_loc[t], with dof names therein
     dof_loc: tuple[np.ndarray] 
     # of length tdim+1; the t-th array is (num_dof_loc[t], t+1)
+    num_local_dof: int
     
     @staticmethod
     def _eval(basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]: # (rdim, Nq), (rdim, tdim, Nq)
@@ -28,6 +29,7 @@ class NodeElement(Element):
     dof_loc: tuple[np.ndarray] = (
         np.array(((1.0,),)), # node
     )
+    num_local_dof: int = 1
 
     @staticmethod
     def _eval(basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]:
@@ -56,6 +58,7 @@ class LineDG0(LineElement):
         None, # node, 
         np.array(((1.0/2, 1.0/2), )) # edge
     )
+    num_local_dof: int = 1
     
     @staticmethod
     def _eval(basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]: 
@@ -74,6 +77,7 @@ class LineP1(LineElement):
         np.array(((1.0,),)), # node
         None # edge
     )
+    num_local_dof: int = 2
 
     @staticmethod
     def _eval(basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]: 
@@ -98,6 +102,7 @@ class LineP2(LineElement):
         np.array((1.0,)), # node
         np.array(((1.0/2, 1.0/2), )) # edge
     )
+    num_local_dof: int = 3
 
     @staticmethod
     def _eval(basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]: 
@@ -135,6 +140,7 @@ class TriDG0(TriElement):
         None, # edge
         np.array(((1.0/3, 1.0/3, 1.0/3),)) # tri
     )
+    num_local_dof: int = 1
 
     @staticmethod
     def _eval(basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]:
@@ -155,6 +161,7 @@ class TriP1(TriElement):
         None, # edge
         None # tri
     )
+    num_local_dof: int = 3
 
     @staticmethod
     def _eval(basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]:
@@ -185,6 +192,7 @@ class TriP2(TriElement):
         np.array(((1.0/2, 1.0/2), )), # edge
         None # tri
     )
+    num_local_dof: int = 6
 
     @staticmethod
     def _eval(basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]:
@@ -228,13 +236,15 @@ class VectorElement(Element):
         self.degree = base_elem.degree
         def _repeat(names: tuple[str]) -> tuple[str]:
             return sum((tuple(n + "_" + str(d) for d in range(num_copy)) for n in names), tuple())
-        self.dof_name = tuple(_repeat(names) for names in base_elem.dof_name)
+        self.dof_name = tuple(_repeat(names) if names is not None else None for names in base_elem.dof_name)
         self.dof_loc = base_elem.dof_loc
+        self.num_local_dof = base_elem.num_local_dof * num_copy
     
     def _eval(self, basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]:
         r = np.zeros((self.rdim, qpts.shape[1]))
         g = np.zeros((self.rdim, self.tdim, qpts.shape[1]))
-        t = self.base_elem._eval(basis_id % self.rdim, qpts)
-        r[basis_id // self.rdim], g[basis_id // self.rdim] = t[0][0], t[1][0]
+        num_local_dof = self.base_elem.num_local_dof
+        t = self.base_elem._eval(basis_id % num_local_dof, qpts)
+        r[basis_id // num_local_dof], g[basis_id // num_local_dof] = t[0][0], t[1][0]
         return r, g
         
