@@ -6,8 +6,15 @@ class RefCell:
     dx: float
     ds: np.ndarray # (num_facet,)
     vertices: np.ndarray
-    facet_normal: np.ndarray # (tdim, num_facet)
-    sub_entities: Any # todo: may turn sub_entities into a function for efficiency
+    facet_normal: np.ndarray # (num_facet, tdim)
+
+    @staticmethod
+    def _get_sub_entities(elem_cell: np.ndarray, dim: int) -> np.ndarray:
+        """
+        elem_cell: (Ne, d+1)
+        return: (Ne, num_sub_entity, dim+1)
+        """
+        raise NotImplementedError
 
     @staticmethod
     def _broadcast_facet(quad_pts: np.ndarray) -> np.ndarray:
@@ -24,7 +31,6 @@ class RefNode(RefCell):
     vertices: np.ndarray = np.array((0.0,))
     ds: np.ndarray = np.ones((0,))
     facet_normal: np.ndarray = np.ones((0,0))
-    sub_entities = tuple()
 
 class RefLine(RefCell):
     tdim: int = 1
@@ -33,10 +39,16 @@ class RefLine(RefCell):
         ((0.0,), (1.0,))
     )
     ds: np.ndarray = np.array((1.0, 1.0))
-    facet_normal: np.ndarray = np.array(((-1.0, 1.0),))
-    sub_entities = (
-        np.array(((0,), (1,)), dtype=np.int32), # nodes
-    )
+    facet_normal: np.ndarray = np.array(((-1.0,), (1.0,),))
+
+    @staticmethod
+    def _get_sub_entities(elem_cell: np.ndarray, dim: int) -> np.ndarray:
+        assert elem_cell.shape[1] == 2
+        if dim == 0:
+            return elem_cell.reshape(-1, 2, 1)
+        elif dim == 1:
+            return elem_cell
+        raise RuntimeError("Incorrect dimension for getting sub entities. ")
 
     @staticmethod
     def _broadcast_facet(quad_pts: np.ndarray) -> np.ndarray:
@@ -55,13 +67,22 @@ class RefTri(RefCell):
     )
     ds: np.ndarray = np.array((1.0, 1.4142135623730951, 1.0))
     facet_normal: np.ndarray = np.array(
-        ((0.0, 0.7071067811865475, -1.0), 
-        (-1.0, 0.7071067811865475, 0.0), )
+        ((0.0, -1.0), 
+         (0.7071067811865475, 0.7071067811865475), 
+         (-1.0, 0.0))
     )
-    sub_entities = (
-        np.array(((0,), (1,), (2,)), dtype=np.int32), # nodes
-        np.array(((0,1), (1,2), (2,0)), dtype=np.int32) # edges
-    )
+
+    @staticmethod
+    def _get_sub_entities(elem_cell: np.ndarray, dim: int) -> np.ndarray:
+        assert elem_cell.shape[1] == 3
+        if dim == 0:
+            return elem_cell.reshape(-1, 3, 1)
+        elif dim == 1:
+            return elem_cell[:, [0,1,1,2,2,0]].reshape(-1, 3, 2)
+        elif dim == 2:
+            return elem_cell
+        raise RuntimeError("Incorrect dimension for getting sub entities.")
+
 
     @staticmethod
     def _broadcast_facet(quad_pts: np.ndarray) -> np.ndarray:
@@ -74,4 +95,4 @@ class RefTri(RefCell):
         r[1,2] = 1.0 - quad_pts
 
 # the collection of all the reference domains by dimension
-ref_doms = (RefNode, RefLine, RefTri, None)
+ref_doms = (RefNode, RefLine, RefTri)
