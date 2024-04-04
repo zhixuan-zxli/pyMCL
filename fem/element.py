@@ -234,7 +234,7 @@ class VectorElement(Element):
     def _eval(self, basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]:
         r = np.zeros((self.rdim, qpts.shape[1]))
         g = np.zeros((self.rdim, self.tdim, qpts.shape[1]))
-        t = self.base_elem._eval(basis_id // self.rdim, qpts)
-        r[basis_id % self.rdim], g[basis_id % self.rdim] = t[0][0], t[1][0]
+        t = self.base_elem._eval(basis_id % self.rdim, qpts)
+        r[basis_id // self.rdim], g[basis_id // self.rdim] = t[0][0], t[1][0]
         return r, g
         
