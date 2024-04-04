@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.sparse import csr_array
+from scipy.sparse import coo_array
 from .mesh import Mesh
 from .element import Element
 
@@ -12,6 +12,9 @@ class FunctionSpace:
     dof_loc: np.ndarray # (num_dof, gdim)
     dof_group: dict[str, np.ndarray]
     elem_dof: np.ndarray
+    # elem_dof: (num_local_dof, Ne)
+    # where num_local_dof[d] = num_dof_type[d] * num_dof_loc[d] * num_sub_ent[d], 
+    # and d = 0, 1, ..., tdim
     num_dof: int
 
 
@@ -20,9 +23,10 @@ class FunctionSpace:
         self.elem = elem
         self.periodic = periodic
 
-        num_elem = mesh.cell[tdim].shape[0]
         tdim = elem.tdim
         assert mesh.tdim == tdim
+        elem_cell = mesh.cell[tdim]
+        num_elem = elem_cell.shape[0]
 
         self.dof_loc = np.zeros((0, mesh.gdim))
         self.dof_group = dict()
@@ -30,35 +34,35 @@ class FunctionSpace:
 
         # 1. build the dof for entities of each dimension
         offset = 0
-        for d in range(tdim):
+        for d in range(tdim+1):
             if elem.dof_loc[d] is None:
                 assert elem.dof_name[d] is None
                 continue
             # 2. calculate the dof locations
-            sub_ent = elem.ref_cell.sub_entities[d] # (num_sub_ent, d+1)
-            num_total_sub_ent = num_elem * sub_ent.shape[0]
             num_dof_loc = elem.dof_loc[d].shape[0]
-            all_locs = np.zeros((0, mesh.gdim))
-            for loc in elem.dof_loc[d]:
-                cols = mesh.cell[tdim][:, sub_ent.ravel()].reshape(num_total_sub_ent, d+1)
-                rows = np.tile(np.arange(num_total_sub_ent), (1, d+1))
-                vals = np.tile(loc[np.newaxis], (num_total_sub_ent, 1))
-                arr = csr_array((vals.reshape(-1), (rows.reshape(-1), cols.reshape(-1))), \
-                                shape=(num_total_sub_ent, mesh.point.shape[0]))
-                all_locs = np.vstack((all_locs, arr @ mesh.point))
-            assert all_locs.shape[0] == num_total_sub_ent * num_dof_loc
-            # 3. match the dof locations
             if d == 0:
                 uq_locs = mesh.point
-                inv_idx = mesh.cell[tdim]
-            elif d == tdim:
-                uq_locs = all_locs
-                inv_idx = np.arange(num_elem)
+                inv_idx = mesh.cell[tdim].reshape(-1)
             else:
-                uq_locs, inv_idx = np.unique(all_locs.round(decimals=10), return_index=True, axis=0)
-            # the magic number 10 here may not be robust
-            # inv_idx: (num_total_sub_ent * num_dof_loc, )
-            # 4. broadcast to the dof types and fill in elem_dof
+                sub_ent = elem.ref_cell._get_sub_entities(elem_cell, dim=d) # (Ne, num_sub_ent, d+1)
+                num_total_sub_ent = num_elem * sub_ent.shape[1]
+                rows = np.broadcast_to(np.arange(num_total_sub_ent, dtype=np.int32), (num_total_sub_ent, d+1))
+                vals = np.zeros((num_total_sub_ent, d+1))
+                coo = coo_array((vals.reshape(-1), (rows.reshape(-1), sub_ent.reshape(-1))), \
+                                shape=(num_total_sub_ent, mesh.point.shape[0]))
+                all_locs = np.zeros((0, mesh.gdim)) # eventually (num_dof_loc * num_total_sub_ent, gdim)
+                for loc in elem.dof_loc[d]:
+                    coo.data = np.broadcast_to(loc[np.newaxis], (num_total_sub_ent, 1)).reshape(-1)
+                    all_locs = np.vstack((all_locs, coo @ mesh.point))
+                if d == tdim: # no matching is needed for element dofs
+                    uq_locs = all_locs
+                    inv_idx = np.arange(num_total_sub_ent)
+                else:
+                    # need matching for 0 < d < tdim
+                    uq_locs, inv_idx = np.unique(all_locs.round(decimals=10), return_index=True, axis=0)
+                    # the magic number 10 here may not be robust
+                    # inv_idx: (num_dof_loc * num_total_sub_ent, )
+            # 3. broadcast to the dof types and record the element
             num_new_dof = uq_locs.shape[0]
             num_dof_type = len(elem.dof_name[d])
             self.dof_loc = np.vstack((self.dof_loc, np.repeat(uq_locs, repeats=num_dof_type, axis=0)))
@@ -68,37 +72,12 @@ class FunctionSpace:
                     self.dof_group[name] = new_dof_idx
                 else:
                     self.dof_group[name] = np.concatenate((self.dof_group[name], new_dof_idx))
-                new_elem_dof = np.zeros((num_dof_type, num_dof_loc, num_elem, sub_ent.shape[0]))
-                new_elem_dof[i] = offset + inv_idx.reshape(num_dof_loc, num_elem, -1) * num_dof_type + i
-                self.elem_dof = np.vstack((self.elem_dof, new_elem_dof.transpose(3, 1, 0, 2).reshape(-1, num_elem))) 
+                new_elem_dof = offset + inv_idx.reshape(num_dof_loc, num_elem, -1) * num_dof_type + i
+                self.elem_dof = np.vstack((self.elem_dof, new_elem_dof.transpose(0, 2, 1).reshape(-1, num_elem))) 
             #
             offset += num_new_dof * num_dof_type
-
-        # 6. add the element dofs. 
-        # if elem.dof_loc[tdim] is not None:
-        #     # calculate the dof locations
-        #     num_dof_loc = elem.dof_loc[tdim].shape[0]
-        #     all_locs = np.zeros((0, mesh.gdim))
-        #     for loc in elem.dof_loc[tdim]:
-        #         cols = mesh.cell[tdim]
-        #         rows = np.tile(np.arange(num_elem), (1, tdim+1))
-        #         vals = np.tile(loc[np.newaxis], (num_elem, 1))
-        #         arr = csr_array((vals.reshape(-1), (rows.reshape(-1), cols.reshape(-1))), \
-        #                         shape=(num_elem, mesh.point.shape[0]))
-        #         all_locs = np.vstack((all_locs, arr @ mesh.point))
-        #     # no need to match
-        #     # broadcast to dof types and record
-        #     num_new_dof = num_elem * num_dof_loc # with dof types excluded
-        #     num_dof_type = len(elem.dof_name[tdim])
-        #     self.dof_loc = np.vstack((self.dof_loc, np.repeat(all_locs, repeats=num_dof_type, axis=0)))
-        #     for i, name in enumerate(elem.dof_name[tdim]):
-        #         new_dof_idx = offset + np.arange(num_new_dof) * num_dof_type + i
-        #         if name not in self.dof_group:
-        #             self.dof_group[name] = new_dof_idx
-        #         else:
-        #             self.dof_group[name] = np.vstack((self.dof_group[name], new_dof_idx))
-        #         new_elem_dof = np.zeros((num_dof_type, num_dof_loc, num_elem, 1))
-        #         new_elem_dof
+        #
+        assert offset == self.dof_loc.shape[0]
         self.num_dof = offset
 
 # def group_dof(mixed_fe: tuple[Element], dof_list) -> np.ndarray:
