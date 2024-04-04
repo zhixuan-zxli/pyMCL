@@ -23,7 +23,7 @@ class NodeElement(Element):
     rdim: int = 1
     degree: int = 0
     dof_name: tuple[tuple[str]] = (
-        (('u', ), ), # node
+        ('u', ), # node
     )
     dof_loc: tuple[np.ndarray] = (
         np.array(((1.0,),)), # node
@@ -50,7 +50,7 @@ class LineDG0(LineElement):
     degree: int = 0
     dof_name: tuple[tuple[str]] = (
         None, # node
-        (('u', ), ), # edge
+        ('u', ), # edge
     )
     dof_loc: tuple[np.ndarray] = (
         None, # node, 
@@ -67,7 +67,7 @@ class LineP1(LineElement):
     rdim: int = 1
     degree: int = 1
     dof_name: tuple[tuple[str]] = (
-        (('u', ), ), # node
+        ('u', ), # node
         None, # edge
     )
     dof_loc: tuple[np.ndarray] = (
@@ -91,8 +91,8 @@ class LineP2(LineElement):
     rdim: int = 1
     degree: int = 2
     dof_name: tuple[tuple[str]] = (
-        ((('u', )), ), # node
-        ((('u', )), ), # edge
+        ('u', ), # node
+        ('u', ), # edge
     )
     dof_loc: tuple[np.ndarray] = (
         np.array((1.0,)), # node
@@ -128,7 +128,7 @@ class TriDG0(TriElement):
     dof_name: tuple[tuple[str]] = (
         None, # node
         None, # edge
-        (('u', ), ), # tri
+        ('u', ), # tri
     )
     dof_loc: tuple[np.ndarray] = (
         None, # node
@@ -146,7 +146,7 @@ class TriP1(TriElement):
     rdim: int = 1
     degree: int = 1
     dof_name: tuple[tuple[str]] = (
-        (('u', ), ), # node
+        ('u', ), # node
         None, # edge
         None, # tri
     )
@@ -176,8 +176,8 @@ class TriP2(TriElement):
     rdim: int = 1
     degree: int = 2
     dof_name: tuple[tuple[str]] = (
-        (('u',),), # node
-        (('u',),), # edge
+        ('u',), # node
+        ('u',), # edge
         None
     )
     dof_loc: tuple[np.ndarray] = (
@@ -228,7 +228,7 @@ class VectorElement(Element):
         self.degree = base_elem.degree
         def _repeat(names: tuple[str]) -> tuple[str]:
             return sum((tuple(n + "_" + str(d) for d in range(num_copy)) for n in names), tuple())
-        self.dof_name = tuple(tuple(_repeat(names) for names in x) if x is not None else None for x in base_elem.dof_name)
+        self.dof_name = tuple(_repeat(names) for names in base_elem.dof_name)
         self.dof_loc = base_elem.dof_loc
     
     def _eval(self, basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]:
