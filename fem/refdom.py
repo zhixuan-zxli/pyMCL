@@ -7,7 +7,7 @@ class RefCell:
     ds: np.ndarray # (num_facet,)
     vertices: np.ndarray
     facet_normal: np.ndarray # (tdim, num_facet)
-    sub_entities: Any
+    sub_entities: Any # todo: may turn sub_entities into a function for efficiency
 
     @staticmethod
     def _broadcast_facet(quad_pts: np.ndarray) -> np.ndarray:
