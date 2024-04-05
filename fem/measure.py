@@ -5,6 +5,7 @@ from .mesh import Mesh
 class Measure:
     
     mesh: Mesh
+    dim: int
     elem_ix: Union[np.ndarray, slice] # the element indices involved
     facet_ix: tuple[np.ndarray] # the facet indices of a surface measure
     facet_id: tuple[np.ndarray] # the facet if within an element, for a surface measure
@@ -18,6 +19,7 @@ class Measure:
         If dim == mesh.tdim-1, represent the surface measure. 
         """
         self.mesh = mesh
+        self.dim = dim
         # 1. Volume measure
         if dim == mesh.tdim:
             if tags is None:
