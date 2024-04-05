@@ -80,7 +80,7 @@ class Function(np.ndarray):
             grad = np.zeros((rdim, tdim, Ne, Nq))
             for i in range(elem_dof.shape[0]):
                 temp = self.view(np.ndarray)[elem_dof[i]] # (Ne, )
-                basis_data, grad_data = self.fe.elem._eva(i, quad_tab) # (rdim, Nq)
+                basis_data, grad_data = self.fe.elem._eval(i, quad_tab) # (rdim, Nq)
                 # interpolate function values
                 data += temp[np.newaxis,:,np.newaxis] * basis_data[:, np.newaxis] # (rdim, Ne, Nq)
                 # interpolate the gradients

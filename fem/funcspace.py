@@ -56,10 +56,11 @@ class FunctionSpace:
                     all_locs = np.vstack((all_locs, coo @ mesh.point))
                 if d == tdim: # no matching is needed for element dofs
                     uq_locs = all_locs
-                    inv_idx = np.arange(num_total_sub_ent)
+                    inv_idx = np.arange(num_total_sub_ent, dtype=np.int32)
                 else:
                     # need matching for 0 < d < tdim
                     uq_locs, inv_idx = np.unique(all_locs.round(decimals=10), return_inverse=True, axis=0)
+                    inv_idx = inv_idx.astype(np.int32)
                     # the magic number 10 here may not be robust
                     # inv_idx: (num_dof_loc * num_total_sub_ent, )
             # 3. broadcast to the dof types and record the element
@@ -67,7 +68,7 @@ class FunctionSpace:
             num_dof_type = len(elem.dof_name[d])
             self.dof_loc = np.vstack((self.dof_loc, np.repeat(uq_locs, repeats=num_dof_type, axis=0)))
             for i, name in enumerate(elem.dof_name[d]):
-                new_dof_idx = offset + np.arange(num_new_dof) * num_dof_type + i
+                new_dof_idx = offset + np.arange(num_new_dof, dtype=np.int32) * num_dof_type + i
                 if name not in self.dof_group:
                     self.dof_group[name] = new_dof_idx
                 else:
