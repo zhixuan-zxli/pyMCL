@@ -1,7 +1,7 @@
 from typing import Union
 import numpy as np
 from .function import FunctionSpace, QuadData
-from .measure import Measure, CellMeasure, FaceMeasure
+from .measure import Measure
 
 class FunctionBasis:
     """
@@ -22,7 +22,7 @@ class FunctionBasis:
         Nq = quad_tab.shape[1]
         self.data = []
         #
-        if isinstance(mea, CellMeasure):
+        if mea.dim == mea.mesh.tdim:
             for i in range(num_local_dof):
                 u, du = fs.elem._eval(i, quad_tab)
                 # u: (rdim, Nq)
@@ -32,11 +32,11 @@ class FunctionBasis:
                                       du[:,:,np.newaxis,:], x.inv_grad) # (rdim, tdim, Ne, Nq)
                 self.data.append(data)
         #
-        elif isinstance(mea, FaceMeasure):
+        if mea.dim == mea.mesh.tdim-1:
             quad_tab = fs.elem.ref_cell._broadcast_facet(quad_tab) # (tdim, num_facet, Nq)
             for i in range(num_local_dof):
                 data_tuple = []
-                for k, facet_id in enumerate(mea.facet_id):
+                for facet_id, y in zip(mea.facet_id, x):
                     u, du = fs.elem._eval(i, quad_tab.reshape(tdim, -1))
                     # u: (rdim, num_facet * Nq)
                     # du: (rdim, tdim, num_facet* Nq)
@@ -44,7 +44,7 @@ class FunctionBasis:
                     data = QuadData(u.reshape(rdim, -1, Nq)[:, facet_id, :]) # (rdim, Ne, Nq)
                     du = du.reshape(rdim, tdim, -1, Nq)[:,:,facet_id,:] # (rdim, tdim, Ne, Nq)
                     data.grad = np.einsum("ij...,jk...->ik...", \
-                                          du, x[k].inv_grad)
+                                          du, y.inv_grad)
                     data_tuple.append(data)
                 self.data.append(tuple(data_tuple))
         #
