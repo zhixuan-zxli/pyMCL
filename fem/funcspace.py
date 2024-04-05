@@ -46,20 +46,20 @@ class FunctionSpace:
             else:
                 sub_ent = elem.ref_cell._get_sub_entities(elem_cell, dim=d) # (Ne, num_sub_ent, d+1)
                 num_total_sub_ent = num_elem * sub_ent.shape[1]
-                rows = np.broadcast_to(np.arange(num_total_sub_ent, dtype=np.int32), (num_total_sub_ent, d+1))
+                rows = np.broadcast_to(np.arange(num_total_sub_ent, dtype=np.int32)[:,np.newaxis], (num_total_sub_ent, d+1))
                 vals = np.zeros((num_total_sub_ent, d+1))
                 coo = coo_array((vals.reshape(-1), (rows.reshape(-1), sub_ent.reshape(-1))), \
                                 shape=(num_total_sub_ent, mesh.point.shape[0]))
                 all_locs = np.zeros((0, mesh.gdim)) # eventually (num_dof_loc * num_total_sub_ent, gdim)
                 for loc in elem.dof_loc[d]:
-                    coo.data = np.broadcast_to(loc[np.newaxis], (num_total_sub_ent, 1)).reshape(-1)
+                    coo.data = np.broadcast_to(loc[np.newaxis], (num_total_sub_ent, d+1)).reshape(-1)
                     all_locs = np.vstack((all_locs, coo @ mesh.point))
                 if d == tdim: # no matching is needed for element dofs
                     uq_locs = all_locs
                     inv_idx = np.arange(num_total_sub_ent)
                 else:
                     # need matching for 0 < d < tdim
-                    uq_locs, inv_idx = np.unique(all_locs.round(decimals=10), return_index=True, axis=0)
+                    uq_locs, inv_idx = np.unique(all_locs.round(decimals=10), return_inverse=True, axis=0)
                     # the magic number 10 here may not be robust
                     # inv_idx: (num_dof_loc * num_total_sub_ent, )
             # 3. broadcast to the dof types and record the element
