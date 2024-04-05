@@ -2,6 +2,7 @@ from typing import Union, Optional
 import numpy as np
 from .mesh import Mesh
 from .funcspace import FunctionSpace
+from .measure import CellMeasure, FaceMeasure
 
 class QuadData(np.ndarray):
     """
@@ -42,59 +43,6 @@ class QuadData(np.ndarray):
         return np.array(out_arr)
 
 
-
-class CellMeasure:
-    """
-    Represent the volume measure whose dimension equals the topological dimension of the mesh. 
-    """
-
-    mesh: Mesh
-    elem_ix: Union[np.ndarray, slice]
-
-    def __init__(self, mesh: Mesh, tags: Optional[tuple[int]] = None) -> None:
-        self.mesh = mesh
-        if tags is None:
-            self.elem_ix = slice(None) # select all the elements
-        else:
-            # select the elements with the provided tags
-            elem_tag = mesh.cell_tag[mesh.tdim]
-            flag = np.zeros((elem_tag.shape[0],), dtype=np.bool8)
-            for t in tags:
-                flag[elem_tag == t] = True
-            self.elem_ix = np.nonzero(flag)[0]
-
-class FaceMeasure:
-    """
-    Represent the surface measure whose dimension is one less than the topological dimension of the mesh. 
-    """
-    
-    mesh: Mesh
-    facet_ix: tuple[np.ndarray]
-    elem_ix: tuple[np.ndarray]
-    facet_id: tuple[np.ndarray]
-
-    def __init__(self, mesh: Mesh, tags: Optional[tuple[int]] = None, interiorFacet: bool = False) -> None:
-        self.mesh = mesh
-        if tags is None:
-            self.facet_ix = slice(None)
-        else:
-            # select the facets with the provided tags
-            facet_tag = mesh.cell_tag[mesh.tdim-1]
-            flag = np.zeros((facet_tag.shape[0],), dtype=np.bool8)
-            for t in tags:
-                flag[facet_tag == t] = True
-            self.facet_ix = np.nonzero(flag)[0]
-        #
-        elem_ix = []
-        facet_id = []
-        for k in range(1+interiorFacet):
-            elem_ix.append(mesh.inv_bdry[k,0,self.facet_ix])
-            facet_id.append(mesh.inv_bdry[k,1,self.facet_ix])
-        self.elem_ix = tuple(elem_ix)
-        self.facet_id = tuple(facet_id)
-
-
-
 class Function(np.ndarray):
     """
     Array of size num_dof. 
@@ -130,11 +78,10 @@ class Function(np.ndarray):
         grad = np.zeros((rdim, tdim, Ne, Nq))
         for i in range(elem_dof.shape[0]):
             temp = self.view(np.ndarray)[elem_dof[i]] # (Ne, )
+            basis_data, grad_data = self.fe.elem._eva(i, quad_tab) # (rdim, Nq)
             # interpolate function values
-            basis_data = self.fe.elem._eval_basis(i, quad_tab) # (rdim, Nq)
             data += temp[np.newaxis,:,np.newaxis] * basis_data[:, np.newaxis] # (rdim, Ne, Nq)
             # interpolate the gradients
-            grad_data = self.fe.elem._eval_grad(i, quad_tab) # (rdim, elem.tdim, Nq)
             grad_temp = temp[np.newaxis,np.newaxis,:,np.newaxis] \
                 * grad_data[:,:,np.newaxis] # (rdim, elem.tdim, Ne, Nq)
             if x is not None:
@@ -161,10 +108,11 @@ class Function(np.ndarray):
             for i in range(elem_dof.shape[0]):
                 temp = self.view(np.ndarray)[elem_dof[i]] # (Ne, )
                 # interpolate function values
-                basis_data = self.fe.elem._eval_basis(i, quad_tab.reshape(tdim, -1)).reshape(rdim, -1, Nq) # (rdim, num_facet, Nq)
-                data += temp[np.newaxis] * basis_data[:, facet_id, :]
+                basis_data, grad_data = self.fe.elem._eval(i, quad_tab.reshape(tdim, -1)).reshape(rdim, -1, Nq) 
+                basis_data = basis_data.reshape(rdim, -1, Nq) # (rdim, num_facet, Nq)
+                data += temp[np.newaxis] * basis_data[:, facet_id, :] # (rdim, Ne, Nq)
                 # interpolate the gradients
-                grad_data = self.fe.elem._eval_grad(i, quad_tab.reshape(tdim, -1)).reshape(rdim, tdim, -1, Nq) 
+                grad_data = grad_data.reshape(rdim, tdim, -1, Nq)
                 grad_temp = temp[np.newaxis, np.newaxis] * grad_data[:,:,facet_id,:] # (rdim, tdim, Ne, Nq)
                 if x is not None:
                     grad_temp = np.einsum("ij...,jk...->ik...", grad_temp, x.inv_grad)
