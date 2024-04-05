@@ -10,7 +10,8 @@ class Measure:
     facet_ix: tuple[np.ndarray] # the facet indices of a surface measure
     facet_id: tuple[np.ndarray] # the facet if within an element, for a surface measure
 
-    def __init__(self, mesh: Mesh, 
+    def __init__(self, 
+                 mesh: Mesh, 
                  dim: int, 
                  tags: Optional[tuple[int]] = None, 
                  interiorFacet: bool = False) -> None:

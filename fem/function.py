@@ -129,7 +129,7 @@ class MeshMapping(Function):
         obj.fe = fe
         return obj
     
-    def _interpolate_cell(self, mea: Measure, quad_tab: np.ndarray) -> QuadData:
+    def _interpolate(self, mea: Measure, quad_tab: np.ndarray) -> QuadData:
         tdim, rdim = self.fe.elem.tdim, self.fe.elem.rdim
         def _derive_others(data: QuadData) -> None:
             Ne, Nq = data.shape[1:]
