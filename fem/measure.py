@@ -2,13 +2,19 @@ from typing import Union, Optional
 import numpy as np
 from .mesh import Mesh
 
-class CellMeasure:
+class Measure:
+    
+    mesh: Mesh
+    elem_ix: Union[np.ndarray, slice] # the element indices involved
+
+
+class CellMeasure(Measure):
     """
     Represent the volume measure whose dimension equals the topological dimension of the mesh. 
     """
 
-    mesh: Mesh
-    elem_ix: Union[np.ndarray, slice]
+    # mesh: Mesh
+    # elem_ix: Union[np.ndarray, slice]
 
     def __init__(self, mesh: Mesh, tags: Optional[tuple[int]] = None) -> None:
         self.mesh = mesh
@@ -22,14 +28,14 @@ class CellMeasure:
                 flag[elem_tag == t] = True
             self.elem_ix = np.nonzero(flag)[0]
 
-class FaceMeasure:
+class FaceMeasure(Measure):
     """
     Represent the surface measure whose dimension is one less than the topological dimension of the mesh. 
     """
     
-    mesh: Mesh
+    # mesh: Mesh
     facet_ix: tuple[np.ndarray]
-    elem_ix: tuple[np.ndarray]
+    # elem_ix: tuple[np.ndarray]
     facet_id: tuple[np.ndarray]
 
     def __init__(self, mesh: Mesh, tags: Optional[tuple[int]] = None, interiorFacet: bool = False) -> None:

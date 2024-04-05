@@ -19,8 +19,8 @@ class Mesh:
     # mapping from facets to elements, (2, 2, num_facets = cell[tdim-1].shape[0])
     # [positive/negaive side, element id/facet id, *] 
 
-    coord_fe: Any  # the finite element space for the mesh mapping
-    coord_map: Any # the finite element function for the mesh mapping
+    coord_fe: Any # type: FunctionSpace # the finite element space for the mesh mapping
+    coord_map: Any # type: MeshMapping # the finite element function for the mesh mapping
     
 
     def __init__(self) -> None:

@@ -68,7 +68,7 @@ class Function(np.ndarray):
         if self.fe.periodic:
             raise NotImplementedError
     
-    def _interpolate_cell(self, mea: CellMeasure, quad_tab: np.ndarray, x: Optional[QuadData] = None) -> QuadData:
+    def _interpolate_cell(self, mea: CellMeasure, quad_tab: np.ndarray, x: QuadData) -> QuadData:
         assert self.fe.mesh is mea.mesh
         tdim, rdim = self.fe.elem.tdim, self.fe.elem.rdim
         elem_dof = self.fe.elem_dof[:, mea.elem_ix]
@@ -92,7 +92,7 @@ class Function(np.ndarray):
         data.grad = grad
         return data
     
-    def _interpolate_facet(self, mea: FaceMeasure, quad_tab: np.ndarray, x: Optional[QuadData] = None) -> tuple[QuadData]:
+    def _interpolate_facet(self, mea: FaceMeasure, quad_tab: np.ndarray, x: QuadData) -> tuple[QuadData]:
         assert self.fe.mesh is mea.mesh
         tdim, rdim = self.fe.elem.tdim, self.fe.elem.rdim
         Nq = quad_tab.shape[1]
@@ -108,7 +108,7 @@ class Function(np.ndarray):
             for i in range(elem_dof.shape[0]):
                 temp = self.view(np.ndarray)[elem_dof[i]] # (Ne, )
                 # interpolate function values
-                basis_data, grad_data = self.fe.elem._eval(i, quad_tab.reshape(tdim, -1)).reshape(rdim, -1, Nq) 
+                basis_data, grad_data = self.fe.elem._eval(i, quad_tab.reshape(tdim, -1)) 
                 basis_data = basis_data.reshape(rdim, -1, Nq) # (rdim, num_facet, Nq)
                 data += temp[np.newaxis] * basis_data[:, facet_id, :] # (rdim, Ne, Nq)
                 # interpolate the gradients
@@ -130,7 +130,7 @@ class MeshMapping(Function):
         return obj
     
     def _interpolate_cell(self, mea: CellMeasure, quad_tab: np.ndarray) -> QuadData:
-        data = super()._interpolate_cell(mea, quad_tab, None) 
+        data = super()._interpolate_cell(mea, quad_tab, x=None) 
         tdim, rdim = self.fe.elem.tdim, self.fe.elem.rdim
         assert tdim == rdim or tdim == rdim-1
         Ne, Nq = data.shape[1:]
@@ -170,7 +170,7 @@ class MeshMapping(Function):
         return data
 
     def _interpolate_facet(self, mea: FaceMeasure, quad_tab: np.ndarray) -> tuple[QuadData]:
-        data_tuple = super()._interpolate_facet(mea, quad_tab, None)
+        data_tuple = super()._interpolate_facet(mea, quad_tab, x=None)
         tdim, rdim = self.fe.elem.tdim, self.fe.elem.rdim
         assert tdim == rdim or tdim == rdim-1
         Ne, Nq = data.shape[1:]
@@ -217,8 +217,6 @@ class MeshMapping(Function):
             data.ds = data.dx * nm
         return data_tuple
         
-
-
 
 # =============================================================
     

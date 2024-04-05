@@ -77,6 +77,7 @@ class FunctionSpace:
             #
             offset += num_new_dof * num_dof_type
         #
+        assert elem.num_local_dof == self.elem_dof.shape[0]
         assert offset == self.dof_loc.shape[0]
         self.num_dof = offset
 
