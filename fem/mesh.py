@@ -116,7 +116,7 @@ class Mesh:
         submesh.cell[dim] = self.cell[dim][keep_idx[dim]]
         submesh.cell_tag[dim] = self.cell_tag[dim][keep_idx[dim]]
         # 2. Select the nodes to preserve and construct the node remap
-        keep_idx[0], idx = np.unique(submesh.cell[dim].reshape(-1), return_index=True)
+        keep_idx[0] = np.unique(submesh.cell[dim].reshape(-1))
         submesh.point = self.point[keep_idx[0]]
         submesh.point_tag = self.point_tag[keep_idx[0]]
         point_remap = -np.ones((self.point.shape[0],), dtype=np.int32)
