@@ -7,10 +7,8 @@ from matplotlib import pyplot
 
 if __name__ == "__main__":
     mesh = Mesh()
-    mesh.load("mesh/two-phase.msh")
-    i_mesh = mesh.view(1, (3,))
-    e = VectorElement(TriP2, 2)
-    print(e.dof_name)
+    mesh.load("mesh/unit_square.msh")
+    i_mesh = mesh.view(1, (2,))
     space = FunctionSpace(mesh, e)
     i_space = FunctionSpace(i_mesh, VectorElement(LineP1, 2))
     # mea = CellMeasure(mesh)

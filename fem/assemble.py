@@ -1,42 +1,63 @@
-from typing import Optional
+from typing import Optional, Callable, Union
 import numpy as np
 from scipy.sparse import csr_array
-from .function import FunctionSpace, Function
-from .measure import CellMeasure, FaceMeasure
+from .function import FunctionSpace, Function, QuadData
+from .funcbasis import FunctionBasis
+from .measure import Measure
 from .quadrature import Quadrature
+from .refdom import ref_doms
     
 class assembler:
+
+    test_space: FunctionSpace
+    trial_space: Optional[FunctionSpace]
+    mea: Measure
+    #
+    quad_tab: np.ndarray
+    x: QuadData
+    test_basis: FunctionBasis
+    trial_basis: Optional[FunctionBasis]
 
     def __init__(self, 
                  test_space: FunctionSpace, 
                  trial_space: Optional[FunctionSpace], 
-                 order: int, 
-                 dim: int, 
-                 tags: Optional[tuple[int]] = None) -> None:
-        pass
+                 mea: Measure, 
+                 order: int) -> None:
+        # 1. Set up quadrature. 
+        ref_cell = ref_doms[mea.dim]
+        self.quad_tab = Quadrature.getTable(ref_cell, order)
+        # 2. Set up the mesh mapping. 
+        self.x = mea.mesh.coord_map._interpolate(mea, self.quad_tab)
+        # 3. Set up test basis. 
+        self.test_basis = FunctionBasis(test_space, mea, self.quad_tab, x=self.x)
+        # 4. Set up the trial basis. 
+        if trial_space is not None:
+            self.trial_basis = FunctionBasis(trial_space, mea, self.quad_tab, x=self.x)
+        else:
+            self.trial_basis = None
 
-    def _transform_extra_args(self, hint, **extra_args):
+    def _transform_extra_args(self, **extra_args):
         # convert the args into QuadData
         extra_data = dict()
         for k, v in extra_args.items():
             if isinstance(v, Function):
-                basis, dof = self._get_basis_and_dof(v.fe)
-                extra_data[k] = v._get_quad_data(basis, dof, self.geom_data, self.quadTable, hint)
+                extra_data[k] = v._interpolate(self.mea, self.quad_tab, self.x)
             else:
                 extra_data[k] = v # for other data, leave it as it is
         return extra_data
 
-    # def functional(self, form: Form, **extra_args) -> float | np.ndarray:
-    #     """
-    #     form(x, w) : x the coordinates, w the extra functions
-    #     """
-    #     extra_data = self._transform_extra_args(form.hint, **extra_args)
-    #     Ne, Nq = self.test_dof.shape[0], self.quadTable.shape[1]
-    #     data = self.test_space.ref_cell.dx * form(self.geom_data, **extra_data) # (rdim, Ne, num_quad)
-    #     assert data.shape[1:] == (Ne, Nq)
-    #     data = data.reshape(-1, Nq) @ self.quadTable[-1, :]
-    #     data = data.reshape(-1, Ne).sum(axis=1) # sum over all elements
-    #     return data if data.size > 1 else data.item()
+    def functional(self, form: Callable, **extra_args) -> Union[float, np.ndarray]:
+        """
+        form(x, w) : x the coordinates, w the extra functions
+        """
+        extra_data = self._transform_extra_args(**extra_args)
+        dx_ref = ref_doms[self.mea.dim].dx
+        Nq = self.quad_tab.shape[1]
+        data = dx_ref * form(self.x, **extra_data) # (rdim, Ne, num_quad)
+        rdim = data.shape[0]
+        data = data.reshape(-1, Nq) @ self.quadTable[-1, :]
+        data = data.reshape(rdim, -1).sum(axis=1) # sum over all elements
+        return data if data.size > 1 else data.item()
 
 
     # def linear(self, form: Form, **extra_args) -> np.ndarray:
