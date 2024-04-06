@@ -10,6 +10,8 @@ class Measure:
     facet_ix: tuple[np.ndarray] # the facet indices of a surface measure
     facet_id: tuple[np.ndarray] # the facet if within an element, for a surface measure
 
+    # todo: move MeshMapping._interpolate here ...
+
     def __init__(self, 
                  mesh: Mesh, 
                  dim: int, 

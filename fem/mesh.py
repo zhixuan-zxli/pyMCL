@@ -62,7 +62,7 @@ class Mesh:
                 self.tdim = max(self.tdim, 2)
             else:
                 raise RuntimeError("Unrecognized cell type. ")
-        # assign the 0-th dim cell to be the tagged nodes
+        # assign the 0-th dim cells to be the tagged nodes
         self.cell[0] = np.nonzero(self.point_tag)[0].reshape(-1, 1)
         self.cell_tag[0] = self.point_tag[self.cell[0]]
 
@@ -76,8 +76,6 @@ class Mesh:
         # collect all the facets
         all_facets = ref_doms[self.tdim]._get_sub_entities(self.cell[self.tdim], dim=self.tdim-1) # (Ne, num_sub_ent, tdim-1+1)
         num_facet = all_facets.shape[1]
-        # sub_ent = ref_doms[self.tdim].sub_entities[-1] # facets on the reference domain
-        # all_facets = self.cell[self.tdim][:, sub_ent.ravel()].reshape(-1, sub_ent.shape[1])
         all_facets = all_facets.reshape(-1, self.tdim)
         all_facets.sort(axis=1) # maybe need manual sort for better performance
         tagged_facets = np.sort(self.cell[self.tdim-1], axis=1)

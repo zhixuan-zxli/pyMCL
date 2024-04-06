@@ -32,15 +32,17 @@ class FunctionSpace:
         self.dof_group = dict()
         self.elem_dof = np.zeros((0, num_elem), dtype=np.int32)
 
-        # 1. build the dof for entities of each dimension
+        # Build the dof for entities of each dimension. 
         offset = 0
         for d in range(tdim+1):
             if elem.dof_loc[d] is None:
                 assert elem.dof_name[d] is None
                 continue
-            # 2. calculate the dof locations
+
+            # 1. calculate the dof locations
             num_dof_loc = elem.dof_loc[d].shape[0]
-            if d == 0:
+            if d == 0: # for node dof there is a unique dof per node
+                assert num_dof_loc == 1
                 uq_locs = mesh.point
                 inv_idx = mesh.cell[tdim].reshape(-1)
             else:
@@ -54,16 +56,21 @@ class FunctionSpace:
                 for loc in elem.dof_loc[d]:
                     coo.data = np.broadcast_to(loc[np.newaxis], (num_total_sub_ent, d+1)).reshape(-1)
                     all_locs = np.vstack((all_locs, coo @ mesh.point))
+
+                # 2. Find the unique dof locations and generate numbering. 
                 if d == tdim: # no matching is needed for element dofs
                     uq_locs = all_locs
                     inv_idx = np.arange(num_total_sub_ent, dtype=np.int32)
                 else:
                     # need matching for 0 < d < tdim
                     uq_locs, inv_idx = np.unique(all_locs.round(decimals=10), return_inverse=True, axis=0)
+                    # the magic number 10 here may not be robust enough ^
                     inv_idx = inv_idx.astype(np.int32)
-                    # the magic number 10 here may not be robust
                     # inv_idx: (num_dof_loc * num_total_sub_ent, )
-            # 3. broadcast to the dof types and record the element
+
+                # 3. Find the dof number for the facet dofs. 
+
+            # 4. Broadcast to multiple dof types; save record in element dofs. 
             num_new_dof = uq_locs.shape[0]
             num_dof_type = len(elem.dof_name[d])
             self.dof_loc = np.vstack((self.dof_loc, np.repeat(uq_locs, repeats=num_dof_type, axis=0)))
