@@ -4,8 +4,8 @@
 #include <Python.h>
 #include <numpy/arrayobject.h>
 
-template <std::size_t Dim>
-static bool compare(const std::array<npy_int, Dim> &a, const std::array<npy_int, Dim> &b) {
+template <class T, std::size_t Dim>
+static bool compare(const std::array<T, Dim> &a, const std::array<T, Dim> &b) {
     for(std::size_t i = 0; i < Dim; ++i) {
         if (a[i] != b[i])
             return a[i] < b[i];
@@ -13,10 +13,10 @@ static bool compare(const std::array<npy_int, Dim> &a, const std::array<npy_int,
     return false;
 }
 
-template <std::size_t Dim>
-static void binsearchkw_work(const std::array<npy_int, Dim> *cand, npy_intp num_cand, const std::array<npy_int, Dim> *db, npy_intp num_db, npy_int *res) {
+template <class T, std::size_t Dim>
+static void binsearchkw_work(const std::array<T, Dim> *cand, npy_intp num_cand, const std::array<T, Dim> *db, npy_intp num_db, npy_int32 *res) {
     for(std::size_t i = 0; i < (unsigned)num_cand; ++i) {
-        auto resit = std::lower_bound(db, db + num_db, cand[i], compare<Dim>);
+        auto resit = std::lower_bound(db, db + num_db, cand[i], compare<T, Dim>);
         if (resit != db + num_db && compare(cand[i], *resit) == false)
             res[i] = resit - db;
         else
@@ -35,25 +35,27 @@ static PyObject *binsearchkw(PyObject *self, PyObject *args) {
     if (PyArray_NDIM(candidate) != 2 || PyArray_NDIM(database) != 2) {
         PyErr_SetString(PyExc_ValueError, "Input array must be 2-dimensional.");
         return NULL;
-    }    
-    
-    if (PyArray_TYPE(candidate) != NPY_INT || PyArray_TYPE(database) != NPY_INT) {
-        PyErr_SetString(PyExc_ValueError, "Expect int array. ");
-        return NULL;
     }
 
+    int cand_type = PyArray_TYPE(candidate);
     npy_intp *cand_shape = PyArray_DIMS(candidate);
     void *cand_data = PyArray_DATA(candidate);
 
+    int database_type = PyArray_TYPE(database);
     npy_intp *database_shape = PyArray_DIMS(database);
     void *database_data = PyArray_DATA(database);
 
-    if (cand_shape[1] < 1 || cand_shape[1] > 4 || database_shape[1] != cand_shape[1]) {
-        PyErr_SetString(PyExc_ValueError, "Incorrect entity dimension. ");
+    if (cand_type != database_type) {
+        PyErr_SetString(PyExc_ValueError, "Data types mismatched. ");
         return NULL;
     }
 
-    PyObject *result = PyArray_EMPTY(1, &cand_shape[0], NPY_INT, 0);
+    if (cand_shape[1] != database_shape[1] || cand_shape[1] < 1 || cand_shape[1] > 4) {
+        PyErr_SetString(PyExc_ValueError, "The number of columns shoulbe be between 1 and 4. ");
+        return NULL;
+    }
+
+    PyObject *result = PyArray_EMPTY(1, &cand_shape[0], NPY_INT32, 0/*fortran*/);
     if (!result) {
         PyErr_SetString(PyExc_MemoryError, "Failed to allocate memory for the result array.");
         return NULL;
@@ -61,14 +63,39 @@ static PyObject *binsearchkw(PyObject *self, PyObject *args) {
 
     void *result_data = PyArray_DATA((PyArrayObject *)result);
 
-    if (cand_shape[1] == 1) {
-        binsearchkw_work<1>((std::array<npy_int,1>*)cand_data, cand_shape[0], (std::array<npy_int,1>*)database_data, database_shape[0], (npy_int*)result_data);
-    } else if(cand_shape[1] == 2) {
-        binsearchkw_work<2>((std::array<npy_int,2>*)cand_data, cand_shape[0], (std::array<npy_int,2>*)database_data, database_shape[0], (npy_int*)result_data);
-    } else if(cand_shape[1] == 3) {
-        binsearchkw_work<3>((std::array<npy_int,3>*)cand_data, cand_shape[0], (std::array<npy_int,3>*)database_data, database_shape[0], (npy_int*)result_data);
-    } else if(cand_shape[1] == 4) {
-        binsearchkw_work<4>((std::array<npy_int,4>*)cand_data, cand_shape[0], (std::array<npy_int,4>*)database_data, database_shape[0], (npy_int*)result_data);
+    if (cand_type == NPY_INT32) {
+        if (cand_shape[1] == 1) {
+            binsearchkw_work((std::array<npy_int32,1>*)cand_data, cand_shape[0], (std::array<npy_int32,1>*)database_data, database_shape[0], (npy_int32*)result_data);
+        } else if(cand_shape[1] == 2) {
+            binsearchkw_work((std::array<npy_int32,2>*)cand_data, cand_shape[0], (std::array<npy_int32,2>*)database_data, database_shape[0], (npy_int32*)result_data);
+        } else if(cand_shape[1] == 3) {
+            binsearchkw_work((std::array<npy_int32,3>*)cand_data, cand_shape[0], (std::array<npy_int32,3>*)database_data, database_shape[0], (npy_int32*)result_data);
+        } else if(cand_shape[1] == 4) {
+            binsearchkw_work((std::array<npy_int32,4>*)cand_data, cand_shape[0], (std::array<npy_int32,4>*)database_data, database_shape[0], (npy_int32*)result_data);
+        }
+    } else if(cand_type == NPY_INT64) {
+        if (cand_shape[1] == 1) {
+            binsearchkw_work((std::array<npy_int64,1>*)cand_data, cand_shape[0], (std::array<npy_int64,1>*)database_data, database_shape[0], (npy_int32*)result_data);
+        } else if(cand_shape[1] == 2) {
+            binsearchkw_work((std::array<npy_int64,2>*)cand_data, cand_shape[0], (std::array<npy_int64,2>*)database_data, database_shape[0], (npy_int32*)result_data);
+        } else if(cand_shape[1] == 3) {
+            binsearchkw_work((std::array<npy_int64,3>*)cand_data, cand_shape[0], (std::array<npy_int64,3>*)database_data, database_shape[0], (npy_int32*)result_data);
+        } else if(cand_shape[1] == 4) {
+            binsearchkw_work((std::array<npy_int64,4>*)cand_data, cand_shape[0], (std::array<npy_int64,4>*)database_data, database_shape[0], (npy_int32*)result_data);
+        }
+    } else if(cand_type == NPY_FLOAT64) {
+        if (cand_shape[1] == 1) {
+            binsearchkw_work((std::array<npy_double,1>*)cand_data, cand_shape[0], (std::array<npy_double,1>*)database_data, database_shape[0], (npy_int32*)result_data);
+        } else if(cand_shape[1] == 2) {
+            binsearchkw_work((std::array<npy_double,2>*)cand_data, cand_shape[0], (std::array<npy_double,2>*)database_data, database_shape[0], (npy_int32*)result_data);
+        } else if(cand_shape[1] == 3) {
+            binsearchkw_work((std::array<npy_double,3>*)cand_data, cand_shape[0], (std::array<npy_double,3>*)database_data, database_shape[0], (npy_int32*)result_data);
+        } else if(cand_shape[1] == 4) {
+            binsearchkw_work((std::array<npy_double,4>*)cand_data, cand_shape[0], (std::array<npy_double,4>*)database_data, database_shape[0], (npy_int32*)result_data);
+        }
+    } else {
+        PyErr_SetString(PyExc_TypeError, "Unsupported data types. ");
+        return NULL;
     }
 
     return result;
