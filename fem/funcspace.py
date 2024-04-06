@@ -1,3 +1,4 @@
+from typing import Optional
 import numpy as np
 from scipy.sparse import coo_array
 from .mesh import Mesh
@@ -69,8 +70,9 @@ class FunctionSpace:
                     inv_idx = np.arange(num_sub_ent, dtype=np.int32)
                 else:
                     # need matching for 0 < d < tdim
-                    uq_locs, inv_idx = np.unique(all_locs.round(decimals=10), return_inverse=True, axis=0)
+                    _, fw_idx, inv_idx = np.unique(all_locs.round(decimals=10), return_index=True, return_inverse=True, axis=0)
                     # the magic number 10 here may not be robust enough ^
+                    uq_locs = all_locs[fw_idx] # to get rid off the rounding effect
                     inv_idx = inv_idx.astype(np.int32)
                     # inv_idx: (num_dof_loc * num_total_sub_ent, )
 
@@ -86,7 +88,8 @@ class FunctionSpace:
                 for loc in elem.dof_loc[d]:
                     coo.data = np.broadcast_to(loc[np.newaxis], (num_sub_ent, d+1)).reshape(-1)
                     all_locs = np.vstack((all_locs, coo @ mesh.point))
-                f_idx = binsearchkw(uq_locs, all_locs) # (num_dof_loc * num_sub_ent, )
+                f_idx = binsearchkw(uq_locs.round(decimals=10), all_locs.round(decimals=10)) # (num_dof_loc * num_sub_ent, )
+                # the magic number 10 here may not be robust enough ^
                 assert np.all(f_idx != -1)
 
             # 4. Broadcast to multiple dof types; save record in element dofs. 
@@ -114,6 +117,16 @@ class FunctionSpace:
         assert offset == self.dof_loc.shape[0]
         self.num_dof = offset
 
+    def getFacetDof(self, tags: Optional[tuple[int]] = None) -> np.ndarray:
+        if tags is None:
+            flag = slice(None)
+        else:
+            facet_tag = self.mesh.cell_tag[self.mesh.tdim-1]
+            flag = np.zeros((facet_tag.shape[0], ), dtype=np.bool8)
+            for t in tags:
+                flag[facet_tag == t] = True
+        return self.facet_dof[:, flag]
+    
 # def group_dof(mixed_fe: tuple[Element], dof_list) -> np.ndarray:
 #     """
 #     Get the free dof (as a bool mask) for a mixed finite element space. 
