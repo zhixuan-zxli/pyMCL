@@ -31,6 +31,7 @@ class Measure:
         self.quad_tab = Quadrature.getTable(ref_doms[dim], order)
         # 1. Volume measure
         if dim == mesh.tdim:
+            assert interiorFacet == False
             # prepare the element indices
             if tags is None:
                 self.elem_ix = slice(None) # select all the elements
@@ -71,7 +72,7 @@ class Measure:
         # 1. Update the quadrature data of a volume measure. 
         if self.dim == self.mesh.tdim:
             self.x = None
-            temp = self.mesh.coord_map._inerpolate(self)
+            temp = self.mesh.coord_map._interpolate(self)
             self.x = temp
             self._derive_geometric_quantities(self.x)
         # 2. Update the quadrature data of a surface measure. 
