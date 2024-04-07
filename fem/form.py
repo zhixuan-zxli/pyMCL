@@ -7,55 +7,24 @@ from .measure import Measure
 from .quadrature import Quadrature
 from .refdom import ref_doms
     
-class assembler:
+class Form:
 
-    test_space: FunctionSpace
-    trial_space: Optional[FunctionSpace]
-    mea: Measure
-    #
-    quad_tab: np.ndarray
-    x: QuadData
-    test_basis: FunctionBasis
-    trial_basis: Optional[FunctionBasis]
+    form: Callable
 
     def __init__(self, 
-                 test_space: FunctionSpace, 
-                 trial_space: Optional[FunctionSpace], 
-                 mea: Measure, 
-                 order: int) -> None:
-        # 1. Set up quadrature. 
-        ref_cell = ref_doms[mea.dim]
-        self.quad_tab = Quadrature.getTable(ref_cell, order)
-        # 2. Set up the mesh mapping. 
-        self.x = mea.mesh.coord_map._interpolate(mea, self.quad_tab)
-        # 3. Set up test basis. 
-        self.test_basis = FunctionBasis(test_space, mea, self.quad_tab, x=self.x)
-        # 4. Set up the trial basis. 
-        if trial_space is not None:
-            self.trial_basis = FunctionBasis(trial_space, mea, self.quad_tab, x=self.x)
-        else:
-            self.trial_basis = None
+                 form: Callable) -> None:
+        self.form = form
 
-    def _transform_extra_args(self, **extra_args):
-        # convert the args into QuadData
-        extra_data = dict()
-        for k, v in extra_args.items():
-            if isinstance(v, Function):
-                extra_data[k] = v._interpolate(self.mea, self.quad_tab, self.x)
-            else:
-                extra_data[k] = v # for other data, leave it as it is
-        return extra_data
-
-    def functional(self, form: Callable, **extra_args) -> Union[float, np.ndarray]:
+    def functional(self, mea: Measure, **extra_args) -> Union[float, np.ndarray]:
         """
-        form(x, w) : x the coordinates, w the extra functions
+        Assemble a functional. 
         """
-        extra_data = self._transform_extra_args(**extra_args)
-        dx_ref = ref_doms[self.mea.dim].dx
-        Nq = self.quad_tab.shape[1]
-        data = dx_ref * form(self.x, **extra_data) # (rdim, Ne, num_quad)
+        dx_ref = ref_doms[mea.dim].dx
+        quad_tab = mea.quad_tab
+        Nq = mea.quad_tab.shape[1]
+        data = dx_ref * self.form(mea.x, **extra_args) # (rdim, Ne, num_quad)
         rdim = data.shape[0]
-        data = data.reshape(-1, Nq) @ self.quadTable[-1, :]
+        data = data.reshape(-1, Nq) @ quad_tab[-1, :]
         data = data.reshape(rdim, -1).sum(axis=1) # sum over all elements
         return data if data.size > 1 else data.item()
 

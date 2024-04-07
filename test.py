@@ -4,7 +4,7 @@ from fem.funcspace import *
 from fem.function import *
 from fem.measure import *
 from fem.mesh_util import *
-from fem.assemble import *
+from fem.form import *
 from matplotlib import pyplot
 
 if __name__ == "__main__":
