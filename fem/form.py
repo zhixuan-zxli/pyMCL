@@ -1,18 +1,14 @@
 from typing import Optional, Callable, Union
 import numpy as np
 from scipy.sparse import csr_array
-from .function import FunctionSpace, Function, QuadData
-from .funcbasis import FunctionBasis
 from .measure import Measure
-from .quadrature import Quadrature
 from .refdom import ref_doms
     
 class Form:
 
     form: Callable
 
-    def __init__(self, 
-                 form: Callable) -> None:
+    def __init__(self, form: Callable) -> None:
         self.form = form
 
     def functional(self, mea: Measure, **extra_args) -> Union[float, np.ndarray]:
@@ -27,7 +23,6 @@ class Form:
         data = data.reshape(-1, Nq) @ quad_tab[-1, :]
         data = data.reshape(rdim, -1).sum(axis=1) # sum over all elements
         return data if data.size > 1 else data.item()
-
 
     # def linear(self, form: Form, **extra_args) -> np.ndarray:
     #     """
