@@ -46,7 +46,7 @@ class RefLine(RefCell):
         if dim == 0:
             return elem_cell.reshape(-1, 2, 1)
         elif dim == 1:
-            return elem_cell
+            return elem_cell.reshape(-1, 1, 2)
         raise RuntimeError("Incorrect dimension for getting sub entities. ")
 
     @staticmethod
@@ -79,7 +79,7 @@ class RefTri(RefCell):
         elif dim == 1:
             return elem_cell[:, [0,1,1,2,2,0]].reshape(-1, 3, 2)
         elif dim == 2:
-            return elem_cell
+            return elem_cell.reshape(-1, 1, 3)
         raise RuntimeError("Incorrect dimension for getting sub entities.")
 
 
@@ -92,6 +92,7 @@ class RefTri(RefCell):
         r[0,1] = 1.0 - quad_pts[0]
         r[1,1] = quad_pts[0]
         r[1,2] = 1.0 - quad_pts[0]
+        return r
 
 # the collection of all the reference domains by dimension
 ref_doms = (RefNode, RefLine, RefTri)
