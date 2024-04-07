@@ -2,7 +2,7 @@ import numpy as np
 from .mesh import Mesh
 from .element import LineP1, TriP1, LineP2, TriP2, VectorElement
 from .funcspace import FunctionSpace
-from .function import MeshMapping
+from .function import Function
 
 # def splitRefine(mesh: Mesh) -> Mesh:
 #     assert mesh.tdim == 1 or mesh.tdim == 2
@@ -43,7 +43,7 @@ def setMeshMapping(mesh: Mesh, order: int = 1):
     except KeyError:
         raise RuntimeError(f"Cannot construct an isoparametric element of order {order}. ")
     mesh.coord_fe = FunctionSpace(mesh, VectorElement(elem, mesh.gdim))
-    mesh.coord_map = MeshMapping(mesh.coord_fe)
-    for d in range(mesh.tdim):
+    mesh.coord_map = Function(mesh.coord_fe)
+    for d in range(mesh.rdim):
         dof_d = mesh.coord_fe.dof_group["u_" + str(d)]
         mesh.coord_map[dof_d] = mesh.coord_fe.dof_loc[dof_d, d]
