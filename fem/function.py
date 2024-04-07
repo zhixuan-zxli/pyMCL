@@ -110,10 +110,10 @@ class Function(np.ndarray):
                     # interpolate function values
                     basis_data, grad_data = self.fe.elem._eval(i, quad_tab.reshape(tdim, -1)) 
                     basis_data = basis_data.reshape(rdim, -1, Nq) # (rdim, num_facet, Nq)
-                    data += temp[np.newaxis] * basis_data[:, facet_id, :] # (rdim, Ne, Nq)
+                    data += temp[np.newaxis,:,np.newaxis] * basis_data[:, facet_id, :] # (rdim, Ne, Nq)
                     # interpolate the gradients
                     grad_data = grad_data.reshape(rdim, tdim, -1, Nq)
-                    grad_temp = temp[np.newaxis, np.newaxis] * grad_data[:,:,facet_id,:] # (rdim, tdim, Ne, Nq)
+                    grad_temp = temp[np.newaxis,np.newaxis,:,np.newaxis] * grad_data[:,:,facet_id,:] # (rdim, tdim, Ne, Nq)
                     if y is not None:
                         grad_temp = np.einsum("ij...,jk...->ik...", grad_temp, y.inv_grad)
                     grad += grad_temp
