@@ -68,14 +68,15 @@ class Measure:
 
 
     def update(self) -> None:
-        self.x = None
         # 1. Update the quadrature data of a volume measure. 
         if self.dim == self.mesh.tdim:
+            self.x = None
             temp = self.mesh.coord_map._inerpolate(self)
             self.x = temp
             self._derive_geometric_quantities(self.x)
         # 2. Update the quadrature data of a surface measure. 
         elif self.dim == self.mesh.tdim-1:
+            self.x = (None, None)
             temp = self.mesh.coord_map._interpolate(self)
             self.x = temp
             ref_fn = ref_doms[self.mesh.tdim].facet_normal.T # (tdim, num_facet)

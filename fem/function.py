@@ -68,19 +68,21 @@ class Function(np.ndarray):
         if self.fe.periodic:
             raise NotImplementedError
     
-    def _interpolate(self, mea: Measure, quad_tab: np.ndarray, x: QuadData) -> QuadData:
+    def _interpolate(self, mea: Measure) -> QuadData:
         assert self.fe.mesh is mea.mesh
         tdim, rdim = self.fe.elem.tdim, self.fe.elem.rdim
+        quad_tab = mea.quad_tab
         Nq = quad_tab.shape[1]
+        x = mea.x
         # interpolate on cells
         if mea.dim == mea.mesh.tdim:
             elem_dof = self.fe.elem_dof[:, mea.elem_ix]
             Ne = elem_dof.shape[1]
             data = np.zeros((rdim, Ne, Nq))
             grad = np.zeros((rdim, tdim, Ne, Nq))
-            for i in range(elem_dof.shape[0]):
+            for i in range(elem_dof.shape[0]): # loop over each basis function
                 temp = self.view(np.ndarray)[elem_dof[i]] # (Ne, )
-                basis_data, grad_data = self.fe.elem._eval(i, quad_tab) # (rdim, Nq)
+                basis_data, grad_data = self.fe.elem._eval(i, quad_tab) # (rdim, Nq), (rdim, tdim, Nq)
                 # interpolate function values
                 data += temp[np.newaxis,:,np.newaxis] * basis_data[:, np.newaxis] # (rdim, Ne, Nq)
                 # interpolate the gradients
@@ -121,72 +123,6 @@ class Function(np.ndarray):
             return tuple(res)
         #
         raise RuntimeError("Incorrect measure dimension")
-    
-class MeshMapping(Function):
-
-    def __new__(cls, fe: FunctionSpace):
-        obj = np.zeros((fe.num_dof,)).view(cls)
-        obj.fe = fe
-        return obj
-    
-    def _interpolate(self, mea: Measure, quad_tab: np.ndarray) -> QuadData:
-        tdim, rdim = self.fe.elem.tdim, self.fe.elem.rdim
-        def _derive_others(data: QuadData) -> None:
-            Ne, Nq = data.shape[1:]
-            # grad: (rdim, tdim, Ne, Nq)
-            # build dx: (1, Ne, Nq)
-            # build cn: (rdim, Ne, Nq)
-            # build inv_grad: (tdim, rdim, Ne, Nq)
-            if tdim == 0:
-                data.dx = np.ones((1, Ne, Nq))
-                data.cn = np.ones((rdim, Ne, Nq)) if rdim > tdim else None
-                data.inv_grad = np.zeros((0, rdim, Ne, Nq))
-            elif tdim == 1:
-                data.dx = np.linalg.norm(data.grad, ord=None, axis=0)
-                if rdim == 1:
-                    data.inv_grad = 1.0 / data.grad
-                else:
-                    t = data.grad[:,0] / data.dx # (2, Ne, Nq)
-                    data.cn = np.array((t[1], -t[0]))
-                    data.inv_grad = data.grad[:,0] / data.dx**2
-                    data.inv_grad = data.inv_grad[np.newaxis]
-            elif tdim == 2:
-                data.dx = np.cross(data.grad[:,0], data.grad[:,1], axis=0) # (Ne,Nq) or (3,Ne,Nq)
-                if rdim == 3:
-                    data.cn = data.dx
-                    data.dx = np.linalg.norm(data.dx, ord=None, axis=0) #(Ne, Nq)
-                    data.cn = data.cn / data[np.newaxis]
-                data.dx = data.dx[np.newaxis]
-                data.inv_grad = np.zeros((tdim, rdim, Ne, Nq))
-                if rdim == 2:
-                    data.inv_grad[0,0] = data.grad[1,1] / data.dx[0]
-                    data.inv_grad[0,1] = -data.grad[0,1] / data.dx[0]
-                    data.inv_grad[1,0] = -data.grad[1,0] / data.dx[0]
-                    data.inv_grad[1,1] = data.grad[0,0] / data.dx[0]
-                else:
-                    data.inv_grad[0] = np.cross(data.grad[:,1], data.cn, axis=0) / data.dx
-                    data.inv_grad[1] = np.cross(data.cn, data.grad[:,0], axis=0) / data.dx
-            return data
-        #
-        if mea.dim == mea.mesh.tdim:
-            data = super()._interpolate(mea, quad_tab, x=None) 
-            _derive_others(data)
-            return data
-        if mea.dim == mea.mesh.tdim-1:
-            data_tuple = super()._interpolate(mea, quad_tab, (None, None))
-            ref_fn = self.fe.elem.ref_cell.facet_normal # (tdim, num_facet)
-            for data, facet_id in zip(data_tuple, mea.facet_id):
-                _derive_others(data)
-                # build fn: (rdim, Ne, Nq)
-                # build ds: (1, Ne, Nq)
-                data.fn = np.sum(data.inv_grad * ref_fn[:, np.newaxis, facet_id, np.newaxis], axis=0) # (rdim, Ne, Nq)
-                nm = np.linalg.norm(data.fn, ord=None, axis=0, keepdims=True) # (1, Ne, Nq)
-                data.fn = data.fn / nm
-                data.ds = data.dx * nm
-            return data_tuple
-        #
-        raise RuntimeError("Incorrect measure dimension")
-        
 
 # =============================================================
     

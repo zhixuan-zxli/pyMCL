@@ -51,7 +51,7 @@ class RefLine(RefCell):
 
     @staticmethod
     def _broadcast_facet(quad_pts: np.ndarray) -> np.ndarray:
-        # quad_pts: (1, 1)
+        # quad_pts: (1, Nq)
         # return: (1, 2, 1)
         r = np.zeros((1,2,1))
         r[0,1,0] = 1.0
@@ -85,13 +85,13 @@ class RefTri(RefCell):
 
     @staticmethod
     def _broadcast_facet(quad_pts: np.ndarray) -> np.ndarray:
-        # quad_pts: (1, Nq)
+        # quad_pts: (1+, Nq)
         # return: (2, 3, Nq)
         r = np.zeros((2, 3, quad_pts.shape[1]))
-        r[0,0] = quad_pts
-        r[0,1] = 1.0 - quad_pts
-        r[1,1] = quad_pts
-        r[1,2] = 1.0 - quad_pts
+        r[0,0] = quad_pts[0]
+        r[0,1] = 1.0 - quad_pts[0]
+        r[1,1] = quad_pts[0]
+        r[1,2] = 1.0 - quad_pts[0]
 
 # the collection of all the reference domains by dimension
 ref_doms = (RefNode, RefLine, RefTri)
