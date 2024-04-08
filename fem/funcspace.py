@@ -67,6 +67,22 @@ class FunctionSpace:
             inv_idx = inv_idx.astype(np.int32)
             # inv_idx: (num_dof_loc * num_total_sub_ent, )
 
+            # 2. Broadcast to multiple dof types; save the dof locations
+            num_new_dof = uq_locs.shape[0]
+            num_dof_type = len(elem.dof_name[d])
+            self.dof_loc = np.vstack((self.dof_loc, np.repeat(uq_locs, repeats=num_dof_type, axis=0)))
+            for i, name in enumerate(elem.dof_name[d]):
+                new_dof_idx = offset + np.arange(num_new_dof, dtype=np.int32) * num_dof_type + i
+                if name not in self.dof_group:
+                    self.dof_group[name] = new_dof_idx
+                else:
+                    self.dof_group[name] = np.concatenate((self.dof_group[name], new_dof_idx))
+
+            # 3. Save the dof table for each element. 
+            new_elem_dof = inv_idx.reshape(num_dof_loc, num_elem, -1).transpose(0, 2, 1)[:,:,np.newaxis,:] # (num_dof_loc, num_sub_ent, 1, num_elem)
+            new_elem_dof = offset + new_elem_dof * num_dof_type + np.arange(num_dof_type).reshape(1, 1, -1, 1) # (num_dof_loc, num_sub_ent, num_dof_type, num_elem)
+            self.elem_dof = np.vstack((self.elem_dof, new_elem_dof.reshape(-1, num_elem))) 
+            
             # 3. Find the dof number for the facet dofs. 
             if d < tdim and num_facet > 0:
                 sub_ent = ref_doms[tdim-1]._get_sub_entities(facet_cell, dim=d) # (Nf, num_sub_ent, d+1)
@@ -82,28 +98,11 @@ class FunctionSpace:
                 f_idx = binsearchkw(uq_locs.round(decimals=10), all_locs.round(decimals=10)) # (num_dof_loc * num_sub_ent, )
                 # the magic number 10 here may not be robust enough ^
                 assert np.all(f_idx != -1)
-
-            # 4. Broadcast to multiple dof types; save record in element dofs. 
-            num_new_dof = uq_locs.shape[0]
-            num_dof_type = len(elem.dof_name[d])
-            self.dof_loc = np.vstack((self.dof_loc, np.repeat(uq_locs, repeats=num_dof_type, axis=0)))
-            for i, name in enumerate(elem.dof_name[d]):
-                new_dof_idx = offset + np.arange(num_new_dof, dtype=np.int32) * num_dof_type + i
-                if name not in self.dof_group:
-                    self.dof_group[name] = new_dof_idx
-                else:
-                    self.dof_group[name] = np.concatenate((self.dof_group[name], new_dof_idx))
-
-            # save to elem_dof
-            new_elem_dof = inv_idx.reshape(num_dof_loc, num_elem, -1).transpose(0, 2, 1)[:,:,np.newaxis,:] # (num_dof_loc, num_sub_ent, 1, num_elem)
-            new_elem_dof = offset + new_elem_dof * num_dof_type + np.arange(num_dof_type).reshape(1, 1, -1, 1) # (num_dof_loc, num_sub_ent, num_dof_type, num_elem)
-            # new_elem_dof = offset + inv_idx.reshape(num_dof_loc, num_elem, -1) * num_dof_type + i
-            self.elem_dof = np.vstack((self.elem_dof, new_elem_dof.reshape(-1, num_elem))) 
-            # save to facet_dof
-            if d < tdim and num_facet > 0:
+                # save to facet dof
                 new_facet_dof = f_idx.reshape(num_dof_loc, num_facet, -1).transpose(0, 2, 1)[:,:,np.newaxis,:] # (num_dof_loc, num_sub_ent, 1, num_facet)
                 new_facet_dof = offset + new_facet_dof * num_dof_type + np.arange(num_dof_type).reshape(1, 1, -1, 1) # (num_dof_loc, num_sub_ent, num_dof_type, num_facet)
                 self.facet_dof = np.vstack((self.facet_dof, new_facet_dof.reshape(-1, num_facet)))
+
             # end for dof_name
             offset += num_new_dof * num_dof_type
         # end for d
