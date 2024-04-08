@@ -39,7 +39,7 @@ if __name__ == "__main__":
     ds = Measure(mesh, 1, order=3, tags=(4,))
     dx = Measure(b_mesh, 1, order=3)
 
-    r = L2.functional(ds, u=u._interpolate(ds), v=v._interpolate(dx))
+    r = L2.assemble(ds, u=u._interpolate(ds), v=v._interpolate(dx))
     print("L2 surface integral / cos(1.)^2 = {}".format(r / np.cos(1.0)**2))
 
     
