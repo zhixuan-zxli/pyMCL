@@ -176,7 +176,7 @@ class TriP1(TriElement):
         elif basis_id == 2:
             basis = y
             grad = np.vstack((np.zeros_like(x), np.ones_like(y)))
-        return basis.reshape(1, -1), grad[np.newaxis, :, :]
+        return basis[np.newaxis,:], grad[np.newaxis, :, :]
 
 class TriP2(TriElement):
 
@@ -196,6 +196,7 @@ class TriP2(TriElement):
 
     @staticmethod
     def _eval(basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]:
+        assert basis_id < TriP2.num_local_dof
         x = qpts[0]
         y = qpts[1]
         if basis_id == 0:
@@ -208,15 +209,15 @@ class TriP2(TriElement):
             basis = 2.0*y*(y-1.0/2)
             grad = np.vstack((0.0*x, 4.0*y-1.0))
         elif basis_id == 3:
-            basis = -4.0*x*(x+y-1)
+            basis = -4.0*x*(x+y-1.0)
             grad = np.vstack((-8.0*x-4.0*y+4.0, -4.0*x))
         elif basis_id == 4:
             basis = 4.0*x*y
             grad = np.vstack((4.0*y, 4.0*x))
         elif basis_id == 5:
-            basis = -4.0*y*(x+y-1)
+            basis = -4.0*y*(x+y-1.0)
             grad = np.vstack((-4.0*y, -4.0*x-8.0*y+4.0))
-        return basis.reshape(1, -1), grad[np.newaxis, :, :]
+        return basis[np.newaxis,:], grad[np.newaxis, :, :]
 
     
 # ====================================================
@@ -243,8 +244,7 @@ class VectorElement(Element):
     def _eval(self, basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]:
         r = np.zeros((self.rdim, qpts.shape[1]))
         g = np.zeros((self.rdim, self.tdim, qpts.shape[1]))
-        num_local_dof = self.base_elem.num_local_dof
-        t = self.base_elem._eval(basis_id % num_local_dof, qpts)
-        r[basis_id // num_local_dof], g[basis_id // num_local_dof] = t[0][0], t[1][0]
+        tr, tg = self.base_elem._eval(basis_id // self.rdim, qpts)
+        r[basis_id % self.rdim], g[basis_id % self.rdim] = tr[0], tg[0]
         return r, g
         

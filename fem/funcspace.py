@@ -93,14 +93,17 @@ class FunctionSpace:
                     self.dof_group[name] = new_dof_idx
                 else:
                     self.dof_group[name] = np.concatenate((self.dof_group[name], new_dof_idx))
-                # save to elem_dof
-                new_elem_dof = offset + inv_idx.reshape(num_dof_loc, num_elem, -1) * num_dof_type + i
-                self.elem_dof = np.vstack((self.elem_dof, new_elem_dof.transpose(0, 2, 1).reshape(-1, num_elem))) 
-                # save to facet_dof
-                if d < tdim and num_facet > 0:
-                    new_facet_dof = offset + f_idx.reshape(num_dof_loc, num_facet, -1) * num_dof_type + i 
-                    # ^: (num_dof_loc, Nf, *)
-                    self.facet_dof = np.vstack((self.facet_dof, new_facet_dof.transpose(0, 2, 1).reshape(-1, num_facet)))
+
+            # save to elem_dof
+            new_elem_dof = inv_idx.reshape(num_dof_loc, num_elem, -1).transpose(0, 2, 1)[:,:,np.newaxis,:] # (num_dof_loc, num_sub_ent, 1, num_elem)
+            new_elem_dof = offset + new_elem_dof * num_dof_type + np.arange(num_dof_type).reshape(1, 1, -1, 1) # (num_dof_loc, num_sub_ent, num_dof_type, num_elem)
+            # new_elem_dof = offset + inv_idx.reshape(num_dof_loc, num_elem, -1) * num_dof_type + i
+            self.elem_dof = np.vstack((self.elem_dof, new_elem_dof.reshape(-1, num_elem))) 
+            # save to facet_dof
+            if d < tdim and num_facet > 0:
+                new_facet_dof = f_idx.reshape(num_dof_loc, num_facet, -1).transpose(0, 2, 1)[:,:,np.newaxis,:] # (num_dof_loc, num_sub_ent, 1, num_facet)
+                new_facet_dof = offset + new_facet_dof * num_dof_type + np.arange(num_dof_type).reshape(1, 1, -1, 1) # (num_dof_loc, num_sub_ent, num_dof_type, num_facet)
+                self.facet_dof = np.vstack((self.facet_dof, new_facet_dof.reshape(-1, num_facet)))
             # end for dof_name
             offset += num_new_dof * num_dof_type
         # end for d
