@@ -20,15 +20,11 @@ class Form:
         dx_ref = ref_doms[mea.dim].dx
         quad_tab = mea.quad_tab
         Nq = mea.quad_tab.shape[1]
-        data = dx_ref * self.form(mea.x, **self._transform_extra_args(mea, extra_args)) # (rdim, Ne, num_quad)
+        data = dx_ref * self.form(mea.x, **extra_args) # (rdim, Ne, num_quad)
         rdim = data.shape[0]
         data = data.reshape(-1, Nq) @ quad_tab[-1, :]
         data = data.reshape(rdim, -1).sum(axis=1) # sum over all elements
         return data if data.size > 1 else data.item()
-    
-    @staticmethod
-    def _transform_extra_args(mea: Measure, extra_args):
-        return {k: (v._interpolate(mea) if isinstance(v, Function) else v) for k, v in extra_args.items()}
     
 class LinearForm(Form):
 
@@ -42,7 +38,7 @@ class LinearForm(Form):
         rows = np.empty((elem_dof.shape[0], Ne), dtype=np.int32)
         vals = np.empty((elem_dof.shape[0], Ne)) # (num_local_dof, Ne)
         for i in range(elem_dof.shape[0]):
-            form_data = self.form(test_basis.data[i], mea.x, **self._transform_extra_args(extra_args)) # (1, Ne, Nq)
+            form_data = self.form(test_basis.data[i], mea.x, **extra_args) # (1, Ne, Nq)
             assert form_data.shape[0] == 1
             vals[i] = dx_ref * (form_data[0] @ mea.quad_tab[-1,:]).reshape(-1) # (Ne,), reduce by quadrature
             rows[i] = elem_dof[i, mea.elem_ix]
@@ -68,7 +64,7 @@ class BilinearForm(Form):
         for i in range(test_elem_dof.shape[0]):
             for j in range(trial_elem_dof.shape[0]):
                 form_data = self.form(test_basis.data[i], trial_basis.data[j], mea.x, \
-                                      **self._transform_extra_args(extra_args)) # (1, Ne, Nq)
+                                      **extra_args) # (1, Ne, Nq)
                 vals[i,j] = dx_ref * (form_data[0] @ mea.quad_tab[-1,:]).reshape(-1) # (Ne,), reduce by quadrature
                 rows[i,j] = test_elem_dof[i, test_basis.mea.elem_ix]
                 cols[i,j] = trial_elem_dof[j, trial_basis.mea.elem_ix]
