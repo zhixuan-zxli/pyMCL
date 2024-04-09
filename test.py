@@ -13,8 +13,6 @@ def L2(x: QuadData, u: QuadData, v: QuadData) -> np.ndarray:
     # x.dx: (1, Ne, Nq)
     # u: (1, Ne, Nq)
     # u.grad: (1, 2, Ne, Nq)
-    x = x[0]
-    u = u[0]
     return u * v * x.ds
 
 def u_exact(x, y) -> np.ndarray:

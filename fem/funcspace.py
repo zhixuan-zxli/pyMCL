@@ -16,7 +16,7 @@ class FunctionSpace:
     dof_group: dict[str, np.ndarray]
     elem_dof: np.ndarray
     # elem_dof: (num_local_dof, Ne)
-    # where num_local_dof[d] = num_dof_type[d] * num_dof_loc[d] * num_sub_ent[d], 
+    # where num_local_dof[d] = num_dof_loc[d] * num_sub_ent[d] * num_dof_type[d], 
     # and d = 0, 1, ..., tdim
     facet_dof: np.ndarray
     # layout same as above

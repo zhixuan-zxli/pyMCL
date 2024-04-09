@@ -35,31 +35,26 @@ class LinearForm(Form):
     def __init__(self, form: Callable) -> None:
         super().__init__(form)
 
-    def assemble(self, test_basis: FunctionBasis, mea: Measure, **extra_args) -> np.ndarray:
-        # do quadrature
-        # num_copy = self.test_space.num_copy
-        # rdim = max(self.test_space.rdim, num_copy)
-        # num_dof_per_elem = self.test_basis.num_dof_per_elem
-        # Ne = self.test_dof.shape[0]
-        # Nq = self.quadTable.shape[1]
-        # values = np.zeros((rdim, num_dof_per_elem, Ne), dtype=np.float64)
-        # for i in range(num_dof_per_elem):
-        #     psi = self._get_basis_quad_data(self.test_basis, i, rdim, form.hint) # (rdim, 1, Nq)
-        #     form_data = form(psi, self.geom_data, **extra_data) # (rdim, Ne, Nq)
-        #     assert form_data.shape == (rdim, Ne, Nq)
-        #     values[:, i, :] = \
-        #         (form_data.reshape(-1, Nq) @ self.quadTable[-1, :] * self.test_basis.ref_cell.dx).reshape(rdim, Ne)
-
-        # indices = np.zeros((num_copy, num_dof_per_elem, Ne), dtype=np.uint32) # test here
-        # indices[:, :, :] = self.test_dof.T
-        # if num_copy > 1:
-        #     indices *= num_copy
-        #     for c in range(num_copy):
-        #         indices[c,:,:] += c
-        
-        # vec = np.bincount(indices.reshape(-1), weights=values.reshape(-1), minlength=self.test_space.num_dof * num_copy)
-        # return vec.reshape(-1, 1)
-        return 0.
+    # def assemble(self, test_basis: FunctionBasis, **extra_args) -> np.ndarray:
+    #     mea = test_basis.mea
+    #     dx_ref = ref_doms[mea.dim].dx
+    #     if isinstance(mea.x, tuple):
+    #         vec = np.zeros((test_basis.fs.num_dof, ))
+    #         for y, eix in zip(mea.x, mea.elem_ix):
+    #             dof_tab = test_basis.fs.elem_dof[:, eix] # (num_local_dof, Nf)
+    #             vals = np.zeros_like(dof_tab, dtype=float)
+    #         for i in range(dof_tab.shape[0]):
+    #             form_data = self.form(test_basis.data[i], mea.x, **self._transform_extra_args(extra_args)) # (1, Ne, Nq)
+    #             assert form_data.shape[0] == 1
+    #     else: # cell basis
+    #         dof_tab = test_basis.fs.elem_dof[:, mea.elem_ix] # (num_local_dof, Ne)
+    #         vals = np.zeros_like(dof_tab, dtype=float) # (num_local_dof, Ne)
+    #         for i in range(dof_tab.shape[0]):
+    #             form_data = self.form(test_basis.data[i], mea.x, **self._transform_extra_args(extra_args)) # (1, Ne, Nq)
+    #             assert form_data.shape[0] == 1
+    #             vals[i] = dx_ref * (form_data[0] @ mea.quad_tab[-1,:]).reshape(-1) # (Ne,)
+    #         vec = np.bincount(dof_tab.reshape(-1), weights=vals.reshape(-1), minlength=test_basis.fs.num_dof)
+    #         return vec
 
     
     # def bilinear(self, form: Form, **extra_args) -> csr_array:
