@@ -9,8 +9,8 @@ class Measure:
     mesh: Mesh
     dim: int
     elem_ix: Union[np.ndarray, slice] # the element indices involved
-    facet_ix: tuple[np.ndarray] # the facet indices of a surface measure
-    facet_id: tuple[np.ndarray] # the facet if within an element, for a surface measure
+    facet_ix: np.ndarray # the facet indices of a surface measure
+    facet_id: np.ndarray # the facet if within an element, for a surface measure
 
     quad_tab: np.ndarray
     x: Any # type: QuadData # geometric quantities provided
@@ -55,13 +55,12 @@ class Measure:
                     flag[facet_tag == t] = True
                 self.facet_ix = np.nonzero(flag)[0]
             #
-            elem_ix = []
-            facet_id = []
-            for k in range(1+interiorFacet):
-                elem_ix.append(mesh.facet_ref[k,0,self.facet_ix])
-                facet_id.append(mesh.facet_ref[k,1,self.facet_ix])
-            self.elem_ix = tuple(elem_ix)
-            self.facet_id = tuple(facet_id)
+            if interiorFacet:
+                assert np.all(mesh.facet_ref[0,0,self.facet_ix] != mesh.facet_ref[1,0,self.facet_ix]), \
+                "The selected facets contain boundary facets. "
+            n = 1 + interiorFacet
+            self.elem_ix = mesh.facet_ref[:n,0,self.facet_ix].reshape(-1) # (n * Nf, )
+            self.facet_id = mesh.facet_ref[:n,1,self.facet_ix].reshape(-1) # (n * Nf, )
         else:
             raise RuntimeError("This measure is neither a volume measure nor a surface measure.")
         #
@@ -69,28 +68,21 @@ class Measure:
 
 
     def update(self) -> None:
-        # 1. Update the quadrature data of a volume measure. 
-        if self.dim == self.mesh.tdim:
-            self.x = None
-            temp = self.mesh.coord_map._interpolate(self)
-            self.x = temp
-            self._derive_geometric_quantities(self.x)
-        # 2. Update the quadrature data of a surface measure. 
-        elif self.dim == self.mesh.tdim-1:
-            self.x = (None, None)
-            temp = self.mesh.coord_map._interpolate(self)
-            self.x = temp
+        self.x = None
+        temp = self.mesh.coord_map._interpolate(self)
+        self.x = temp
+        self._derive_geometric_quantities(self.x)
+        # Update the quadrature data for a surface measure. 
+        if self.dim == self.mesh.tdim - 1:
             ref_fn = ref_doms[self.mesh.tdim].facet_normal.T # (tdim, num_facet)
-            for y, facet_id in zip(self.x, self.facet_id):
-                self._derive_geometric_quantities(y)
-                # derive face normal, face measure: 
-                # given inv_grad: (tdim, rdim, Ne, Nq)
-                # build fn: (rdim, Ne, Nq)
-                # build ds: (1, Ne, Nq)
-                y.fn = np.sum(y.inv_grad * ref_fn[:, np.newaxis, facet_id, np.newaxis], axis=0) # (rdim, Ne, Nq)
-                nm = np.linalg.norm(y.fn, ord=None, axis=0, keepdims=True) # (1, Ne, Nq)
-                y.fn = y.fn / nm
-                y.ds = y.dx * nm
+            # derive face normal, face measure: 
+            # given inv_grad: (tdim, rdim, Nf, Nq)
+            # build fn: (rdim, Nf, Nq)
+            # build ds: (1, Nf, Nq)
+            self.x.fn = np.sum(self.x.inv_grad * ref_fn[:, np.newaxis, self.facet_id, np.newaxis], axis=0) # (rdim, Nf*, Nq)
+            nm = np.linalg.norm(self.x.fn, ord=None, axis=0, keepdims=True) # (1, Ne, Nq)
+            self.x.fn = self.x.fn / nm
+            self.x.ds = self.x.dx * nm
 
     def _derive_geometric_quantities(self, data: np.ndarray):
         """
