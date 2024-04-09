@@ -58,7 +58,7 @@ def splitRefine(mesh: Mesh) -> Mesh:
         fine_mesh.cell[2] = np.empty((N[2]*4, 3), dtype=np.int32)
         fine_mesh.cell[2][::4, 0] = mesh.cell[2][:,0]
         fine_mesh.cell[2][::4, 1] = inv_idx[:,0]
-        fine_mesh.cell[2][::4, 2] = inv_idx[:,1]
+        fine_mesh.cell[2][::4, 2] = inv_idx[:,2]
         fine_mesh.cell[2][1::4, 0] = mesh.cell[2][:,1]
         fine_mesh.cell[2][1::4, 1] = inv_idx[:,1]
         fine_mesh.cell[2][1::4, 2] = inv_idx[:,0]
@@ -69,6 +69,7 @@ def splitRefine(mesh: Mesh) -> Mesh:
         fine_mesh.cell_tag[2] = np.repeat(mesh.cell_tag[2], repeats=4)
     else:
         raise RuntimeError(f"Cannot refine a mesh of dimension {mesh.tdim}.")
+    fine_mesh.build_facet_ref()
     return fine_mesh
 
 def setMeshMapping(mesh: Mesh, order: int = 1):
