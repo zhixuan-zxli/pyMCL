@@ -10,7 +10,6 @@ class FunctionSpace:
 
     mesh: Mesh
     elem: Element
-    periodic: bool
     
     dof_loc: np.ndarray # (num_dof, gdim)
     dof_group: dict[str, np.ndarray]
@@ -18,15 +17,14 @@ class FunctionSpace:
     # elem_dof: (num_local_dof, Ne)
     # where num_local_dof[d] = num_dof_loc[d] * num_sub_ent[d] * num_dof_type[d], 
     # and d = 0, 1, ..., tdim
-    facet_dof: np.ndarray
-    # layout same as above
+    facet_dof: np.ndarray # layout same as above
+    
     num_dof: int
 
 
-    def __init__(self, mesh: Mesh, elem: Element, periodic: bool = False) -> None:
+    def __init__(self, mesh: Mesh, elem: Element, constraint: Optional[callable] = None) -> None:
         self.mesh = mesh
         self.elem = elem
-        self.periodic = periodic
 
         tdim = elem.tdim
         assert mesh.tdim == tdim
@@ -59,6 +57,9 @@ class FunctionSpace:
             for loc in elem.dof_loc[d]:
                 coo.data = np.broadcast_to(loc[np.newaxis], (num_sub_ent, d+1)).reshape(-1)
                 all_locs = np.vstack((all_locs, coo @ mesh.point))
+            
+            if constraint is not None:
+                constraint(all_locs)
 
             # match the dof locations
             _, fw_idx, inv_idx = np.unique(all_locs.round(decimals=10), return_index=True, return_inverse=True, axis=0)
