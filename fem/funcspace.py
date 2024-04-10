@@ -96,6 +96,9 @@ class FunctionSpace:
                 for loc in elem.dof_loc[d]:
                     coo.data = np.broadcast_to(loc[np.newaxis], (num_sub_ent, d+1)).reshape(-1)
                     all_locs = np.vstack((all_locs, coo @ mesh.point))
+                if constraint is not None:
+                    constraint(all_locs)
+                    
                 f_idx = binsearchkw(uq_locs.round(decimals=10), all_locs.round(decimals=10)) # (num_dof_loc * num_sub_ent, )
                 # the magic number 10 here may not be robust enough ^
                 assert np.all(f_idx != -1)
