@@ -48,6 +48,7 @@ class FunctionBasis:
                 data = QuadData(u.reshape(rdim, -1, Nq)[:, mea.facet_id, :]) # (rdim, Nf*, Nq)
                 du = du.reshape(rdim, tdim, -1, Nq)[:,:,mea.facet_id,:] # (rdim, tdim, Nf*, Nq)
                 data.grad = np.einsum("ij...,jk...->ik...", du, mea.x.inv_grad)
+                self.data.append(data)
         #
         else:
             raise RuntimeError("Incorrect measure dimension. ")
