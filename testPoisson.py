@@ -7,15 +7,15 @@ from fem.function import *
 from fem.funcbasis import *
 from fem.form import *
 from fem.util import *
-from scipy import sparse
+from scipy.sparse import bmat
 from scipy.sparse.linalg import spsolve
 from matplotlib import pyplot
 
 def u_exact(x, y) -> np.ndarray:
     return np.sin(np.pi*x) * np.cos(y)
 
-# def du_exact(x, y) -> np.ndarray:
-#     return np.array((np.pi * np.cos(np.pi*x) * np.cos(y), -np.sin(np.pi*x) * np.sin(y)))
+def du_exact(x, y) -> np.ndarray:
+    return np.array((np.pi * np.cos(np.pi*x) * np.cos(y), -np.sin(np.pi*x) * np.sin(y)))
 
 @LinearForm
 def l(psi, x) -> np.ndarray:
@@ -32,17 +32,20 @@ def a(v, u, x) -> np.ndarray:
     data = np.sum(v.grad * u.grad, axis=1)
     return data * x.dx
 
-# def bc(psi, coord) -> np.ndarray:
-#     x, y = coord[0], coord[1] # (Ne, Nq)
-#     ngrad = np.sum(du_exact(x, y) * coord.n, axis=0, keepdims=True) # (1, Ne, Nq)
-#     return ngrad * psi * coord.dx
+@LinearForm
+def g(v, x) -> np.ndarray:
+    x1, x2 = x[0], x[1] # (Ne, Nq)
+    ngrad = np.sum(du_exact(x1, x2) * x.fn, axis=0, keepdims=True) # (1, Ne, Nq)
+    return ngrad * v * x.ds
 
-# def test(psi, coord) -> np.ndarray:
-#     # psi: (1, Ne, Nq)
-#     return psi * coord.dx
+@LinearForm
+def test(v, x) -> np.ndarray:
+    # v: (1, Ne, Nq)
+    return v * x.dx
 
-# def integral(coord, u) -> np.ndarray:
-#     return u * coord.dx
+@Form
+def integral(x, u) -> np.ndarray:
+    return u * x.dx
 
 @Form
 def L2(x, u) -> np.ndarray:
@@ -53,7 +56,8 @@ if __name__ == "__main__":
 
     num_hier = 3
     mesh_table = tuple(f"{i}" for i in range(num_hier))
-    error_table = {"infty" : [0.0] * num_hier, "L2" : [0.0] * num_hier}
+    error_tab_D = {"infty" : [0.0] * num_hier, "L2" : [0.0] * num_hier}
+    error_tab_N = {"infty" : [0.0] * num_hier, "L2" : [0.0] * num_hier}
     mesh = Mesh()
     mesh.load("mesh/unit_square.msh")
 
@@ -64,35 +68,55 @@ if __name__ == "__main__":
         # Affine mesh
         setMeshMapping(mesh)
 
-        fs = FunctionSpace(mesh, TriP2)
+        fs = FunctionSpace(mesh, TriP1)
         dx = Measure(mesh, 2, order=3)
         u_basis = FunctionBasis(fs, dx)
 
         A = a.assemble(u_basis, u_basis, dx)
         L = l.assemble(u_basis, dx)
 
+        # ==================================================
+        # 1. test Dirichlet condition
         # impose the boundary condition
         bdof = np.unique(fs.getFacetDof())
         free_dof = group_dof((fs,), (bdof,))
-
-        print("Linear system dimension = {}".format(free_dof.sum()))
-
+        # homogeneize the boundary condition
         u_err = Function(fs)
         u = Function(fs)
         u_err[:] = u_exact(fs.dof_loc[:,0], fs.dof_loc[:,1])
         u[bdof] = u_err[bdof]
-
-        L = L - A @ u # homogeneize the boundary condition
-
+        L = L - A @ u 
+        # solve the linear system
         u_vec = spsolve(A[free_dof][:,free_dof], L[free_dof])
         u[free_dof] = u_vec
-        
-        # ax_err = fig.add_subplot(1, 2, 2, projection="3d")
-        # ax_err.plot_trisurf(mesh.point[:,0], mesh.point[:,1], u_err.ravel(), triangles=mesh.cell[2][:,:-1], cmap=pyplot.cm.Spectral)
-        # pyplot.show()
+        # calculate the errors
         u_err = u - u_err
-        error_table["infty"][m] = np.linalg.norm(u_err, ord=np.inf)
-        error_table["L2"][m] = np.sqrt(L2.assemble(dx, u=u_err._interpolate(dx)))
+        error_tab_D["infty"][m] = np.linalg.norm(u_err, ord=np.inf)
+        error_tab_D["L2"][m] = np.sqrt(L2.assemble(dx, u=u_err._interpolate(dx)))
 
-    printConvergenceTable(mesh_table, error_table)
+        # ==================================================
+        # 2. test pure Neumann condition
+        ds = Measure(mesh, 1, order=3)
+        u_s_basis = FunctionBasis(fs, ds)
+        L = l.assemble(u_basis, dx)
+        G = g.assemble(u_s_basis, ds)
+        V = test.assemble(u_basis, dx)
+        # assemble the augmented system
+        Aa = bmat(((A, V[:,np.newaxis]), (V[np.newaxis,:], None)), format="csr")
+        z = np.zeros((1, ))
+        La = group_fn(L+G, z)
+        # solve the linear system
+        u_vec = spsolve(Aa, La)
+        u[:] = u_vec[:-1]
+        # calculate the errors
+        u_err[:] = u_exact(fs.dof_loc[:,0], fs.dof_loc[:,1])
+        u_err = u - u_err
+        u_err -= integral.assemble(dx, u=u_err._interpolate(dx)) / 1.0
+        error_tab_N["infty"][m] = np.linalg.norm(u_err, ord=np.inf)
+        error_tab_N["L2"][m] = np.sqrt(L2.assemble(dx, u=u_err._interpolate(dx)))
+
+    print("Dirichlet problem: ")
+    printConvergenceTable(mesh_table, error_tab_D)
+    print("\nNeumann problem: ")
+    printConvergenceTable(mesh_table, error_tab_N)
     
