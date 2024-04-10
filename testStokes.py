@@ -3,7 +3,7 @@ from fem.mesh import Mesh
 from fem.mesh_util import splitRefine, setMeshMapping
 from fem.element import Measure, TriDG0, TriP1, TriP2
 from fem.function import Function, split_fn, group_fn
-from fem.form import assembler, Form
+from fem.form import assembler, Functional
 from scipy import sparse
 from scipy.sparse.linalg import spsolve
 from matplotlib import pyplot
@@ -101,11 +101,11 @@ if __name__ == "__main__":
         asm_uu = assembler(u_space, u_space, Measure(2), order=3)
         asm_p = assembler(p1_space, None, Measure(2), order=3)
 
-        A = asm_uu.bilinear(Form(a, "grad"))
-        L = asm_uu.linear(Form(l, "f"))
-        B1 = assembler(u_space, p1_space, Measure(2), order=3).bilinear(Form(b, "f", "grad"))
-        B0 = assembler(u_space, p0_space, Measure(2), order=2).bilinear(Form(b, "f", "grad"))
-        G = assembler(u_space, None, Measure(1, (2,4)), 3).linear(Form(g, "f"))
+        A = asm_uu.bilinear(Functional(a, "grad"))
+        L = asm_uu.linear(Functional(l, "f"))
+        B1 = assembler(u_space, p1_space, Measure(2), order=3).bilinear(Functional(b, "f", "grad"))
+        B0 = assembler(u_space, p0_space, Measure(2), order=2).bilinear(Functional(b, "f", "grad"))
+        G = assembler(u_space, None, Measure(1, (2,4)), 3).linear(Functional(g, "f"))
 
         # assemble the saddle point system
         p1 = Function(p1_space)
@@ -140,14 +140,14 @@ if __name__ == "__main__":
         # calculate the error
         u_err = u - u_ex
         error_table["u infty"][m] = np.linalg.norm(u_err.ravel(), ord=np.inf)
-        error_table["u L2"][m] = np.sqrt(asm_uu.functional(Form(L2, "f"), u = u_err))
+        error_table["u L2"][m] = np.sqrt(asm_uu.functional(Functional(L2, "f"), u = u_err))
 
         p_ex = p_exact(p1_space.dofloc[:, 0], p1_space.dofloc[:, 1]).reshape(-1, 1)
         p_err = p1 - p_ex
-        p_err -= asm_p.functional(Form(integral_P1P0, "f"), p1 = p_err, p0 = p0)
+        p_err -= asm_p.functional(Functional(integral_P1P0, "f"), p1 = p_err, p0 = p0)
 
         # error_table["p infty"][m] = np.linalg.norm(p_err, ord=np.inf)
-        error_table["p L2"][m] = np.sqrt(asm_p.functional(Form(L2_P1P0, "f"), p1 = p_err, p0 = p0))
+        error_table["p L2"][m] = np.sqrt(asm_p.functional(Functional(L2_P1P0, "f"), p1 = p_err, p0 = p0))
 
     printConvergenceTable(mesh_table, error_table)
     

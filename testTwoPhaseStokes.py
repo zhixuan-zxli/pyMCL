@@ -4,7 +4,7 @@ from fem.mesh import Mesh, Measure
 from fem.mesh_util import setMeshMapping
 from fem.element import TriDG0, TriP1, TriP2, LineP1, group_dof
 from fem.function import Function, split_fn, group_fn
-from fem.form import assembler, Form
+from fem.form import assembler, Functional
 from scipy import sparse
 from scipy.sparse.linalg import spsolve
 from matplotlib import pyplot
@@ -234,16 +234,16 @@ if __name__ == "__main__":
         [asm.updateGeometry() for asm in asms]
 
         # assemble the coupled system
-        A_wu = asms[0].bilinear(Form(a_wu, "grad"), eta=eta)
-        B_wp1 = asms[1].bilinear(Form(b_wp))
-        B_wp0 = asms[2].bilinear(Form(b_wp))
-        A_wk = asms[3].bilinear(Form(a_wk, "f"))
-        S_wu = asms[4].bilinear(Form(a_slip_wu, "f"), beta=beta)
+        A_wu = asms[0].bilinear(Functional(a_wu, "grad"), eta=eta)
+        B_wp1 = asms[1].bilinear(Functional(b_wp))
+        B_wp0 = asms[2].bilinear(Functional(b_wp))
+        A_wk = asms[3].bilinear(Functional(a_wk, "f"))
+        S_wu = asms[4].bilinear(Functional(a_slip_wu, "f"), beta=beta)
 
-        A_gx = asms[5].bilinear(Form(a_gx, "grad"))
-        A_gk = asms[6].bilinear(Form(a_wk, "f"))
-        A_psiu = asms[7].bilinear(Form(a_psiu, "f"))
-        S_gx = asms[8].bilinear(Form(a_slip_gx, "f"))
+        A_gx = asms[5].bilinear(Functional(a_gx, "grad"))
+        A_gk = asms[6].bilinear(Functional(a_wk, "f"))
+        A_psiu = asms[7].bilinear(Functional(a_psiu, "f"))
+        S_gx = asms[8].bilinear(Functional(a_slip_gx, "f"))
 
         A = sparse.bmat(((A_wu + 1.0/phys.l_s*S_wu, -B_wp1, -B_wp0, None, -1.0/phys.Ca*A_wk), 
                         (B_wp1.T, None, None, None, None), 
@@ -253,9 +253,9 @@ if __name__ == "__main__":
                         format="csr")
         
         # assemble the RHS
-        L_g = asms[8].linear(Form(l_g, "f"))
-        L_g_x = asms[8].linear(Form(l_slip_g_x, "f"), x_m=x_m)
-        L_psi_x = asms[7].linear(Form(l_psi_x, "f"), x_m=x_m)
+        L_g = asms[8].linear(Functional(l_g, "f"))
+        L_g_x = asms[8].linear(Functional(l_slip_g_x, "f"), x_m=x_m)
+        L_psi_x = asms[7].linear(Functional(l_psi_x, "f"), x_m=x_m)
 
         u[:] = 0.0
         p1[:] = 0.0
@@ -293,7 +293,7 @@ if __name__ == "__main__":
         Yg[Y_int_dof] = i_disp
 
         # solve the linear elastic equation for the bulk mesh deformation ...
-        A_el = asms[9].bilinear(Form(a_el, "grad"))
+        A_el = asms[9].bilinear(Functional(a_el, "grad"))
         L_el = -A_el @ Yg.reshape(-1)
         sol_vec = Yg.copy().reshape(-1)
         sol_vec_free = spsolve(A_el[Y_free_dof][:,Y_free_dof], L_el[Y_free_dof])

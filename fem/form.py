@@ -6,7 +6,7 @@ from .function import Function
 from .funcbasis import FunctionBasis
 from .refdom import ref_doms
     
-class Form:
+class Functional:
 
     form: Callable
 
@@ -26,7 +26,7 @@ class Form:
         data = data.reshape(rdim, -1).sum(axis=1) # sum over all elements
         return data if data.size > 1 else data.item()
     
-class LinearForm(Form):
+class LinearForm(Functional):
 
     def __init__(self, form: Callable) -> None:
         super().__init__(form)
@@ -45,7 +45,7 @@ class LinearForm(Form):
         vec = np.bincount(rows.reshape(-1), weights=vals.reshape(-1), minlength=test_basis.fs.num_dof)
         return vec
     
-class BilinearForm(Form):
+class BilinearForm(Functional):
 
     def __init__(self, form) -> None:
         super().__init__(form)

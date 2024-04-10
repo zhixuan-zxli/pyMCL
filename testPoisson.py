@@ -43,11 +43,11 @@ def test(v, x) -> np.ndarray:
     # v: (1, Ne, Nq)
     return v * x.dx
 
-@Form
+@Functional
 def integral(x, u) -> np.ndarray:
     return u * x.dx
 
-@Form
+@Functional
 def L2(x, u) -> np.ndarray:
     return u**2 * x.dx
 
