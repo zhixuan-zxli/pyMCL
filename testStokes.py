@@ -7,7 +7,7 @@ from fem.form import assembler, Form
 from scipy import sparse
 from scipy.sparse.linalg import spsolve
 from matplotlib import pyplot
-from fem.util import printConvergenceTable
+from fem.post import printConvergenceTable
 
 def u_exact(x, y) -> np.ndarray:
     return np.array(

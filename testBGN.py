@@ -7,7 +7,7 @@ from fem.funcspace import *
 from fem.function import *
 from fem.funcbasis import *
 from fem.form import *
-from fem.util import *
+from fem.post import *
 from scipy.sparse import bmat
 from scipy.sparse.linalg import spsolve
 from matplotlib import pyplot
@@ -70,12 +70,12 @@ if __name__ == "__main__":
         pyplot.ion()
         fig = pyplot.figure()
         ax = fig.add_subplot(projection="3d")
-        assert np.all(mixed_fs[0].elem_dof[::3] % 3 == 0)
-        triangles = mixed_fs[0].elem_dof[::3].T // 3
+        nv = NodeVisualizer(mesh, mixed_fs[1])
 
     def redraw() -> None:
+        z = nv.remap(x_m, num_copy=3)
         ax.clear()
-        ts = ax.plot_trisurf(x_m[::3], x_m[1::3], x_m[2::3], triangles=triangles)
+        ts = ax.plot_trisurf(z[:,0], z[:,1], z[:,2], triangles=mesh.cell[2])
         ts.set(linewidth=0.5)
         ts.set_edgecolor("tab:blue")
         ts.set_facecolor((0.0, 0.0, 0.0, 0.0))

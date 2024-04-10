@@ -6,7 +6,7 @@ from fem.funcspace import *
 from fem.function import *
 from fem.funcbasis import *
 from fem.form import *
-from fem.util import *
+from fem.post import *
 from scipy.sparse import bmat
 from scipy.sparse.linalg import spsolve
 from matplotlib import pyplot
