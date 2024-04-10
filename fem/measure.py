@@ -115,7 +115,7 @@ class Measure:
             if rdim == 3:
                 data.cn = data.dx
                 data.dx = np.linalg.norm(data.dx, ord=None, axis=0) #(Ne, Nq)
-                data.cn = data.cn / data[np.newaxis]
+                data.cn = data.cn / data.dx[np.newaxis]
             data.dx = data.dx[np.newaxis]
             data.inv_grad = np.zeros((tdim, rdim, Ne, Nq))
             if rdim == 2:
