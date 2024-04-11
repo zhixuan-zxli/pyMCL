@@ -70,24 +70,33 @@ class Mesh:
         self.build_facet_ref()
 
     def build_facet_ref(self) -> None:
+        """
+        This function will tag all the untagged facets with ID 99. 
+        """
         if self.tdim == 0:
             return
-        self.facet_ref = np.zeros((2, 2, self.cell[self.tdim-1].shape[0]), dtype=np.int32)
         # collect all the facets
         all_facets = ref_doms[self.tdim]._get_sub_entities(self.cell[self.tdim], dim=self.tdim-1) # (Ne, num_sub_ent, tdim-1+1)
         num_facet = all_facets.shape[1]
         all_facets = all_facets.reshape(-1, self.tdim)
         all_facets.sort(axis=1) # maybe need manual sort for better performance
-        tagged_facets = np.sort(self.cell[self.tdim-1], axis=1)
-        # the first facet
         uq_facets, idx = np.unique(all_facets, return_index=True, axis=0)
+        tagged_facets = np.sort(self.cell[self.tdim-1], axis=1)
         sub_idx = binsearchkw(uq_facets.astype(np.int32), tagged_facets)
         assert np.all(sub_idx != -1)
-        self.facet_ref[0,0], self.facet_ref[0,1] = np.divmod(idx[sub_idx], num_facet)
-        # the second facet
+        # the first side 
+        Nf = uq_facets.shape[0]
+        self.facet_ref = np.zeros((2, 2, Nf), dtype=np.int32)
+        self.facet_ref[0,0], self.facet_ref[0,1] = np.divmod(idx, num_facet)
+        # the other side
         _, idx = np.unique(all_facets[::-1], return_index=True, axis=0)
         idx = all_facets.shape[0] - idx - 1
-        self.facet_ref[1,0], self.facet_ref[1,1] = np.divmod(idx[sub_idx], num_facet)
+        self.facet_ref[1,0], self.facet_ref[1,1] = np.divmod(idx, num_facet)
+        # save all the facets
+        self.cell[self.tdim-1] = uq_facets
+        old_tags = self.cell_tag[self.tdim-1]
+        self.cell_tag[self.tdim-1] = 99 * np.ones((Nf, ), dtype=np.int32)
+        self.cell_tag[self.tdim-1][sub_idx] = old_tags
         # fix the facet orientation
         tags = self.cell_tag[self.tdim][self.facet_ref[:,0]] # (2, num_facet)
         flipped = tags[0] > tags[1]

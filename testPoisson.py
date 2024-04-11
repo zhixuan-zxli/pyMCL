@@ -67,7 +67,6 @@ if __name__ == "__main__":
         print(f"Testing level {m} ", end="")
         if m > 0:
             mesh = splitRefine(mesh)
-        # Affine mesh
         setMeshMapping(mesh)
 
         fs = FunctionSpace(mesh, test_element)
@@ -80,7 +79,7 @@ if __name__ == "__main__":
         # ==================================================
         # 1. test Dirichlet condition
         # impose the boundary condition
-        bdof = np.unique(fs.getFacetDof())
+        bdof = np.unique(fs.getFacetDof((2, 3, 4, 5)))
         free_dof = group_dof((fs,), (bdof,))
         # homogeneize the boundary condition
         u_err = Function(fs)
@@ -99,7 +98,7 @@ if __name__ == "__main__":
 
         # ==================================================
         # 2. test pure Neumann condition
-        ds = Measure(mesh, 1, order=3)
+        ds = Measure(mesh, 1, order=3, tags=(2, 3, 4, 5))
         u_s_basis = FunctionBasis(fs, ds)
         L = l.assemble(u_basis, dx)
         G = g.assemble(u_s_basis, ds)
