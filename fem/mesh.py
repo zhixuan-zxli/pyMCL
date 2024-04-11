@@ -64,7 +64,7 @@ class Mesh:
                 raise RuntimeError("Unrecognized cell type. ")
         # assign the 0-th dim cells to be the tagged nodes
         self.cell[0] = np.nonzero(self.point_tag)[0].reshape(-1, 1)
-        self.cell_tag[0] = self.point_tag[self.cell[0]]
+        self.cell_tag[0] = self.point_tag[self.cell[0]].reshape(-1)
 
         # 3. build the facets. 
         self.build_facet_ref()
@@ -110,7 +110,7 @@ class Mesh:
         if dim == 0:
             submesh.point = self.point[keep_idx[0]]
             submesh.point_tag = self.point_tag[keep_idx[0]]
-            return
+            return submesh
         submesh.cell[dim] = self.cell[dim][keep_idx[dim]]
         submesh.cell_tag[dim] = self.cell_tag[dim][keep_idx[dim]]
         # 2. Select the nodes to preserve and construct the node remap

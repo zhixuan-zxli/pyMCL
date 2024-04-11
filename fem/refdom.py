@@ -31,6 +31,13 @@ class RefNode(RefCell):
     ds: np.ndarray = np.ones((0,))
     facet_normal: np.ndarray = np.ones((0,0))
 
+    @staticmethod
+    def _get_sub_entities(elem_cell: np.ndarray, dim: int) -> np.ndarray:
+        assert elem_cell.shape[1] == 1
+        if dim == 0:
+            return elem_cell.reshape(-1, 1, 1)
+        raise RuntimeError("Incorrect dimension for getting sub entities. ")
+
 class RefLine(RefCell):
     tdim: int = 1
     dx: float = 1.0
