@@ -2,7 +2,7 @@ from sys import argv
 import numpy as np
 from math import cos
 from fem import *
-from scipy import sparse
+from scipy.sparse import bmat
 from scipy.sparse.linalg import spsolve
 from matplotlib import pyplot
 
@@ -73,6 +73,7 @@ def l_g(g, z) -> np.ndarray:
     return r[np.newaxis] * z.ds
 
 # for linear elasticity
+@BilinearForm
 def a_el(Z, Y, x) -> np.ndarray:
     # grad: (2, 2, Ne, Nq)
     # x.dx: (1, Ne, Nq)
@@ -148,14 +149,7 @@ if __name__ == "__main__":
     bot_tag = mesh.cell_tag[1][bot_flag]
     beta = np.where(bot_tag == 5, phys.beta_1, 1.0)
 
-    # initialize the measure and basis
-    dx = Measure(mesh, 2, order=3)
-    ds_i = Measure(mesh, 1, order=3, tags=(3, ))
-    ds_bot = Measure(mesh, 1, order=3, tags=(4,5))
-    ds = Measure(i_mesh, 1, order=3)
-    dp = Measure(i_mesh, 0, order=1)
-
-    # initialize the unknown
+    # initialize the unknowns
     u = Function(mixed_fs[0])
     p1 = Function(mixed_fs[1])
     p0 = Function(mixed_fs[2])
@@ -176,7 +170,7 @@ if __name__ == "__main__":
         t = m * solp.dt
         if t >= solp.Te:
             break
-        print("t = {0:.4f}".format(t))
+        print("Solving t = {0:.4f}, ".format(t), end="")
         m += 1
 
         # visualization
@@ -187,56 +181,65 @@ if __name__ == "__main__":
             ax.axis("equal")
             pyplot.draw()
             pyplot.pause(1e-3)
-            # maybe some more efficient ploting
+            
+        # initialize the measure and basis
+        dx = Measure(mesh, 2, order=3)
+        ds_i = Measure(mesh, 1, order=3, tags=(3, ))
+        ds_bot = Measure(mesh, 1, order=3, tags=(4,5))
+        ds = Measure(i_mesh, 1, order=3)
+        dp = Measure(i_mesh, 0, order=1)
+
+        u_basis = FunctionBasis(mixed_fs[0], dx)
+        p1_basis = FunctionBasis(mixed_fs[1], dx)
+        p0_basis = FunctionBasis(mixed_fs[2], dx)
+        u_i_basis = FunctionBasis(mixed_fs[0], ds_i)
+        u_bot_basis = FunctionBasis(mixed_fs[0], ds_bot)
+
+        x_basis = FunctionBasis(mixed_fs[3], ds)
+        k_basis = FunctionBasis(mixed_fs[4], ds)
+        x_cl_basis = FunctionBasis(mixed_fs[3], dp)
 
         # first get the interface parametrization
-        # np.copyto(x_m, i_mesh.coord_map)
+        np.copyto(x_m, i_mesh.coord_map)
 
-        # [asm.updateGeometry() for asm in asms]
+        # assemble the coupled system
+        A_wu = a_wu.assemble(u_basis, u_basis, dx, eta=eta)
+        B_wp1 = b_wp.assemble(u_basis, p1_basis, dx)
+        B_wp0 = b_wp.assemble(u_basis, p0_basis, dx)
+        A_wk = a_wk.assemble(u_i_basis, k_basis, ds_i)
+        S_wu = a_slip_wu.assemble(u_bot_basis, u_bot_basis, ds_bot, beta=beta)
 
-        # # assemble the coupled system
-        # A_wu = asms[0].bilinear(Functional(a_wu, "grad"), eta=eta)
-        # B_wp1 = asms[1].bilinear(Functional(b_wp))
-        # B_wp0 = asms[2].bilinear(Functional(b_wp))
-        # A_wk = asms[3].bilinear(Functional(a_wk, "f"))
-        # S_wu = asms[4].bilinear(Functional(a_slip_wu, "f"), beta=beta)
+        A_gx = a_gx.assemble(x_basis, x_basis, ds)
+        A_gk = a_gk.assemble(x_basis, k_basis, ds)
+        A_psiu = a_psiu.assemble(k_basis, u_i_basis, ds_i)
+        S_gx = a_slip_gx.assemble(x_cl_basis, x_cl_basis, dp)
 
-        # A_gx = asms[5].bilinear(Functional(a_gx, "grad"))
-        # A_gk = asms[6].bilinear(Functional(a_wk, "f"))
-        # A_psiu = asms[7].bilinear(Functional(a_psiu, "f"))
-        # S_gx = asms[8].bilinear(Functional(a_slip_gx, "f"))
-
-        # A = sparse.bmat(((A_wu + 1.0/phys.l_s*S_wu, -B_wp1, -B_wp0, None, -1.0/phys.Ca*A_wk), 
-        #                 (B_wp1.T, None, None, None, None), 
-        #                 (B_wp0.T, None, None, None, None), 
-        #                 (None, None, None, A_gx + phys.beta_s*phys.Ca/solp.dt*S_gx, A_gk), 
-        #                 (-solp.dt*A_psiu, None, None, A_gk.T, None)), 
-        #                 format="csr")
+        A = bmat(((A_wu + 1.0/phys.l_s*S_wu, -B_wp1, -B_wp0, None, -1.0/phys.Ca*A_wk), 
+                (B_wp1.T, None, None, None, None), 
+                (B_wp0.T, None, None, None, None), 
+                (None, None, None, A_gx + phys.beta_s*phys.Ca/solp.dt*S_gx, A_gk), 
+                (-solp.dt*A_psiu, None, None, A_gk.T, None)), 
+                format="csr")
         
-        # # assemble the RHS
-        # L_g = asms[8].linear(Functional(l_g, "f"))
-        # L_g_x = asms[8].linear(Functional(l_slip_g_x, "f"), x_m=x_m)
-        # L_psi_x = asms[7].linear(Functional(l_psi_x, "f"), x_m=x_m)
+        # assemble the RHS
+        L_g = phys.cosY * l_g.assemble(x_cl_basis, dp)
+        u[:] = 0.0
+        p1[:] = 0.0
+        p0[:] = 0.0
+        L = group_fn(u, p1, p0, L_g + phys.beta_s*phys.Ca/solp.dt*(S_gx @ x_m), A_gk.T @ x_m)
 
-        # u[:] = 0.0
-        # p1[:] = 0.0
-        # p0[:] = 0.0
-        # L = group_fn(u, p1, p0, phys.cosY*L_g + phys.beta_s*phys.Ca/solp.dt*L_g_x, L_psi_x)
-
-        # # Since the essential conditions are all homogeneous,
-        # # we don't need to homogeneize the system
-        # sol_vec = np.zeros_like(L)
+        # Since the essential conditions are all homogeneous,
+        # we don't need to homogeneize the system
+        sol_vec = np.zeros_like(L)
         
-        # # solve the linear system
-        # sol_vec_free = spsolve(A[free_dof][:,free_dof], L[free_dof])
-        # sol_vec[free_dof] = sol_vec_free
-        # split_fn(sol_vec, u, p1, p0, x, kappa)
-        # u.update()
-        # p1.update()
+        # solve the linear system
+        sol_vec_free = spsolve(A[free_dof][:,free_dof], L[free_dof])
+        sol_vec[free_dof] = sol_vec_free
+        split_fn(sol_vec, u, p1, p0, x, kappa)
 
-        # # some useful info ...
-        # i_disp = x - x_m
-        # # print("Interface displacement = {}".format(np.linalg.norm(i_disp.reshape(-1), np.inf)))
+        # some useful info ...
+        i_disp = x - x_m
+        print("displacement = {0:.2e}".format(np.linalg.norm(i_disp, np.inf)))
 
         # # solve the displacement on the substrate
         # cl_dof = cl_dof.reshape(-1)
