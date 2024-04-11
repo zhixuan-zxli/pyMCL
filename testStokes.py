@@ -51,15 +51,16 @@ def b(v, p, x) -> np.ndarray:
 def l(v, x) -> np.ndarray:
     return np.sum(f_exact(x[0], x[1]) * v, axis=0, keepdims=True) * x.dx
 
-# def g(v, coord) -> np.ndarray:
-#     x, y = coord[0], coord[1]
-#     du = du_exact(x, y) # (2, 2, Ne, Nq)
-#     Du = du + du.transpose((1,0,2,3)) # 2 times sym grad
-#     p = p_exact(x, y) # (Ne, Nq)
-#     # coord.n : (2, Ne, Nq)
-#     Tn = np.sum(Du * coord.n[np.newaxis], axis=1) + p[np.newaxis] * coord.n # (2, Ne, Nq)
-#     # v : (2, 1, Nq)
-#     return Tn * v * coord.dx
+@LinearForm
+def g(v, x) -> np.ndarray:
+    x1, x2 = x[0], x[1]
+    du = du_exact(x1, x2) # (2, 2, Ne, Nq)
+    Du = du + du.transpose((1,0,2,3)) # 2 times sym grad
+    p = p_exact(x1, x2) # (Ne, Nq)
+    # x.fn : (2, Ne, Nq)
+    Tn = np.sum(Du * x.fn[np.newaxis], axis=1) + p[np.newaxis] * x.fn # (2, Ne, Nq)
+    # v : (2, 1, Nq)
+    return np.sum(Tn * v, axis=0, keepdims=True) * x.ds
 
 @Functional
 def integral_P1P0(x, p1, p0) -> np.ndarray:
@@ -98,7 +99,9 @@ if __name__ == "__main__":
         P0 = FunctionSpace(mesh, TriDG0, constraint=periodic_constraint)
 
         dx = Measure(mesh, 2, 3)
+        ds = Measure(mesh, 1, order=3, tags=(4,))
         u_basis = FunctionBasis(U, dx)
+        u_s_basis = FunctionBasis(U, ds)
         p1_basis = FunctionBasis(P1, dx)
         p0_basis = FunctionBasis(P0, dx)
 
@@ -107,7 +110,7 @@ if __name__ == "__main__":
         B1 = b.assemble(u_basis, p1_basis, dx)
         B0 = b.assemble(u_basis, p0_basis, dx)
         L = l.assemble(u_basis, dx)
-        # G = assembler(u_space, None, Measure(1, (2,4)), 3).linear(Functional(g, "f"))
+        G = g.assemble(u_s_basis, ds)
 
         # assemble the saddle point system
         u = Function(U)
@@ -116,10 +119,10 @@ if __name__ == "__main__":
         # Aa = bmat(((A, B1), (B1.T, None)), format="csr")
         Aa = bmat(((A, B1, B0), (B1.T, None, None), (B0.T, None, None)), format="csr")
         # La = group_fn(L, p1)
-        La = group_fn(L, p1, p0)
+        La = group_fn(L+G, p1, p0)
 
         # impose the Dirichlet condition
-        bdof = np.unique(U.getFacetDof((2, 4)))
+        bdof = np.unique(U.getFacetDof((2,)))
         # fdof = group_dof((U, P1), (bdof, np.array((0,))))
         fdof = group_dof((U, P1, P0), (bdof, np.array((0,)), np.array((0,))))
         u_err = Function(U)
