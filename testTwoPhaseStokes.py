@@ -95,7 +95,7 @@ class PhysicalParameters:
 
 class SolverParemeters:
     dt: float = 1.0/1024
-    Te: float = 1.0/1024 #1.0/8
+    Te: float = 1.0/8
     startStep: int = 0
     stride: int = 1
     numChekpoint: int = 0
@@ -138,8 +138,8 @@ if __name__ == "__main__":
     free_dof = group_dof(mixed_fs, (np.concatenate((top_dof, bot_vert_dof)), np.array((0,)), np.array((0,)), cl_vert_dof, None))
         
     Y_fix_dof = np.unique(Y_fs.getFacetDof())
-    # Y_bot_dof = np.unique(Y_fs.getCellDof(Measure(1, (4,5))))
-    # Y_int_dof = np.unique(Y_fs.getCellDof(Measure(1, (3,))))
+    Y_bot_dof = np.unique(Y_fs.getFacetDof((4, 5)))
+    Y_int_dof = np.unique(Y_fs.getFacetDof((3,)))
 
     Y_free_dof = group_dof((Y_fs,), (Y_fix_dof,))
     
@@ -158,12 +158,15 @@ if __name__ == "__main__":
     kappa = Function(mixed_fs[4])
 
     Y = Function(Y_fs)
-    Yg = np.zeros_like(Y)
+    # Yg = np.zeros_like(Y)
 
-    ax = None
     if solp.vis:
         pyplot.ion()
         ax = pyplot.subplot()
+        # nv = NodeVisualizer(mesh, Y_fs)
+        triangles = Y_fs.elem_dof[::2, :].T
+        assert np.all(triangles % 2 == 0)
+        triangles = triangles // 2
 
     m = solp.startStep
     while True:
@@ -177,7 +180,7 @@ if __name__ == "__main__":
         if solp.vis:
             ax.clear()
             # pyplot.tripcolor(mesh.coord_map[:,0], mesh.coord_map[:,1], facecolors=mesh.cell[2][:,-1], triangles=mesh.cell[2][:,:-1])
-            # pyplot.triplot(mesh.coord_map[:,0], mesh.coord_map[:,1], triangles=mesh.cell[2][:,:-1])
+            pyplot.triplot(mesh.coord_map[::2], mesh.coord_map[1::2], triangles=triangles)
             ax.axis("equal")
             pyplot.draw()
             pyplot.pause(1e-3)
@@ -241,31 +244,32 @@ if __name__ == "__main__":
         i_disp = x - x_m
         print("displacement = {0:.2e}".format(np.linalg.norm(i_disp, np.inf)))
 
-        # # solve the displacement on the substrate
-        # cl_dof = cl_dof.reshape(-1)
-        # if x[cl_dof[0], 0] > x[cl_dof[1], 0]: # make sure [0] on the left, [1] on the right
-        #     cl_dof = cl_dof[::-1]
-        # # set up the dirichlet condition
-        # Yg[:] = 0.0
-        # Y0_m = mesh.coord_map[Y_bot_dof, 0] # the x coordinate of the grid points on the substrate
-        # cl_pos = (x_m[cl_dof[0], 0], x_m[cl_dof[1], 0])
-        # Yg[Y_bot_dof, 0] = np.where(
-        #     Y0_m < cl_pos[0], (Y0_m + 1.0) / (cl_pos[0] + 1.0) * i_disp[cl_dof[0],0], 
-        #     np.where(Y0_m > cl_pos[1], (1.0 - Y0_m) / (1.0 - cl_pos[1]) * i_disp[cl_dof[1],0], 
-        #              (i_disp[cl_dof[0],0] * (cl_pos[1] - Y0_m) + i_disp[cl_dof[1],0] * (Y0_m - cl_pos[0])) / (cl_pos[1] - cl_pos[0]))
-        # )
-        # Yg[Y_int_dof] = i_disp
+        # solve the displacement on the substrate 
+        Y[:] = 0.0
+        Y0_m = mesh.coord_map[Y_bot_dof[::2]] # the x coordinate of the grid points on the substrate
+        cl_pos = x_m[cl_dof[::2]] # [0] for the left, [1] for the right
+        cl_disp = i_disp[cl_dof[::2]] # save as above
+        assert cl_pos[0] < cl_pos[1]
+        Y[Y_bot_dof[::2]] = np.where(
+            Y0_m <= cl_pos[0], (Y0_m + 1.0) / (cl_pos[0] + 1.0) * cl_disp[0], 
+            np.where(Y0_m >= cl_pos[1], (1.0 - Y0_m) / (1.0 - cl_pos[1]) * cl_disp[1], 
+                     (cl_disp[0] * (cl_pos[1] - Y0_m) + cl_disp[1] * (Y0_m - cl_pos[0])) / (cl_pos[1] - cl_pos[0]))
+        )
+        Y[Y_int_dof] = i_disp
 
-        # # solve the linear elastic equation for the bulk mesh deformation ...
-        # A_el = asms[9].bilinear(Functional(a_el, "grad"))
-        # L_el = -A_el @ Yg.reshape(-1)
-        # sol_vec = Yg.copy().reshape(-1)
-        # sol_vec_free = spsolve(A_el[Y_free_dof][:,Y_free_dof], L_el[Y_free_dof])
-        # sol_vec[Y_free_dof] = sol_vec_free
-        # split_fn(sol_vec, Y)
+        # solve the linear elastic equation for the bulk mesh deformation 
+        Y_basis = FunctionBasis(Y_fs, dx)
+        A_el = a_el.assemble(Y_basis, Y_basis, dx)
+        L_el = -A_el @ Y
+        sol_vec_free = spsolve(A_el[Y_free_dof][:,Y_free_dof], L_el[Y_free_dof])
+        Y[Y_free_dof] = sol_vec_free
 
-        # # move the mesh
-        # Y += mesh.coord_map
-        # np.copyto(mesh.coord_map, Y)
-        # np.copyto(i_mesh.coord_map, x)
+        # move the mesh
+        Y += mesh.coord_map
+        np.copyto(mesh.coord_map, Y)
+        np.copyto(i_mesh.coord_map, x)
     # end time loop
+
+    pyplot.ioff()
+    pyplot.show()
+    print("Finished.")
