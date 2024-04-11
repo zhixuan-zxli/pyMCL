@@ -1,13 +1,9 @@
 import numpy as np
-from fem.mesh import Mesh
-from fem.mesh_util import splitRefine, setMeshMapping
-from fem.element import Measure, TriDG0, TriP1, TriP2
-from fem.function import Function, split_fn, group_fn
-from fem.form import assembler, Functional
-from scipy import sparse
+from fem import *
+from scipy.sparse import bmat
 from scipy.sparse.linalg import spsolve
 from matplotlib import pyplot
-from fem.post import printConvergenceTable
+from colorama import Fore, Style
 
 def u_exact(x, y) -> np.ndarray:
     return np.array(
@@ -22,12 +18,12 @@ def du_exact(x, y) -> np.ndarray:
     )
 
 def p_exact(x, y) -> np.ndarray:
-    return np.exp(np.pi*x) * np.cos(np.pi*y)
+    return np.sin(np.pi*x)**2 * np.cos(np.pi*y)
 
 def dp_exact(x, y) -> np.ndarray:
     return np.array(
-        (np.pi * np.exp(np.pi*x) * np.cos(np.pi*y), 
-         -np.pi * np.exp(np.pi*x) * np.sin(np.pi*y))
+        (np.pi * np.sin(2.0*np.pi*x) * np.cos(np.pi*y), 
+         -np.pi * np.sin(np.pi*x)**2 * np.sin(np.pi*y))
     )
 
 def f_exact(x, y) -> np.ndarray:
@@ -37,117 +33,124 @@ def f_exact(x, y) -> np.ndarray:
     )
     return diffu - dp_exact(x, y)
 
-def a(v, u, coord) -> np.ndarray:
+@BilinearForm
+def a(v, u, x) -> np.ndarray:
     # grad: (2, 2, Ne, Nq)
-    z = np.zeros_like(u.grad)
-    z[0,0,:,:] = 2.0 * v.grad[0,0,:,:] * u.grad[0,0,:,:] + v.grad[0,1,:,:] * u.grad[0,1,:,:]
-    z[1,0,:,:] = v.grad[1,0,:,:] * u.grad[0,1,:,:]
-    z[0,1,:,:] = v.grad[0,1,:,:] * u.grad[1,0,:,:]
-    z[1,1,:,:] = v.grad[1,0,:,:] * u.grad[1,0,:,:] + 2.0 * v.grad[1,1,:,:] * u.grad[1,1,:,:]
-    return z * coord.dx[np.newaxis]
+    z = np.zeros(x.shape[1:])
+    for i, j in (0,0), (0,1), (1,0), (1,1):
+        z += (u.grad[i,j] + u.grad[j,i]) * v.grad[i,j]
+    return z[np.newaxis] * x.dx
 
-def b(v, p, coord) -> np.ndarray:
+@BilinearForm
+def b(v, p, x) -> np.ndarray:
     # v.grad: (2,2,Ne,Nq)
-    z = np.zeros((2, 1, coord.shape[1], coord.shape[2]))
-    z[0,0,:,:] = v.grad[0,0,:,:] * p[0,:,:]
-    z[1,0,:,:] = v.grad[1,1,:,:] * p[0,:,:]
-    return z * coord.dx[np.newaxis]
+    z = (v.grad[0,0] + v.grad[1,1]) * p[0]
+    return z[np.newaxis] * x.dx
 
-def l(v, coord) -> np.ndarray:
-    return f_exact(coord[0], coord[1]) * v * coord.dx
+@LinearForm
+def l(v, x) -> np.ndarray:
+    return np.sum(f_exact(x[0], x[1]) * v, axis=0, keepdims=True) * x.dx
 
-def g(v, coord) -> np.ndarray:
-    x, y = coord[0], coord[1]
-    du = du_exact(x, y) # (2, 2, Ne, Nq)
-    Du = du + du.transpose((1,0,2,3)) # 2 times sym grad
-    p = p_exact(x, y) # (Ne, Nq)
-    # coord.n : (2, Ne, Nq)
-    Tn = np.sum(Du * coord.n[np.newaxis], axis=1) + p[np.newaxis] * coord.n # (2, Ne, Nq)
-    # v : (2, 1, Nq)
-    return Tn * v * coord.dx
+# def g(v, coord) -> np.ndarray:
+#     x, y = coord[0], coord[1]
+#     du = du_exact(x, y) # (2, 2, Ne, Nq)
+#     Du = du + du.transpose((1,0,2,3)) # 2 times sym grad
+#     p = p_exact(x, y) # (Ne, Nq)
+#     # coord.n : (2, Ne, Nq)
+#     Tn = np.sum(Du * coord.n[np.newaxis], axis=1) + p[np.newaxis] * coord.n # (2, Ne, Nq)
+#     # v : (2, 1, Nq)
+#     return Tn * v * coord.dx
 
-def integral_P1P0(coord, p1, p0) -> np.ndarray:
-    return (p1 + p0) * coord.dx
+@Functional
+def integral_P1P0(x, p1, p0) -> np.ndarray:
+    return (p1 + p0) * x.dx
 
-def L2_P1P0(coord, p1, p0) -> np.ndarray:
-    return np.sum((p1+p0)**2, axis=0, keepdims=True) * coord.dx
+@Functional
+def L2_P1P0(x, p1, p0) -> np.ndarray:
+    return np.sum((p1+p0)**2, axis=0, keepdims=True) * x.dx
 
-def L2(coord, u) -> np.ndarray:
-    return np.sum(u**2, axis=0, keepdims=True) * coord.dx
+@Functional
+def L2(x, u) -> np.ndarray:
+    return np.sum(u**2, axis=0, keepdims=True) * x.dx
 
 
 if __name__ == "__main__":
 
     num_hier = 3
     mesh_table = tuple(f"{i}" for i in range(num_hier))
-    # error_head = ("u infty", "u L2", "p infty", "p L2")
     error_head = ("u infty", "u L2", "p L2")
     error_table = {k: [1.0] * num_hier for k in error_head}
     mesh = Mesh()
+    mesh.load("mesh/unit_square.msh")
+    def periodic_constraint(x: np.ndarray) -> np.ndarray:
+        flag = np.abs(x[:,0] - 1.0) < 1e-12
+        x[flag, 0] -= 1.0
 
     for m in range(num_hier):
         print(f"Testing level {m}... ", end="")
-        if m == 0:
-            mesh.load("mesh/unit_square.msh")
-        else:
+        if m > 0:
             mesh = splitRefine(mesh)
-        # Affine mesh
         setMeshMapping(mesh)
-        # mesh boundary: left=6, right=7, bottom=8, top=9
+        # mesh boundary: bottom=2, right=3, top=4, right=5
 
-        u_space, p1_space, p0_space = TriP2(mesh, 2), TriP1(mesh), TriDG0(mesh)
+        U = FunctionSpace(mesh, VectorElement(TriP2, 2), constraint=periodic_constraint)
+        P1 = FunctionSpace(mesh, TriP1, constraint=periodic_constraint)
+        P0 = FunctionSpace(mesh, TriDG0, constraint=periodic_constraint)
+
+        dx = Measure(mesh, 2, 3)
+        u_basis = FunctionBasis(U, dx)
+        p1_basis = FunctionBasis(P1, dx)
+        p0_basis = FunctionBasis(P0, dx)
 
         # assemble the form
-        asm_uu = assembler(u_space, u_space, Measure(2), order=3)
-        asm_p = assembler(p1_space, None, Measure(2), order=3)
-
-        A = asm_uu.bilinear(Functional(a, "grad"))
-        L = asm_uu.linear(Functional(l, "f"))
-        B1 = assembler(u_space, p1_space, Measure(2), order=3).bilinear(Functional(b, "f", "grad"))
-        B0 = assembler(u_space, p0_space, Measure(2), order=2).bilinear(Functional(b, "f", "grad"))
-        G = assembler(u_space, None, Measure(1, (2,4)), 3).linear(Functional(g, "f"))
+        A = a.assemble(u_basis, u_basis, dx)
+        B1 = b.assemble(u_basis, p1_basis, dx)
+        B0 = b.assemble(u_basis, p0_basis, dx)
+        L = l.assemble(u_basis, dx)
+        # G = assembler(u_space, None, Measure(1, (2,4)), 3).linear(Functional(g, "f"))
 
         # assemble the saddle point system
-        p1 = Function(p1_space)
-        p0 = Function(p0_space)
-        Aa = sparse.bmat(((A, B1, B0), (B1.T, None, None), (B0.T, None, None)), format="csr")
-        # La = group_fn(L, p1, p0)
-        La = group_fn(L+G, p1, p0)
+        u = Function(U)
+        p1 = Function(P1)
+        p0 = Function(P0)
+        # Aa = bmat(((A, B1), (B1.T, None)), format="csr")
+        Aa = bmat(((A, B1, B0), (B1.T, None, None), (B0.T, None, None)), format="csr")
+        # La = group_fn(L, p1)
+        La = group_fn(L, p1, p0)
 
         # impose the Dirichlet condition
-        bdof = np.unique(u_space.getCellDof(Measure(1, (3,5))))
-        fdof = np.ones((La.shape[0], ), dtype=np.bool8)
-        fdof[bdof*2] = False
-        fdof[bdof*2+1] = False
-        fdof[2*u_space.num_dof] = False # fix the dofs for pressure
-        fdof[2*u_space.num_dof + p1_space.num_dof] = False
-        u_ex = u_exact(u_space.dofloc[:,0], u_space.dofloc[:,1]).T
-        u = Function(u_space)
-        u[bdof] = u_ex[bdof]
-        p1[0] = p_exact(p1_space.dofloc[0,0], p1_space.dofloc[0,1]) # need to set this pressure dof <<<<<<<
+        bdof = np.unique(U.getFacetDof((2, 4)))
+        # fdof = group_dof((U, P1), (bdof, np.array((0,))))
+        fdof = group_dof((U, P1, P0), (bdof, np.array((0,)), np.array((0,))))
+        u_err = Function(U)
+        u_err[:] = u_exact(U.dof_loc[::2,0], U.dof_loc[::2,1]).T.reshape(-1)
+        p1[0] = p_exact(P1.dof_loc[0,0], P1.dof_loc[0,1]) # need to fix this pressure dof
         
-        print("Dimension of saddle point system = {}".format(fdof.sum()))
+        print("dimension = {}".format(fdof.sum()))
 
         # Homogeneize and then solve the system
+        # sol_vec = group_fn(u, p1)
         sol_vec = group_fn(u, p1, p0)
         La = La - Aa @ sol_vec
         z = spsolve(Aa[fdof][:,fdof], La[fdof])
         sol_vec[fdof] = z
-
-        # extract the solutions
+        # split_fn(sol_vec, u, p1)
         split_fn(sol_vec, u, p1, p0)
 
         # calculate the error
-        u_err = u - u_ex
-        error_table["u infty"][m] = np.linalg.norm(u_err.ravel(), ord=np.inf)
-        error_table["u L2"][m] = np.sqrt(asm_uu.functional(Functional(L2, "f"), u = u_err))
+        u_err = u - u_err
+        error_table["u infty"][m] = np.linalg.norm(u_err, ord=np.inf)
+        error_table["u L2"][m] = np.sqrt(L2.assemble(dx, u=u_err._interpolate(dx)))
 
-        p_ex = p_exact(p1_space.dofloc[:, 0], p1_space.dofloc[:, 1]).reshape(-1, 1)
-        p_err = p1 - p_ex
-        p_err -= asm_p.functional(Functional(integral_P1P0, "f"), p1 = p_err, p0 = p0)
+        p_err = Function(P1)
+        p_err[:] = p_exact(P1.dof_loc[:,0], P1.dof_loc[:,1])
+        p_err = p1 - p_err
+        p0 -= integral_P1P0.assemble(dx, p1=p_err._interpolate(dx), p0=p0._interpolate(dx)) / 1.0
 
-        # error_table["p infty"][m] = np.linalg.norm(p_err, ord=np.inf)
-        error_table["p L2"][m] = np.sqrt(asm_p.functional(Functional(L2_P1P0, "f"), p1 = p_err, p0 = p0))
+        # # error_table["p infty"][m] = np.linalg.norm(p_err, ord=np.inf)
+        # error_table["p L2"][m] = np.sqrt(L2_P1P0.assemble(dx, p1=p_err._interpolate(dx), p0=0.0))
+        error_table["p L2"][m] = np.sqrt(L2_P1P0.assemble(dx, p1=p_err._interpolate(dx), p0=p0._interpolate(dx)))
 
+    print(Fore.GREEN + "\nConvergence: " + Style.RESET_ALL)
     printConvergenceTable(mesh_table, error_table)
     
