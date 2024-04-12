@@ -6,6 +6,22 @@ from .function import Function
 from .refdom import RefTri
 from tools.binsearchkw import binsearchkw
 
+def setMeshMapping(mesh: Mesh, order: int = 1):
+    """
+    Set up the P-x (x=1,2) isoparametric mapping for the mesh. 
+    """
+    elem_tab = {(1,1): LineP1, (1,2): LineP2, (2,1): TriP1, (2,2): TriP2}
+    # set an affine mapping
+    try:
+        elem = elem_tab[(mesh.tdim, order)]
+    except KeyError:
+        raise RuntimeError(f"Cannot construct an isoparametric element of order {order}. ")
+    mesh.coord_fe = FunctionSpace(mesh, VectorElement(elem, mesh.gdim))
+    mesh.coord_map = Function(mesh.coord_fe)
+    for d in range(mesh.gdim):
+        dof_d = mesh.coord_fe.dof_group["u_" + str(d)]
+        mesh.coord_map[dof_d] = mesh.coord_fe.dof_loc[dof_d, d]
+
 def splitRefine(mesh: Mesh) -> Mesh:
     fine_mesh = Mesh()
     fine_mesh.tdim = mesh.tdim
@@ -71,19 +87,3 @@ def splitRefine(mesh: Mesh) -> Mesh:
         raise RuntimeError(f"Cannot refine a mesh of dimension {mesh.tdim}.")
     fine_mesh.build_facet_ref()
     return fine_mesh
-
-def setMeshMapping(mesh: Mesh, order: int = 1):
-    """
-    Set up the P-x (x=1,2) isoparametric mapping for the mesh. 
-    """
-    elem_tab = {(1,1): LineP1, (1,2): LineP2, (2,1): TriP1, (2,2): TriP2}
-    # set an affine mapping
-    try:
-        elem = elem_tab[(mesh.tdim, order)]
-    except KeyError:
-        raise RuntimeError(f"Cannot construct an isoparametric element of order {order}. ")
-    mesh.coord_fe = FunctionSpace(mesh, VectorElement(elem, mesh.gdim))
-    mesh.coord_map = Function(mesh.coord_fe)
-    for d in range(mesh.gdim):
-        dof_d = mesh.coord_fe.dof_group["u_" + str(d)]
-        mesh.coord_map[dof_d] = mesh.coord_fe.dof_loc[dof_d, d]
