@@ -101,6 +101,29 @@ class Mesh:
         tags = self.cell_tag[self.tdim][self.facet_ref[:,0]] # (2, num_facet)
         flipped = tags[0] > tags[1]
         self.facet_ref[:,:,flipped] = self.facet_ref[::-1,:,flipped]
+
+    @staticmethod
+    def _sort_with_orienation(entities: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        N, d = entities.shape
+        orientation = np.empty((N, ), dtype=np.bool8)
+        res = entities.copy()
+        if d == 1:
+            orientation[:] = False
+        elif d == 2:
+            orientation = res[:,0] > res[:,1]
+            res[orientation,:] = res[orientation,::-1]
+        elif d == 3:
+            orientation = res[:,1] > res[:,2]
+            res[orientation, 1::3] = res[orientation, 2:0:-1]
+            flag = res[:,0] > res[:,1]
+            orientation = np.logical_xor(orientation, flag)
+            res[flag, 0::2] = res[flag, 1::-1]
+            flag = res[:,1] > res[:,2]
+            orientation = np.logical_xor(orientation, flag)
+            res[flag, 1::3] = res[flag, 2:0:-1]
+        else:
+            raise NotImplementedError
+        return res, orientation
     
     def view(self, dim: int, sub_ids: Optional[tuple[int]] = None) -> "Mesh":
         submesh = Mesh()
