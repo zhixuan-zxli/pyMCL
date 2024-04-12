@@ -79,9 +79,9 @@ class Mesh:
         all_facets = ref_doms[self.tdim]._get_sub_entities(self.cell[self.tdim], dim=self.tdim-1) # (Ne, num_sub_ent, tdim-1+1)
         num_facet = all_facets.shape[1]
         all_facets = all_facets.reshape(-1, self.tdim)
-        all_facets.sort(axis=1) # maybe need manual sort for better performance
+        all_facets, _ = self._sort_with_orienation(all_facets)
         uq_facets, idx = np.unique(all_facets, return_index=True, axis=0)
-        tagged_facets = np.sort(self.cell[self.tdim-1], axis=1)
+        tagged_facets, orientation = self._sort_with_orienation(self.cell[self.tdim-1])
         sub_idx = binsearchkw(uq_facets.astype(np.int32), tagged_facets)
         assert np.all(sub_idx != -1)
         # the first side 
@@ -94,6 +94,8 @@ class Mesh:
         self.facet_ref[1,0], self.facet_ref[1,1] = np.divmod(idx, num_facet)
         # save all the facets
         self.cell[self.tdim-1] = uq_facets
+        if self.tdim >= 2:
+            self.cell[self.tdim-1][sub_idx[orientation], :2] = self.cell[self.tdim-1][sub_idx[orientation], 1::-1]
         old_tags = self.cell_tag[self.tdim-1]
         self.cell_tag[self.tdim-1] = 99 * np.ones((Nf, ), dtype=np.int32)
         self.cell_tag[self.tdim-1][sub_idx] = old_tags
