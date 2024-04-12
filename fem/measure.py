@@ -3,6 +3,7 @@ import numpy as np
 from .mesh import Mesh
 from .refdom import ref_doms
 from .quadrature import Quadrature
+from .funcspace import _calculate_dof_locations
 
 class Measure:
     
@@ -12,7 +13,8 @@ class Measure:
     facet_ix: np.ndarray # the facet indices of a surface measure
     facet_id: np.ndarray # the facet if within an element, for a surface measure
 
-    quad_tab: np.ndarray
+    quad_tab: np.ndarray # (Nq, tdim) or (Nf, Nq, tdim)
+    quad_w: np.ndarray # (Nq, )
     x: Any # type: QuadData # geometric quantities provided
     
 
@@ -28,7 +30,7 @@ class Measure:
         """
         self.mesh = mesh
         self.dim = dim
-        self.quad_tab = Quadrature.getTable(ref_doms[dim], order)
+        self.quad_tab, self.quad_w = Quadrature.getTable(ref_doms[dim], order)
         # 1. Volume measure
         if dim == mesh.tdim:
             assert interiorFacet == False
@@ -61,10 +63,43 @@ class Measure:
             n = 1 + interiorFacet
             self.elem_ix = mesh.facet_ref[:n,0,self.facet_ix].reshape(-1) # (n * Nf, )
             self.facet_id = mesh.facet_ref[:n,1,self.facet_ix].reshape(-1) # (n * Nf, )
+            # calculate the quadrature locations
+            facet_entities = ref_doms[dim]._get_sub_entities(mesh.cell[dim][self.facet_ix], dim=dim) # (Nf, 1, dim+1)
+            quad_locs = _calculate_dof_locations(mesh, facet_entities, self.quad_tab) # (Nq * Nf, gdim)
+            quad_locs = quad_locs.reshape(self.quad_w.size, -1, mesh.gdim) # (Nq, Nf, gdim)
+            # transform to local barycentric coordinates: (Nf, Nq, tdim)
+            self.quad_tab = self._global_to_local(quad_locs)
         else:
             raise RuntimeError("This measure is neither a volume measure nor a surface measure.")
         #
         self.update()
+
+    def _global_to_local(self, quad_locs: np.ndarray) -> np.ndarray:
+        """
+        Transform the global coordinates to local coordinates within elements. 
+        quad_locs: (Nq, Nf, gdim)
+        return: (Nf, Nq, tdim)
+        """
+        tdim = self.mesh.tdim
+        Nq, Nf = quad_locs.shape[:2]
+        local_x = np.zeros((Nf, Nq, tdim))
+        elem_cell = self.mesh.cell[tdim]
+        verts = tuple(self.mesh.point[elem_cell[self.elem_ix, j]] for j in range(tdim+1)) # (tdim+1, Nf, gdim)
+        if tdim == 1:
+            denom = np.linalg.norm(verts[1] - verts[0], axis=1)
+            for i, loc in enumerate(quad_locs): # loc: (Nf, gdim)
+                local_x[:,i,0] = np.linalg.norm(loc - verts[0], axis=1) / denom
+        elif tdim == 2:
+            def _a(q0, q1, q2):
+                c = np.cross(q1-q0, q2-q0, axis=1)
+                return np.linalg.norm(c, axis=1) if c.ndim == 2 else c
+            denom = _a(verts[0], verts[1], verts[2])
+            for i, loc in enumerate(quad_locs):
+                local_x[:,i,0] = _a(verts[0], loc, verts[2]) / denom
+                local_x[:,i,1] = _a(verts[0], verts[1], loc) / denom
+        else:
+            raise NotImplementedError
+        return local_x
 
 
     def update(self) -> None:

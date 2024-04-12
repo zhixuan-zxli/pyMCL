@@ -18,11 +18,10 @@ class Functional:
         Assemble a functional. 
         """
         dx_ref = ref_doms[mea.dim].dx
-        quad_tab = mea.quad_tab
-        Nq = mea.quad_tab.shape[1]
+        Nq = mea.quad_w.size
         data = dx_ref * self.form(mea.x, **extra_args) # (rdim, Ne, num_quad)
         rdim = data.shape[0]
-        data = data.reshape(-1, Nq) @ quad_tab[-1, :]
+        data = data.reshape(-1, Nq) @ mea.quad_w
         data = data.reshape(rdim, -1).sum(axis=1) # sum over all elements
         return data if data.size > 1 else data.item()
     
@@ -40,7 +39,7 @@ class LinearForm(Functional):
         for i in range(elem_dof.shape[0]):
             form_data = self.form(test_basis.data[i], mea.x, **extra_args) # (1, Ne, Nq)
             assert form_data.shape[0] == 1
-            vals[i] = dx_ref * (form_data[0] @ mea.quad_tab[-1,:]).reshape(-1) # (Ne,), reduce by quadrature
+            vals[i] = dx_ref * (form_data[0] @ mea.quad_w).reshape(-1) # (Ne,), reduce by quadrature
             rows[i] = elem_dof[i, mea.elem_ix]
         vec = np.bincount(rows.reshape(-1), weights=vals.reshape(-1), minlength=test_basis.fs.num_dof)
         return vec
@@ -65,7 +64,7 @@ class BilinearForm(Functional):
             for j in range(trial_elem_dof.shape[0]):
                 form_data = self.form(test_basis.data[i], trial_basis.data[j], mea.x, \
                                       **extra_args) # (1, Ne, Nq)
-                vals[i,j] = dx_ref * (form_data[0] @ mea.quad_tab[-1,:]).reshape(-1) # (Ne,), reduce by quadrature
+                vals[i,j] = dx_ref * (form_data[0] @ mea.quad_w).reshape(-1) # (Ne,), reduce by quadrature
                 rows[i,j] = test_elem_dof[i, test_basis.mea.elem_ix]
                 cols[i,j] = trial_elem_dof[j, trial_basis.mea.elem_ix]
         #

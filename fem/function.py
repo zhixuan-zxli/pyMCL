@@ -1,6 +1,5 @@
 from typing import Optional
 import numpy as np
-from .mesh import Mesh
 from .funcspace import FunctionSpace
 from .measure import Measure
 
@@ -71,8 +70,7 @@ class Function(np.ndarray):
     def _interpolate(self, mea: Measure) -> QuadData:
         assert self.fe.mesh is mea.mesh
         tdim, rdim = self.fe.elem.tdim, self.fe.elem.rdim
-        quad_tab = mea.quad_tab
-        Nq = quad_tab.shape[1]
+        Nq = mea.quad_w.size
         elem_dof = self.fe.elem_dof
         Ne = elem_dof.shape[1] if isinstance(mea.elem_ix, slice) else mea.elem_ix.size
         gdim = tdim if mea.x is None else mea.mesh.gdim
@@ -82,7 +80,7 @@ class Function(np.ndarray):
         if mea.dim == tdim:
             for i in range(elem_dof.shape[0]): # loop over each basis function
                 nodal = self.view(np.ndarray)[elem_dof[i, mea.elem_ix]] # (Ne, )
-                basis_data, grad_data = self.fe.elem._eval(i, quad_tab) # (rdim, Nq), (rdim, tdim, Nq)
+                basis_data, grad_data = self.fe.elem._eval(i, mea.quad_tab.T) # (rdim, Nq), (rdim, tdim, Nq)
                 # interpolate function values
                 data += nodal[np.newaxis,:,np.newaxis] * basis_data[:, np.newaxis, :] # (rdim, Ne, Nq)
                 # interpolate the gradients
@@ -92,18 +90,15 @@ class Function(np.ndarray):
                     grad_temp = np.einsum("ij...,jk...->ik...", grad_temp, mea.x.inv_grad)
                 grad += grad_temp
         elif mea.dim == tdim-1:
-            # transform the quadrature locations via facet_id here
-            quad_tab = self.fe.elem.ref_cell._broadcast_facet(quad_tab) # (tdim, num_facet, Nq)
-            # facet_id: (Nf, )
             for i in range(elem_dof.shape[0]):
-                nodal = self.view(np.ndarray)[elem_dof[i, mea.elem_ix]] # (Ne, )
+                nodal = self.view(np.ndarray)[elem_dof[i, mea.elem_ix]] # (Nf, )
                 # interpolate function values
-                basis_data, grad_data = self.fe.elem._eval(i, quad_tab.reshape(tdim, -1)) 
-                basis_data = basis_data.reshape(rdim, -1, Nq) # (rdim, num_facet, Nq)
-                data += nodal[np.newaxis,:,np.newaxis] * basis_data[:, mea.facet_id, :] # (rdim, Nf, Nq)
+                basis_data, grad_data = self.fe.elem._eval(i, mea.quad_tab.reshape(-1, tdim).T) 
+                basis_data = basis_data.reshape(rdim, -1, Nq) # (rdim, Nf, Nq)
+                data += nodal[np.newaxis,:,np.newaxis] * basis_data # (rdim, Nf, Nq)
                 # interpolate the gradients
-                grad_data = grad_data.reshape(rdim, tdim, -1, Nq)
-                grad_temp = nodal[np.newaxis,np.newaxis,:,np.newaxis] * grad_data[:,:,mea.facet_id,:] # (rdim, tdim, Nf, Nq)
+                grad_data = grad_data.reshape(rdim, tdim, -1, Nq) # (rdim, tdim, Nf, Nq)
+                grad_temp = nodal[np.newaxis,np.newaxis,:,np.newaxis] * grad_data # (rdim, tdim, Nf, Nq)
                 if mea.x is not None:
                     grad_temp = np.einsum("ij...,jk...->ik...", grad_temp, mea.x.inv_grad) # (rdim, gdim, Nf, Nq)
                 grad += grad_temp

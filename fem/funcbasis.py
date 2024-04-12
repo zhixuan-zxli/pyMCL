@@ -21,8 +21,7 @@ class FunctionBasis:
 
     def update(self) -> None:
         mea = self.mea
-        quad_tab = mea.quad_tab
-        Nq = quad_tab.shape[1]
+        Nq = self.mea.quad_w.size
         tdim, rdim = self.fs.elem.tdim, self.fs.elem.rdim
         num_local_dof = self.fs.elem.num_local_dof
         assert mea.mesh is self.fs.mesh
@@ -30,7 +29,7 @@ class FunctionBasis:
         #
         if mea.dim == tdim:
             for i in range(num_local_dof):
-                u, du = self.fs.elem._eval(i, quad_tab)
+                u, du = self.fs.elem._eval(i, self.mea.quad_tab.T)
                 # u: (rdim, Nq)
                 # du: (rdim, tdim, Nq)
                 data = QuadData(u.reshape(rdim, 1, Nq)) # (rdim, 1, Nq)
@@ -39,14 +38,13 @@ class FunctionBasis:
                 self.data.append(data)
         #
         elif mea.dim == tdim-1:
-            quad_tab = self.fs.elem.ref_cell._broadcast_facet(quad_tab) # (tdim, num_facet, Nq)
             for i in range(num_local_dof):
-                u, du = self.fs.elem._eval(i, quad_tab.reshape(tdim, -1))
-                # u: (rdim, num_facet * Nq)
-                # du: (rdim, tdim, num_facet * Nq)
+                u, du = self.fs.elem._eval(i, self.mea.quad_tab.reshape(-1, tdim).T)
+                # u: (rdim, Nf * Nq)
+                # du: (rdim, tdim, Nf * Nq)
                 # facet_id: (Nf*, )
-                data = QuadData(u.reshape(rdim, -1, Nq)[:, mea.facet_id, :]) # (rdim, Nf*, Nq)
-                du = du.reshape(rdim, tdim, -1, Nq)[:,:,mea.facet_id,:] # (rdim, tdim, Nf*, Nq)
+                data = QuadData(u.reshape(rdim, -1, Nq)) # (rdim, Nf*, Nq)
+                du = du.reshape(rdim, tdim, -1, Nq) # (rdim, tdim, Nf*, Nq)
                 data.grad = np.einsum("ij...,jk...->ik...", du, mea.x.inv_grad)
                 self.data.append(data)
         #
