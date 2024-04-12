@@ -137,7 +137,7 @@ if __name__ == "__main__":
 
     free_dof = group_dof(mixed_fs, (np.concatenate((top_dof, bot_vert_dof)), np.array((0,)), np.array((0,)), cl_vert_dof, None))
         
-    Y_fix_dof = np.unique(Y_fs.getFacetDof())
+    Y_fix_dof = np.unique(Y_fs.getFacetDof((3, 4, 5, 6, 7, 8)))
     Y_bot_dof = np.unique(Y_fs.getFacetDof((4, 5)))
     Y_int_dof = np.unique(Y_fs.getFacetDof((3,)))
 
@@ -190,7 +190,7 @@ if __name__ == "__main__":
         ds_i = Measure(mesh, 1, order=3, tags=(3, ))
         ds_bot = Measure(mesh, 1, order=3, tags=(4,5))
         ds = Measure(i_mesh, 1, order=3)
-        dp = Measure(i_mesh, 0, order=1)
+        dp = Measure(i_mesh, 0, order=1, tags=(9, ))
 
         u_basis = FunctionBasis(mixed_fs[0], dx)
         p1_basis = FunctionBasis(mixed_fs[1], dx)
