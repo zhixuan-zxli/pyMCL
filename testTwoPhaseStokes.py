@@ -95,7 +95,7 @@ class PhysicalParameters:
 
 class SolverParemeters:
     dt: float = 1.0/1024
-    Te: float = 1.0/8
+    Te: float = 1.0/4
     startStep: int = 0
     stride: int = 1
     numChekpoint: int = 0
@@ -179,7 +179,7 @@ if __name__ == "__main__":
         # visualization
         if solp.vis:
             ax.clear()
-            # pyplot.tripcolor(mesh.coord_map[:,0], mesh.coord_map[:,1], facecolors=mesh.cell[2][:,-1], triangles=mesh.cell[2][:,:-1])
+            pyplot.tripcolor(mesh.coord_map[::2], mesh.coord_map[1::2], mesh.cell_tag[2], triangles=triangles)
             pyplot.triplot(mesh.coord_map[::2], mesh.coord_map[1::2], triangles=triangles)
             ax.axis("equal")
             pyplot.draw()
@@ -270,6 +270,6 @@ if __name__ == "__main__":
         np.copyto(i_mesh.coord_map, x)
     # end time loop
 
+    print("Finished.")
     pyplot.ioff()
     pyplot.show()
-    print("Finished.")
