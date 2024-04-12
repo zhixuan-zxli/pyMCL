@@ -4,7 +4,7 @@ from .refdom import RefNode, RefLine, RefTri
 class Quadrature:
 
     _node = (
-        np.array((0.,)), 
+        np.array(((1.,),)), 
         np.array((1., )), 
     )
 

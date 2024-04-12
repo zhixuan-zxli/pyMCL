@@ -99,6 +99,7 @@ class Measure:
                 local_x[:,i,1] = _a(verts[0], verts[1], loc) / denom
         else:
             raise NotImplementedError
+        assert local_x.min() > -1e-3 and local_x.sum(axis=2).max() < 1.0+1e-3
         return local_x
 
 
