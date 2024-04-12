@@ -21,7 +21,6 @@ class FunctionSpace:
     
     num_dof: int
 
-
     def __init__(self, mesh: Mesh, elem: Element, constraint: Optional[callable] = None) -> None:
         self.mesh = mesh
         self.elem = elem
@@ -30,13 +29,17 @@ class FunctionSpace:
         assert mesh.tdim == tdim
         elem_cell = mesh.cell[tdim]
         num_elem = elem_cell.shape[0]
-        facet_cell = mesh.cell[tdim-1]
-        num_facet = facet_cell.shape[0]
 
         self.dof_loc = np.zeros((0, mesh.gdim))
         self.dof_group = dict()
         self.elem_dof = np.zeros((0, num_elem), dtype=np.int32)
-        self.facet_dof = np.zeros((0, num_facet), dtype=np.int32)
+
+        if tdim > 0:
+            facet_cell = mesh.cell[tdim-1][mesh.cell_tag[tdim-1] != 99] # exclude the interior facets
+            num_facet = facet_cell.shape[0]
+            self.facet_dof = np.zeros((0, num_facet), dtype=np.int32)
+        else:
+            self.facet_dof = np.zeros((0, 0), dtype=np.int32)
 
         # Build the dof for entities of each dimension. 
         offset = 0
@@ -45,19 +48,8 @@ class FunctionSpace:
                 assert elem.dof_name[d] is None
                 continue
 
-            # 1. calculate the dof locations
-            num_dof_loc = elem.dof_loc[d].shape[0]
-            sub_ent = elem.ref_cell._get_sub_entities(elem_cell, dim=d) # (Ne, num_sub_ent, d+1)
-            num_sub_ent = num_elem * sub_ent.shape[1]
-            rows = np.broadcast_to(np.arange(num_sub_ent, dtype=np.int32)[:,np.newaxis], (num_sub_ent, d+1))
-            vals = np.zeros((num_sub_ent, d+1))
-            coo = coo_array((vals.reshape(-1), (rows.reshape(-1), sub_ent.reshape(-1))), \
-                            shape=(num_sub_ent, mesh.point.shape[0]))
-            all_locs = np.zeros((0, mesh.gdim)) # eventually (num_dof_loc * num_total_sub_ent, gdim)
-            for loc in elem.dof_loc[d]:
-                coo.data = np.broadcast_to(loc[np.newaxis], (num_sub_ent, d+1)).reshape(-1)
-                all_locs = np.vstack((all_locs, coo @ mesh.point))
-            
+            num_dof_loc = self.elem.dof_loc[d].shape[0]
+            all_locs = self._calculate_dof_locations(d, tdim, elem_cell)
             if constraint is not None:
                 constraint(all_locs)
 
@@ -86,16 +78,7 @@ class FunctionSpace:
             
             # 3. Find the dof number for the facet dofs. 
             if d < tdim and num_facet > 0:
-                sub_ent = ref_doms[tdim-1]._get_sub_entities(facet_cell, dim=d) # (Nf, num_sub_ent, d+1)
-                num_sub_ent = num_facet * sub_ent.shape[1]
-                rows = np.broadcast_to(np.arange(num_sub_ent, dtype=np.int32)[:,np.newaxis], (num_sub_ent, d+1))
-                vals = np.zeros((num_sub_ent, d+1))
-                coo = coo_array((vals.reshape(-1), (rows.reshape(-1), sub_ent.reshape(-1))), \
-                                shape=(num_sub_ent, mesh.point.shape[0]))
-                all_locs = np.zeros((0, mesh.gdim)) # eventually (num_dof_loc * num_sub_ent, gdim)
-                for loc in elem.dof_loc[d]:
-                    coo.data = np.broadcast_to(loc[np.newaxis], (num_sub_ent, d+1)).reshape(-1)
-                    all_locs = np.vstack((all_locs, coo @ mesh.point))
+                all_locs = self._calculate_dof_locations(d, tdim-1, facet_cell)
                 if constraint is not None:
                     constraint(all_locs)
                     
@@ -109,16 +92,34 @@ class FunctionSpace:
 
             # end for dof_name
             offset += num_new_dof * num_dof_type
+        
         # end for d
         assert elem.num_local_dof == self.elem_dof.shape[0]
         assert offset == self.dof_loc.shape[0]
         self.num_dof = offset
+    
+
+    def _calculate_dof_locations(self, d: int, tdim: int, elem_cell: np.ndarray) -> np.ndarray:
+        # 1. calculate the dof locations
+        sub_ent = ref_doms[tdim]._get_sub_entities(elem_cell, dim=d) # (Ne, num_sub_ent, d+1)
+        num_elem = elem_cell.shape[0]
+        num_total_ent = num_elem * sub_ent.shape[1]
+        rows = np.broadcast_to(np.arange(num_total_ent, dtype=np.int32)[:,np.newaxis], (num_total_ent, d+1))
+        vals = np.zeros((num_total_ent, d+1))
+        coo = coo_array((vals.reshape(-1), (rows.reshape(-1), sub_ent.reshape(-1))), \
+                        shape=(num_total_ent, self.mesh.point.shape[0]))
+        all_locs = np.zeros((0, self.mesh.gdim)) # eventually (num_dof_loc * num_total_ent, gdim)
+        for loc in self.elem.dof_loc[d]:
+            coo.data = np.broadcast_to(loc[np.newaxis], (num_total_ent, d+1)).reshape(-1)
+            all_locs = np.vstack((all_locs, coo @ self.mesh.point))
+        return all_locs
 
     def getFacetDof(self, tags: Optional[tuple[int]] = None) -> np.ndarray:
         if tags is None:
             flag = slice(None)
         else:
             facet_tag = self.mesh.cell_tag[self.mesh.tdim-1]
+            facet_tag = facet_tag[facet_tag != 99]
             flag = np.zeros((facet_tag.shape[0], ), dtype=np.bool8)
             for t in tags:
                 flag[facet_tag == t] = True
