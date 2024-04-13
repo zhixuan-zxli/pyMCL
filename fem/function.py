@@ -40,18 +40,26 @@ class QuadData(np.ndarray):
     def __array_wrap__(self, out_arr, context=None):
         # invalidate the attributes
         return np.array(out_arr)
-    
+
     def sides(self) -> tuple["QuadData", "QuadData"]:
         Nf = self.shape[2]
         assert Nf % 2 == 0
         assert self.ds is not None, "Cannot get sides on an element. "
         u1, u2 = QuadData(self[:,:Nf,:]), QuadData(self[:,Nf:,:])
         u1.grad, u2.grad = np.split(self.grad, 2, axis=2)
-        u1.dx, u2.dx = np.split(self.dx, 2, axis=1)
+        if self.dx is not None:
+            u1.dx, u2.dx = np.split(self.dx, 2, axis=1)
         if self.cn is not None:
             u1.cn, u2.cn = np.split(self.cn, 2, axis=1)
-        u1.fn, u2.fn = np.split(self.fn, 2, axis=1)
-        u1.ds, u2.ds = np.split(self.ds, 2, axis=1)
+        if self.fn is not None:
+            u1.fn, u2.fn = np.split(self.fn, 2, axis=1)
+        if self.ds is not None:
+            u1.ds, u2.ds = np.split(self.ds, 2, axis=1)
+        # omit inv_grad
+        return u1, u2
+
+
+# ===============================================================================
 
 
 class Function(np.ndarray):
@@ -84,7 +92,7 @@ class Function(np.ndarray):
         tdim, rdim = self.fe.elem.tdim, self.fe.elem.rdim
         Nq = mea.quad_w.size
         elem_dof = self.fe.elem_dof
-        Ne = elem_dof.shape[1] if isinstance(mea.elem_ix, slice) else mea.elem_ix.size
+        Ne = elem_dof.shape[1] if isinstance(mea.elem_ix, slice) else mea.elem_ix.size # Ne, or n * Nf
         gdim = tdim if mea.x is None else mea.mesh.gdim
         data = np.zeros((rdim, Ne, Nq))
         grad = np.zeros((rdim, gdim, Ne, Nq))
@@ -103,16 +111,16 @@ class Function(np.ndarray):
                 grad += grad_temp
         elif mea.dim == tdim-1:
             for i in range(elem_dof.shape[0]):
-                nodal = self.view(np.ndarray)[elem_dof[i, mea.elem_ix]] # (Nf, )
+                nodal = self.view(np.ndarray)[elem_dof[i, mea.elem_ix]] # (n*Nf, )
                 # interpolate function values
                 basis_data, grad_data = self.fe.elem._eval(i, mea.quad_tab.reshape(-1, tdim).T) 
-                basis_data = basis_data.reshape(rdim, -1, Nq) # (rdim, Nf, Nq)
-                data += nodal[np.newaxis,:,np.newaxis] * basis_data # (rdim, Nf, Nq)
+                basis_data = basis_data.reshape(rdim, -1, Nq) # (rdim, n*Nf, Nq)
+                data += nodal[np.newaxis,:,np.newaxis] * basis_data # (rdim, n*Nf, Nq)
                 # interpolate the gradients
-                grad_data = grad_data.reshape(rdim, tdim, -1, Nq) # (rdim, tdim, Nf, Nq)
-                grad_temp = nodal[np.newaxis,np.newaxis,:,np.newaxis] * grad_data # (rdim, tdim, Nf, Nq)
+                grad_data = grad_data.reshape(rdim, tdim, -1, Nq) # (rdim, tdim, n*Nf, Nq)
+                grad_temp = nodal[np.newaxis,np.newaxis,:,np.newaxis] * grad_data # (rdim, tdim, n*Nf, Nq)
                 if mea.x is not None:
-                    grad_temp = np.einsum("ij...,jk...->ik...", grad_temp, mea.x.inv_grad) # (rdim, gdim, Nf, Nq)
+                    grad_temp = np.einsum("ij...,jk...->ik...", grad_temp, mea.x.inv_grad) # (rdim, gdim, n*Nf, Nq)
                 grad += grad_temp
         else:
             raise RuntimeError("Incorrect measure dimension")

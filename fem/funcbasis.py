@@ -40,11 +40,10 @@ class FunctionBasis:
         elif mea.dim == tdim-1:
             for i in range(num_local_dof):
                 u, du = self.fs.elem._eval(i, self.mea.quad_tab.reshape(-1, tdim).T)
-                # u: (rdim, Nf * Nq)
-                # du: (rdim, tdim, Nf * Nq)
-                # facet_id: (Nf*, )
-                data = QuadData(u.reshape(rdim, -1, Nq)) # (rdim, Nf*, Nq)
-                du = du.reshape(rdim, tdim, -1, Nq) # (rdim, tdim, Nf*, Nq)
+                # u: (rdim, n*Nf * Nq)
+                # du: (rdim, tdim, n*Nf * Nq)
+                data = QuadData(u.reshape(rdim, -1, Nq)) # (rdim, n*Nf, Nq)
+                du = du.reshape(rdim, tdim, -1, Nq) # (rdim, tdim, n*Nf, Nq)
                 data.grad = np.einsum("ij...,jk...->ik...", du, mea.x.inv_grad)
                 self.data.append(data)
         #

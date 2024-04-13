@@ -9,6 +9,7 @@ class Measure:
     
     mesh: Mesh
     dim: int
+    interiorFacet:bool
     elem_ix: Union[np.ndarray, slice] # the element indices involved
     facet_ix: np.ndarray # the facet indices of a surface measure
     facet_id: np.ndarray # the facet if within an element, for a surface measure
@@ -30,6 +31,7 @@ class Measure:
         """
         self.mesh = mesh
         self.dim = dim
+        self.interiorFacet = interiorFacet
         self.quad_tab, self.quad_w = Quadrature.getTable(ref_doms[dim], order)
         # 1. Volume measure
         if dim == mesh.tdim:
@@ -67,8 +69,9 @@ class Measure:
             facet_entities = ref_doms[dim]._get_sub_entities(mesh.cell[dim][self.facet_ix], dim=dim) # (Nf, 1, dim+1)
             quad_locs = _calculate_dof_locations(mesh, facet_entities, self.quad_tab) # (Nq * Nf, gdim)
             quad_locs = quad_locs.reshape(self.quad_w.size, -1, mesh.gdim) # (Nq, Nf, gdim)
-            # transform to local barycentric coordinates: (Nf, Nq, tdim)
-            self.quad_tab = self._global_to_local(quad_locs)
+            quad_locs = np.tile(quad_locs, (1, n, 1)) # (Nq, n*Nf, gdim)
+            # transform to local barycentric coordinates
+            self.quad_tab = self._global_to_local(quad_locs) # (n*Nf, Nq, tdim)
         else:
             raise RuntimeError("This measure is neither a volume measure nor a surface measure.")
         #
@@ -104,6 +107,12 @@ class Measure:
 
 
     def update(self) -> None:
+        """
+        Update the quadrature data for this measure, 
+        including the coordinates, the transformation gradient and its inverse, and the cell normal. 
+        If the measure is a surface one, 
+        update also the facet normal and the surface Jacobian. 
+        """
         self.x = None
         temp = self.mesh.coord_map._interpolate(self)
         self.x = temp
