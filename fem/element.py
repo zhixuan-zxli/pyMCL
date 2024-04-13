@@ -177,6 +177,30 @@ class TriP1(TriElement):
             basis = y
             grad = np.vstack((np.zeros_like(x), np.ones_like(y)))
         return basis[np.newaxis,:], grad[np.newaxis, :, :]
+    
+class TriDG1(TriElement):
+
+    rdim: int = 1
+    degree: int = 1
+    dof_name: tuple[tuple[str]] = (
+        None, # node
+        None, # edge
+        ('u', ), # tri
+    )
+    dof_loc: tuple[np.ndarray] = (
+        None, # node
+        None, # edge
+        np.array((
+            (0., 0., 1.0),
+            (1., 0., 0.), 
+            (0., 1., 0.)
+        )) # tri
+    )
+    num_local_dof: int = 3
+
+    @staticmethod
+    def _eval(basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]:
+        return TriP1._eval(basis_id, qpts)
 
 class TriP2(TriElement):
 

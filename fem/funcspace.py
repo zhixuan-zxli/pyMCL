@@ -48,17 +48,20 @@ class FunctionSpace:
             if elem_dof_loc is None:
                 assert elem.dof_name[d] is None
                 continue
+            # 1. calculate and match the dof locations. 
             num_dof_loc = elem_dof_loc.shape[0]
-
             all_locs = _calculate_dof_locations(mesh, ref_doms[tdim]._get_sub_entities(elem_cell, dim=d), elem_dof_loc)
-            if constraint is not None:
-                constraint(all_locs)
-
-            # match the dof locations
-            _, fw_idx, inv_idx = np.unique(all_locs.round(decimals=10), return_index=True, return_inverse=True, axis=0)
-            # the magic number 10 here may not be robust enough ^
-            uq_locs = all_locs[fw_idx] # to get rid off the rounding effect
-            inv_idx = inv_idx.astype(np.int32)
+            
+            if d < tdim: # match the dof locations if not element dofs
+                if constraint is not None:
+                    constraint(all_locs)
+                _, fw_idx, inv_idx = np.unique(all_locs.round(decimals=10), return_index=True, return_inverse=True, axis=0)
+                # the magic number 10 here may not be robust enough ^
+                uq_locs = all_locs[fw_idx] # to get rid off the rounding effect
+                inv_idx = inv_idx.astype(np.int32)
+            else: # keep all the element dofs
+                uq_locs = all_locs
+                inv_idx = np.arange(all_locs.shape[0], dtype=np.int32)
             # inv_idx: (num_dof_loc * num_total_sub_ent, )
 
             # 2. Broadcast to multiple dof types; save the dof locations
@@ -77,7 +80,7 @@ class FunctionSpace:
             new_elem_dof = offset + new_elem_dof * num_dof_name + np.arange(num_dof_name).reshape(1, 1, -1, 1) # (num_dof_loc, num_sub_ent, num_dof_type, num_elem)
             self.elem_dof = np.vstack((self.elem_dof, new_elem_dof.reshape(-1, num_elem))) 
             
-            # 3. Find the dof number for the facet dofs. 
+            # 3. Find the dof number for the facet dofs; does not work for element dofs on facets!
             if d < tdim and num_facet > 0:
                 all_locs = _calculate_dof_locations(mesh, ref_doms[tdim-1]._get_sub_entities(facet_cell, dim=d), elem_dof_loc)
                 if constraint is not None:
@@ -91,9 +94,7 @@ class FunctionSpace:
                 new_facet_dof = offset + new_facet_dof * num_dof_name + np.arange(num_dof_name).reshape(1, 1, -1, 1) # (num_dof_loc, num_sub_ent, num_dof_type, num_facet)
                 self.facet_dof = np.vstack((self.facet_dof, new_facet_dof.reshape(-1, num_facet)))
 
-            # end for dof_name
             offset += num_new_dof * num_dof_name
-        
         # end for d
         assert elem.num_local_dof == self.elem_dof.shape[0]
         assert offset == self.dof_loc.shape[0]
