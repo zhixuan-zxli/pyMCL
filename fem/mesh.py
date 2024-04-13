@@ -5,6 +5,8 @@ from .refdom import ref_doms
 from tools.binsearchkw import binsearchkw
 from matplotlib import pyplot
 
+INTERIOR_FACET_TAG: int = 99
+
 class Mesh:
 
     gdim: int
@@ -97,7 +99,7 @@ class Mesh:
         if self.tdim >= 2:
             self.cell[self.tdim-1][sub_idx[orientation], :2] = self.cell[self.tdim-1][sub_idx[orientation], 1::-1]
         old_tags = self.cell_tag[self.tdim-1]
-        self.cell_tag[self.tdim-1] = 99 * np.ones((Nf, ), dtype=np.int32)
+        self.cell_tag[self.tdim-1] = INTERIOR_FACET_TAG * np.ones((Nf, ), dtype=np.int32)
         self.cell_tag[self.tdim-1][sub_idx] = old_tags
         # fix the facet orientation
         tags = self.cell_tag[self.tdim][self.facet_ref[:,0]] # (2, num_facet)

@@ -1,7 +1,7 @@
 from typing import Optional
 import numpy as np
 from scipy.sparse import coo_array
-from .mesh import Mesh
+from .mesh import Mesh, INTERIOR_FACET_TAG
 from .refdom import ref_doms
 from .element import Element
 from tools.binsearchkw import binsearchkw
@@ -35,7 +35,7 @@ class FunctionSpace:
         self.elem_dof = np.zeros((0, num_elem), dtype=np.int32)
 
         if tdim > 0:
-            facet_cell = mesh.cell[tdim-1][mesh.cell_tag[tdim-1] != 99] # exclude the interior facets
+            facet_cell = mesh.cell[tdim-1][mesh.cell_tag[tdim-1] != INTERIOR_FACET_TAG] # exclude the interior facets
             num_facet = facet_cell.shape[0]
             self.facet_dof = np.zeros((0, num_facet), dtype=np.int32)
         else:
