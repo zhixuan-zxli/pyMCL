@@ -40,6 +40,18 @@ class QuadData(np.ndarray):
     def __array_wrap__(self, out_arr, context=None):
         # invalidate the attributes
         return np.array(out_arr)
+    
+    def sides(self) -> tuple["QuadData", "QuadData"]:
+        Nf = self.shape[2]
+        assert Nf % 2 == 0
+        assert self.ds is not None, "Cannot get sides on an element. "
+        u1, u2 = QuadData(self[:,:Nf,:]), QuadData(self[:,Nf:,:])
+        u1.grad, u2.grad = np.split(self.grad, 2, axis=2)
+        u1.dx, u2.dx = np.split(self.dx, 2, axis=1)
+        if self.cn is not None:
+            u1.cn, u2.cn = np.split(self.cn, 2, axis=1)
+        u1.fn, u2.fn = np.split(self.fn, 2, axis=1)
+        u1.ds, u2.ds = np.split(self.ds, 2, axis=1)
 
 
 class Function(np.ndarray):
