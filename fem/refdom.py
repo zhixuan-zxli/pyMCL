@@ -4,6 +4,8 @@ class RefCell:
     tdim: int
     dx: float
     facet_normal: np.ndarray # (num_facet, tdim)
+    # Caution: this is not the unit normal on the reference domain, 
+    # but the unit normal scaled by (the surface area / area of the standard simplex). 
 
     @staticmethod
     def _get_sub_entities(elem_cell: np.ndarray, dim: int) -> np.ndarray:
@@ -45,7 +47,7 @@ class RefTri(RefCell):
     dx: float = 1.0/2
     facet_normal: np.ndarray = np.array(
         ((0.0, -1.0), 
-         (0.7071067811865475, 0.7071067811865475), 
+         (1.0, 1.0), 
          (-1.0, 0.0))
     )
 
