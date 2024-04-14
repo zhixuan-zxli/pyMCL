@@ -63,8 +63,7 @@ class BilinearForm(Functional):
             vals = np.empty((test_elem_dof.shape[0], trial_elem_dof.shape[0], test_Ne))
             for i in range(test_elem_dof.shape[0]):
                 for j in range(trial_elem_dof.shape[0]):
-                    form_data = self.form(test_basis.data[i], trial_basis.data[j], mea.x, \
-                                        **extra_args) # (1, Ne, Nq)
+                    form_data = self.form(test_basis.data[i], trial_basis.data[j], mea.x, **extra_args) # (1, Ne, Nq)
                     vals[i,j] = dx_ref * (form_data[0] @ mea.quad_w).reshape(-1) # (Ne,), reduce by quadrature
                     rows[i,j] = test_elem_dof[i, test_basis.mea.elem_ix]
                     cols[i,j] = trial_elem_dof[j, trial_basis.mea.elem_ix]
@@ -73,7 +72,7 @@ class BilinearForm(Functional):
             assert test_Ne % 2 == 0
             Nf = test_Ne // 2
             rows = np.empty((test_elem_dof.shape[0], trial_elem_dof.shape[0], 2, 2, Nf), dtype=np.int32)
-            rows = np.empty((test_elem_dof.shape[0], trial_elem_dof.shape[0], 2, 2, Nf), dtype=np.int32)
+            cols = np.empty((test_elem_dof.shape[0], trial_elem_dof.shape[0], 2, 2, Nf), dtype=np.int32)
             vals = np.empty((test_elem_dof.shape[0], trial_elem_dof.shape[0], 2, 2, Nf))
             x_sides = mea.x.sides()
             for i in range(test_elem_dof.shape[0]):
@@ -81,7 +80,7 @@ class BilinearForm(Functional):
                 for j in range(trial_elem_dof.shape[0]):
                     u_sides = trial_basis.data[j].sides()
                     for m, n in (0,0), (0,1), (1,0), (1,1):
-                        form_data = self.form(v_sides[m], u_sides[n], x_sides[m], x_sides[n], **extra_args) # (1, Ne, Nq)
+                        form_data = self.form(v_sides[m], u_sides[n], x_sides[m], x_sides[n], **extra_args) # (1, Nf, Nq)
                         vals[i,j,m,n] = dx_ref * (form_data[0] @ mea.quad_w).reshape(-1) # (Nf,), reduce by quadrature
                         rows[i,j,m,n] = test_elem_dof[i, test_basis.mea.elem_ix.reshape(2,-1)[m]]
                         cols[i,j,m,n] = trial_elem_dof[j, trial_basis.mea.elem_ix.reshape(2,-1)[n]]

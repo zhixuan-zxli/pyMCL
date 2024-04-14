@@ -42,9 +42,8 @@ class QuadData(np.ndarray):
         return np.array(out_arr)
 
     def sides(self) -> tuple["QuadData", "QuadData"]:
-        Nf = self.shape[2]
-        assert Nf % 2 == 0
-        assert self.ds is not None, "Cannot get sides on an element. "
+        assert self.shape[1] % 2 == 0
+        Nf = self.shape[1] // 2
         u1, u2 = QuadData(self[:,:Nf,:]), QuadData(self[:,Nf:,:])
         u1.grad, u2.grad = np.split(self.grad, 2, axis=2)
         if self.dx is not None:
