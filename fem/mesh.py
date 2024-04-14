@@ -65,7 +65,7 @@ class Mesh:
             else:
                 raise RuntimeError("Unrecognized cell type. ")
         # assign the 0-th dim cells to be the tagged nodes
-        self.cell[0] = np.nonzero(self.point_tag)[0].reshape(-1, 1)
+        self.cell[0] = np.nonzero(self.point_tag)[0].reshape(-1, 1).astype(np.int32)
         self.cell_tag[0] = self.point_tag[self.cell[0]].reshape(-1)
 
         # 3. build the facets. 

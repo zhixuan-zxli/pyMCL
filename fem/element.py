@@ -88,7 +88,25 @@ class LineP1(LineElement):
         elif basis_id == 1:
             basis = x
             grad = np.ones_like(x)
-        return basis.reshape(1, -1), grad[np.newaxis, np.newaxis, :]
+        return basis[np.newaxis], grad[np.newaxis, np.newaxis, :]
+    
+class LineDG1(LineElement):
+
+    rdim: int = 1
+    degree: int = 1
+    dof_name: tuple[tuple[str]] = (
+        None, # edge
+        ('u', ), # node
+    )
+    dof_loc: tuple[np.ndarray] = (
+        None, # edge
+        np.array(((1.0, 0.0), (0.0, 1.0))), # node
+    )
+    num_local_dof: int = 2
+
+    @staticmethod
+    def _eval(basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]: 
+        return LineP1._eval(basis_id, qpts)
 
 class LineP2(LineElement):
     
@@ -117,6 +135,24 @@ class LineP2(LineElement):
             basis = -4.0 * x * (x-1.0)
             grad = 4.0 - 8.0*x
         return basis[np.newaxis, :], grad[np.newaxis, np.newaxis, :]
+    
+class LineDG2(LineElement):
+    
+    rdim: int = 1
+    degree: int = 2
+    dof_name: tuple[tuple[str]] = (
+        None, # node
+        ('u', ), # edge
+    )
+    dof_loc: tuple[np.ndarray] = (
+        None, # node
+        np.array(((1.0, 0.0), (0.0, 1.0), (0.5, 0.5))), # edge
+    )
+    num_local_dof: int = 3
+
+    @staticmethod
+    def _eval(basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]: 
+        return LineP2._eval(basis_id, qpts)
 
 # =====================================================================
 # Triangular elements
