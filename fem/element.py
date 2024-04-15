@@ -11,6 +11,8 @@ class Element:
     # of length tdim+1; the t-th tuple is of length num_dof_loc[t], with dof names therein
     dof_loc: tuple[np.ndarray] 
     # of length tdim+1; the t-th array is (num_dof_loc[t], t+1)
+    # Caution: these are not the coordinates in the standard simplex; 
+    # they are the linear combination coefficients of the nodes. 
     num_local_dof: int
     
     @staticmethod
@@ -227,9 +229,9 @@ class TriDG1(TriElement):
         None, # node
         None, # edge
         np.array((
-            (0., 0., 1.0),
-            (1., 0., 0.), 
-            (0., 1., 0.)
+            (1., 0., 0.),
+            (0., 1., 0.), 
+            (0., 0., 1.)
         )) # tri
     )
     num_local_dof: int = 3
@@ -292,12 +294,12 @@ class TriDG2(TriElement):
         None, # node
         None, # edge
         np.array((
-            (0., 0., 1.0),
-            (1., 0., 0.), 
+            (1., 0., 0.),
             (0., 1., 0.), 
-            (1.0/2, 0., 1.0/2), 
+            (0., 0., 1.), 
             (1.0/2, 1.0/2, 0.), 
             (0., 1.0/2, 1.0/2), 
+            (1.0/2., 0., 1.0/2), 
         )) # tri
     )
     num_local_dof: int = 6
