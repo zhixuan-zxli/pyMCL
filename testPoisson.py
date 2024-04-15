@@ -1,3 +1,4 @@
+from sys import argv
 import numpy as np
 from fem import *
 from scipy.sparse import bmat
@@ -70,7 +71,7 @@ def l_nitsche(v: QuadData, x: QuadData) -> np.ndarray:
 
 if __name__ == "__main__":
 
-    test_element = TriP1
+    test_element = (TriP2, TriDG2) if len(argv) >= 2 and int(argv[1]) == 2 else (TriP1, TriDG1)
     num_hier = 3
     mesh_table = tuple(f"{i}" for i in range(num_hier))
     error_tab_D = {"infty" : [0.0] * num_hier, "L2" : [0.0] * num_hier}
@@ -93,7 +94,7 @@ if __name__ == "__main__":
 
         # ==================================================
         # 1. test Dirichlet condition
-        fs = FunctionSpace(mesh, test_element)
+        fs = FunctionSpace(mesh, test_element[0])
         dx = Measure(mesh, 2, order=3)
         u_basis = FunctionBasis(fs, dx)
 
@@ -142,7 +143,7 @@ if __name__ == "__main__":
         
         # ==================================================
         # 3. test periodic condition
-        fs = FunctionSpace(mesh, test_element, constraint=constraint)
+        fs = FunctionSpace(mesh, test_element[0], constraint=constraint)
         # dx remains unchanged
         u_basis = FunctionBasis(fs, dx)
 
@@ -169,25 +170,23 @@ if __name__ == "__main__":
 
         # ==================================================
         # 4. test DG
-        # fs = FunctionSpace(mesh, TriDG1)
-        fs = FunctionSpace(mesh, test_element)
-        # dx remains unchanged
-        # dS = Measure(mesh, 1, order=3, tags=(INTERIOR_FACET_TAG, ), interiorFacet=True)
-        # ds remains unchanged
+        fs = FunctionSpace(mesh, test_element[1])
+        dx = Measure(mesh, 2, order=3)
+        dS = Measure(mesh, 1, order=5, tags=(INTERIOR_FACET_TAG, ), interiorFacet=True)
+        ds = Measure(mesh, 1, order=5, tags=(2, 3, 4, 5))
         u_basis = FunctionBasis(fs, dx)
-        # u_i_basis = FunctionBasis(fs, dS)
+        u_i_basis = FunctionBasis(fs, dS)
         u_s_basis = FunctionBasis(fs, ds)
 
         A = a.assemble(u_basis, u_basis, dx)
-        # A_DG = a_DG.assemble(u_i_basis, u_i_basis, dS)
+        A_DG = a_DG.assemble(u_i_basis, u_i_basis, dS)
         A_n = a_nitsche.assemble(u_s_basis, u_s_basis, ds)
         L = l.assemble(u_basis, dx)
         L_n = l_nitsche.assemble(u_s_basis, ds)
 
         # solve the linear system
         u = Function(fs)
-        u[:] = spsolve(A + A_n, L + L_n)
-        # u[:] = spsolve(A + A_DG + A_n, L + L_n)
+        u[:] = spsolve(A + A_DG + A_n, L + L_n)
 
         # calculate the error
         u_err = Function(fs)
@@ -197,12 +196,12 @@ if __name__ == "__main__":
         error_tab_DG["L2"][m] = np.sqrt(L2.assemble(dx, u=u_err._interpolate(dx)))
         print('.')
 
-    print(Fore.GREEN + "Dirichlet problem: " + Style.RESET_ALL)
+    print(Fore.GREEN + "Dirichlet condition: " + Style.RESET_ALL)
     printConvergenceTable(mesh_table, error_tab_D)
-    print(Fore.GREEN + "\nNeumann problem: " + Style.RESET_ALL)
+    print(Fore.GREEN + "\nNeumann condition: " + Style.RESET_ALL)
     printConvergenceTable(mesh_table, error_tab_N)
-    print(Fore.GREEN + "\nPeriodic problem: " + Style.RESET_ALL)
+    print(Fore.GREEN + "\nPeriodic condition: " + Style.RESET_ALL)
     printConvergenceTable(mesh_table, error_tab_P)
-    print(Fore.GREEN + "Discontinuous Galerkin: " + Style.RESET_ALL)
+    print(Fore.GREEN + "Symmetric Interior Penalty Galerkin (SIPG): " + Style.RESET_ALL)
     printConvergenceTable(mesh_table, error_tab_DG)
     
