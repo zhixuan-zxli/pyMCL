@@ -58,7 +58,7 @@ if __name__ == "__main__":
     # setMeshMapping(cl_mesh)
 
     sheet_def_space = FunctionSpace(s_mesh, VectorElement(LineP2, 2))
-    sheet_grad_space = FunctionSpace(s_mesh, VectorElement(LineP1, 2))
+    sheet_grad_space = s_mesh.coord_fe # type: FunctionSpace # should be FunctionSpace(s_mesh, VectorElement(LineP1, 2))
     q_k = Function(sheet_def_space)
     q_k[::2] = sheet_def_space.dof_loc[::2, 0]
     q_k[1::2] = (q_k[::2] + 1.0) * (q_k[::2] - 1.0)
@@ -68,7 +68,7 @@ if __name__ == "__main__":
     cl_dof_in_grad = np.unique(sheet_grad_space.getFacetDof((9, )))
 
     chi_k = np.zeros(2)
-    chi_k[:] = sheet_grad_space.dof_loc[cl_dof_in_grad[::2], 0]
+    chi_k[:] = s_mesh.coord_map[cl_dof_in_grad[::2]]
     chi = np.zeros(2)
     m3_k = np.zeros((2, 2))
     m3_k[:,1] = -1.0
@@ -77,6 +77,8 @@ if __name__ == "__main__":
     ds = Measure(s_mesh, 1, order=5)
     sheet_grad_basis = FunctionBasis(sheet_grad_space, ds)
 
+    # =================================================================
+    # Step 1. Update the reference contact line. 
     # project the discontinuous deformation gradient onto P1 to find the conormal vector m1
     @BilinearForm
     def c_H0(w: QuadData, q: QuadData, x: QuadData) -> np.ndarray:
@@ -101,7 +103,18 @@ if __name__ == "__main__":
     a = np.sum(dq_k_at_cl * m1_k, axis=1) #(2, )
     cl_disp = - solp.dt / (phyp.mu_cl * a) * (phyp.cosY + 1.0 * np.sum(m3_k * m1_k, axis=1)) 
     chi = chi_k + cl_disp
-    pass
+    
+    # =================================================================
+    # Step 2. Find the sheet mesh displacement. 
+    xx = s_mesh.coord_map[::2]
+    s_mesh_disp = np.where(
+        xx <= chi_k[0], (xx + 1.0) / (chi_k[0] + 1.0) * cl_disp[0], 
+        np.where(xx >= chi_k[1], (1.0 - xx) / (1.0 - chi_k[1]) * cl_disp[1], 
+                 (cl_disp[0] * (chi_k[1] - xx) + cl_disp[1] * (xx - chi_k[0])) / (chi_k[1] - chi_k[0]))
+    )
+    s_mesh_vel = s_mesh_disp / solp.dt
+    s_mesh.coord_map[::2] += s_mesh_disp
+
     # q_k_ = q_k.view(np.ndarray)
     # pyplot.plot(q_k[::2], q_k[1::2], 'ro')
     # pyplot.quiver(q_k_[cl_dof_from_def[::2]], q_k_[cl_dof_from_def[1::2]], temp[:,0], temp[:,1])
