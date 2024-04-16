@@ -1,6 +1,6 @@
 import numpy as np
 from .mesh import Mesh
-from .element import LineP1, TriP1, LineP2, TriP2, VectorElement
+from .element import NodeElement, LineP1, TriP1, LineP2, TriP2, VectorElement
 from .funcspace import FunctionSpace
 from .function import Function
 from .refdom import RefTri
@@ -10,7 +10,7 @@ def setMeshMapping(mesh: Mesh, order: int = 1):
     """
     Set up the P-x (x=1,2) isoparametric mapping for the mesh. 
     """
-    elem_tab = {(1,1): LineP1, (1,2): LineP2, (2,1): TriP1, (2,2): TriP2}
+    elem_tab = {(0,1): NodeElement, (1,1): LineP1, (1,2): LineP2, (2,1): TriP1, (2,2): TriP2}
     # set an affine mapping
     try:
         elem = elem_tab[(mesh.tdim, order)]

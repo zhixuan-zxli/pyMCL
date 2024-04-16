@@ -146,6 +146,9 @@ class Mesh:
         if dim == 0:
             submesh.point = self.point[keep_idx[0]]
             submesh.point_tag = self.point_tag[keep_idx[0]]
+            # assign the 0-th dim cells to be the tagged nodes
+            submesh.cell[0] = np.nonzero(submesh.point_tag)[0].reshape(-1, 1).astype(np.int32)
+            submesh.cell_tag[0] = submesh.point_tag[submesh.cell[0]].reshape(-1)
             return submesh
         submesh.cell[dim] = self.cell[dim][keep_idx[dim]]
         submesh.cell_tag[dim] = self.cell_tag[dim][keep_idx[dim]]
