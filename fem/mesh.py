@@ -129,7 +129,7 @@ class Mesh:
             raise NotImplementedError
         return res, orientation
     
-    def view(self, dim: int, sub_ids: Optional[tuple[int]] = None) -> "Mesh":
+    def view(self, dim: int, tags: Optional[tuple[int]] = None) -> "Mesh":
         submesh = Mesh()
         submesh.tdim = dim
         submesh.gdim = self.gdim
@@ -137,11 +137,11 @@ class Mesh:
         # 1. select the entities of the highest dimension to preserve
         elem_tag = self.point_tag if dim == 0 else self.cell_tag[dim]
         keep_idx[dim] = np.zeros((elem_tag.shape[0], ), dtype=np.bool_)
-        if sub_ids == None:
+        if tags == None:
             keep_idx = True
         else:
-            assert isinstance(sub_ids, tuple)
-            for t in sub_ids:
+            assert isinstance(tags, tuple)
+            for t in tags:
                 keep_idx[dim][elem_tag == t] = True
         if dim == 0:
             submesh.point = self.point[keep_idx[0]]

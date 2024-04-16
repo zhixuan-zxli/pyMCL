@@ -8,11 +8,11 @@ from matplotlib import pyplot
 
 class PhysicalParameters:
     eta_2: float = 0.1
-    mu_1: float = 10.0
-    mu_2: float = 10.0
-    mu_cl: float = 1.0e-3
+    mu_1: float = 1.0
+    mu_2: float = 1.0
+    mu_cl: float = 1.0
     cosY: float = cos(np.pi*2.0/3)
-    B: float = 1.0
+    B: float = 1e-2
 
 class SolverParemeters:
     dt: float = 1.0/1024
@@ -50,34 +50,32 @@ if __name__ == "__main__":
     mesh = Mesh()
     mesh.load("mesh/two-phase.msh")
     # setMeshMapping(mesh, 2)
-    # interface mesh
-    # i_mesh = mesh.view(Measure(1, (3,)))
+    # i_mesh = mesh.view(1, tags=(3, )) # interface mesh
     # setMeshMapping(i_mesh)
-    # sheet mesh
-    s_mesh = mesh.view(1, sub_ids=(4,5))
+    s_mesh = mesh.view(1, tags=(4,5)) # sheet reference mesh
     setMeshMapping(s_mesh)
-    cl_mesh = mesh.view(0, sub_ids=(9, ))
-    setMeshMapping(cl_mesh)
+    # cl_mesh = mesh.view(0, sub_ids=(9, )) # contact line mesh
+    # setMeshMapping(cl_mesh)
 
-    sheet_def_fs = FunctionSpace(s_mesh, VectorElement(LineP2, 2))
-    sheet_grad_fs = FunctionSpace(s_mesh, VectorElement(LineP1, 2))
-    q_k = Function(sheet_def_fs)
-    q_k[::2] = sheet_def_fs.dof_loc[::2, 0]
+    sheet_def_space = FunctionSpace(s_mesh, VectorElement(LineP2, 2))
+    sheet_grad_space = FunctionSpace(s_mesh, VectorElement(LineP1, 2))
+    q_k = Function(sheet_def_space)
+    q_k[::2] = sheet_def_space.dof_loc[::2, 0]
     q_k[1::2] = (q_k[::2] + 1.0) * (q_k[::2] - 1.0)
+    
+    # extract the CL dofs
+    cl_dof_in_def = np.unique(sheet_def_space.getFacetDof((9, )))
+    cl_dof_in_grad = np.unique(sheet_grad_space.getFacetDof((9, )))
 
-    # cl_fs = cl_mesh.coord_fe # A 2-D vector finite element space on the contact line nodes
-    # m1_k = Function(cl_fs)
-    # m3_k = Function(cl_fs) # conormal vector of the fluid interface in the last time step
-    # m3_k[cl_fs.dof_group["u_1"]] = -1.0
-
-    # cl_inplane_fs = FunctionSpace(cl_mesh, NodeElement) # The scalar FE space for the reference CL position
-    # chi_k = Function(cl_inplane_fs)
-    # chi_k = cl_inplane_fs.dof_loc[:,0]
-    # chi = Function(cl_inplane_fs)
+    chi_k = np.zeros(2)
+    chi_k[:] = sheet_grad_space.dof_loc[cl_dof_in_grad[::2], 0]
+    chi = np.zeros(2)
+    m3_k = np.zeros((2, 2))
+    m3_k[:,1] = -1.0
     
     # set up the measures and the function basis
     ds = Measure(s_mesh, 1, order=5)
-    sheet_grad_basis = FunctionBasis(sheet_grad_fs, ds)
+    sheet_grad_basis = FunctionBasis(sheet_grad_space, ds)
 
     # project the discontinuous deformation gradient onto P1 to find the conormal vector m1
     @BilinearForm
@@ -90,63 +88,23 @@ if __name__ == "__main__":
     C_H0 = c_H0.assemble(sheet_grad_basis, sheet_grad_basis, ds)
     L_DQ = l_dq.assemble(sheet_grad_basis, ds, q_k = q_k._interpolate(ds))
 
-    dq_k = Function(sheet_grad_fs)
+    dq_k = Function(sheet_grad_space)
     dq_k[:] = spsolve(C_H0, L_DQ)
 
     # extract the conormal at the contact line
-    cl_dof_from_def = np.unique(sheet_def_fs.getFacetDof((9, )))
-    cl_dof_from_grad = np.unique(sheet_grad_fs.getFacetDof((9, )))
-    dq_k_at_cl = dq_k.view(np.ndarray)[cl_dof_from_grad]
+    dq_k_at_cl = dq_k.view(np.ndarray)[cl_dof_in_grad].reshape(-1, 2) # (-1, 2)
+    m1_k = dq_k_at_cl / np.linalg.norm(dq_k_at_cl, ord=None, axis=1, keepdims=True) # (2, 2)
+    # find the correct direction of m1
+    a = sheet_grad_space.dof_loc[cl_dof_in_grad[0],0] > sheet_grad_space.dof_loc[cl_dof_in_grad[2],0] # (1, )
+    m1_k[int(a)] = -m1_k[int(a)] 
+    # find the displacement of the reference CL
+    a = np.sum(dq_k_at_cl * m1_k, axis=1) #(2, )
+    cl_disp = - solp.dt / (phyp.mu_cl * a) * (phyp.cosY + 1.0 * np.sum(m3_k * m1_k, axis=1)) 
+    chi = chi_k + cl_disp
+    pass
+    # q_k_ = q_k.view(np.ndarray)
+    # pyplot.plot(q_k[::2], q_k[1::2], 'ro')
+    # pyplot.quiver(q_k_[cl_dof_from_def[::2]], q_k_[cl_dof_from_def[1::2]], temp[:,0], temp[:,1])
+    # pyplot.show()
 
-    temp = dq_k_at_cl.reshape(-1, 2) # (-1, 2)
-    temp = temp / np.linalg.norm(temp, ord=None, axis=1, keepdims=True) # unit tangent, (-1, 2)
-    # m1_k[:] = temp[:]
-
-    q_k_ = q_k.view(np.ndarray)
-    pyplot.plot(q_k[::2], q_k[1::2], 'ro')
-    pyplot.quiver(q_k_[cl_dof_from_def[::2]], q_k_[cl_dof_from_def[1::2]], temp[:,0], temp[:,1])
-    pyplot.show()
-
-
-    # # set up the finite element spaces
-    # mixed_fs = [
-    #     FunctionSpace(s_mesh, LineP2), # vertical displacement
-    #     None            # moment
-    # ]
-    # mixed_fs[1] = mixed_fs[0]
-
-    # # set up the measures and the basis
-    # ds = Measure(s_mesh, 1, order=5)
-    # dp = Measure(s_mesh, 0, order=1, tags=(9,), interiorFacet=True) # at the contact line
-
-    # q_basis = FunctionBasis(mixed_fs[0], ds)
-    # q_cl_basis = FunctionBasis(mixed_fs[0], dp)
-
-    # # get the essential BC dof
-    # bdof = np.unique(mixed_fs[0].getFacetDof(tags=(10, )))
-    # fdof = group_dof(mixed_fs, (bdof, bdof))
-
-    # # assemble the system
-    # C_H0 = c_H0.assemble(q_basis, q_basis, ds)
-    # C_LAP = c_lap.assemble(q_basis, q_basis, ds)
-    # C_CL = c_cl.assemble(q_cl_basis, q_cl_basis, dp)
-    # L = l_ver.assemble(q_cl_basis, dp)
-
-    # Ca = bmat((
-    #     (None, C_LAP - C_CL), # q
-    #     (C_LAP - C_CL, 1.0/phyp.B*C_H0) # m
-    # ), format="csr")
-    
-    # # homogenize the system
-    # q = Function(mixed_fs[0])
-    # m = Function(mixed_fs[1])
-    # La = group_fn(L, m)
-    # # since the essential boundary conditions are homogeneous, 
-    # # no need to modify La
-    # sol = np.zeros_like(La)
-
-    # # solve the system
-    # sol_free = spsolve(Ca[fdof][:,fdof], La[fdof])
-    # sol[fdof] = sol_free
-    # split_fn(sol, q, m)
     
