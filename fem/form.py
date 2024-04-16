@@ -34,13 +34,26 @@ class LinearForm(Functional):
         dx_ref = ref_doms[mea.dim].dx
         elem_dof = test_basis.fs.elem_dof
         Ne = elem_dof.shape[1] if isinstance(mea.elem_ix, slice) else mea.elem_ix.size
-        rows = np.empty((elem_dof.shape[0], Ne), dtype=np.int32)
-        vals = np.empty((elem_dof.shape[0], Ne)) # (num_local_dof, Ne)
-        for i in range(elem_dof.shape[0]):
-            form_data = self.form(test_basis.data[i], mea.x, **extra_args) # (1, Ne, Nq)
-            assert form_data.shape[0] == 1
-            vals[i] = dx_ref * (form_data[0] @ mea.quad_w).reshape(-1) # (Ne,), reduce by quadrature
-            rows[i] = elem_dof[i, mea.elem_ix]
+        if not mea.interiorFacet:
+            rows = np.empty((elem_dof.shape[0], Ne), dtype=np.int32)
+            vals = np.empty((elem_dof.shape[0], Ne)) # (num_local_dof, Ne)
+            for i in range(elem_dof.shape[0]):
+                form_data = self.form(test_basis.data[i], mea.x, **extra_args) # (1, Ne, Nq)
+                assert form_data.shape[0] == 1
+                vals[i] = dx_ref * (form_data[0] @ mea.quad_w).reshape(-1) # (Ne,), reduce by quadrature
+                rows[i] = elem_dof[i, test_basis.mea.elem_ix]
+        else: # interior facets need special treatment
+            assert Ne % 2 == 0
+            Nf = Ne // 2
+            rows = np.empty((elem_dof.shape[0], 2, Nf), dtype=np.int32)
+            vals = np.empty((elem_dof.shape[0], 2, Nf))
+            x_sides = mea.x.sides()
+            for i in range(elem_dof.shape[0]):
+                test_data = test_basis.data[i].sides()
+                for m in (0, 1):
+                    form_data = self.form(test_data[m], x_sides[m], **extra_args) # (1, Nf, Nq)
+                    vals[i,m] = dx_ref * (form_data[0] @ mea.quad_w).reshape(-1) # (Ne,), reduce by quadrature
+                    rows[i,m] = elem_dof[i, test_basis.mea.elem_ix.reshape(2,-1)[m]]
         vec = np.bincount(rows.reshape(-1), weights=vals.reshape(-1), minlength=test_basis.fs.num_dof)
         return vec
     
