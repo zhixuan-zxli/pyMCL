@@ -239,11 +239,9 @@ if __name__ == "__main__":
 
     # =================================================================
     # Step 3. Solve the fluid, the fluid-fluid interface, and the sheet deformation. 
-    
-    dx = Measure(mesh, dim=2, order=3)
-    ds_i = Measure(mesh, dim=1, order=3, tags=(3, )) # the fluid interface restricted from the bulk mesh
-    ds = Measure(i_mesh, dim=1, order=3)
-    da_x = Measure(mesh, dim=1, order=5, tags=(4, 5)) # the deformed sheet restricted from the bulk mesh
+
+    # prepare the variable coefficients
+    eta = np.where(mesh.cell_tag[2] == 1, 1.0, phyp.eta_2)
 
     U_sp = FunctionSpace(mesh, VectorElement(TriP2, 2), constraint=periodic_constraint)
     P1_sp = FunctionSpace(mesh, TriP1, constraint=periodic_constraint)
@@ -251,6 +249,36 @@ if __name__ == "__main__":
     Y_sp = i_mesh.coord_fe # type: FunctionSpace # should be FunctionSpace(i_mesh, VectorElement(LineP1, 2))
     K_sp = FunctionSpace(i_mesh, LineP1)
     # cl_vsp is the function space for m3
-    Q_sp = FunctionSpace(s_mesh, VectorElement(LineP2, 2)) # for deformation and also for the fluid stress
+    Q_sp = sheet_P2v # VectorElement(LineP2, 2) # for deformation and also for the fluid stress
     M_sp = FunctionSpace(s_mesh, LineP2)
+    
+    dx = Measure(mesh, dim=2, order=3)
+    ds_i = Measure(mesh, dim=1, order=3, tags=(3, )) # the fluid interface restricted from the bulk mesh
+    ds = Measure(i_mesh, dim=1, order=3)
+    da_x = Measure(mesh, dim=1, order=5, tags=(4, 5)) # the deformed sheet restricted from the bulk mesh
+    dp_i = Measure(i_mesh, dim=0, order=1, tags=(9, )) # the CL restricted from the fluid interfacef
+
+    dA = Measure(s_mesh, dim=1, order=5) # the reference sheet surface measure
+    da = Measure(s_mesh, dim=1, order=5, coord_map=q_k) # the deformed sheet surface measure
+
+    u_basis = FunctionBasis(U_sp, dx)
+    p1_basis = FunctionBasis(P1_sp, dx)
+    p0_basis = FunctionBasis(P0_sp, dx)
+    u_i_basis = FunctionBasis(U_sp, ds_i)
+    u_b_basis = FunctionBasis(U_sp, da_x)
+
+    tau_basis = FunctionBasis(Q_sp, da)
+
+    y_basis = FunctionBasis(Y_sp, ds)
+    y_cl_basis = FunctionBasis(Y_sp, dp_i)
+    k_basis = FunctionBasis(K_sp, ds)
+
+
+    A_XIU = a_xiu.assemble(u_basis, u_basis, dx, eta=eta)
+    A_XIP1 = a_xip.assemble(u_basis, p1_basis, dx)
+    A_XIP0 = a_xip.assemble(u_basis, p0_basis, dx)
+    A_XIK = a_xik.assemble(u_i_basis, k_basis, ds_i)
+    A_XITAU = a_xitau.assemble(u_b_basis, tau_basis, da_x)
+
+    pass
     
