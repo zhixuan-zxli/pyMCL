@@ -15,6 +15,7 @@ class FunctionBasis:
 
 
     def __init__(self, fs: FunctionSpace, mea: Measure) -> None:
+        assert fs.mesh is mea.mesh
         self.fs = fs
         self.mea = mea
         self.update()
