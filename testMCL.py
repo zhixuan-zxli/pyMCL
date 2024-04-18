@@ -140,7 +140,7 @@ def a_xitau(xi: QuadData, tau: QuadData, x: QuadData) -> np.ndarray:
 
 @BilinearForm
 def a_zy(z: QuadData, y: QuadData, x: QuadData) -> np.ndarray:
-    return np.sum(z.grad, y.grad, axis=(0,1))[np.newaxis] * x.dx
+    return np.sum(z.grad * y.grad, axis=(0,1))[np.newaxis] * x.dx
 
 @BilinearForm
 def a_zk(z: QuadData, k: QuadData, x: QuadData) -> np.ndarray:
@@ -187,6 +187,7 @@ if __name__ == "__main__":
     cl_vsp = FunctionSpace(cl_mesh, VectorElement(NodeElement, 2))
     assert cl_vsp.dof_loc[0,0] < cl_vsp.dof_loc[2,0]
 
+    q = Function(sheet_P2v)
     q_k = Function(sheet_P2v)
     q_k[::2] = sheet_P2v.dof_loc[::2, 0]
     q_k[1::2] = (q_k[::2] + 1.0) * (q_k[::2] - 1.0)
@@ -228,14 +229,14 @@ if __name__ == "__main__":
     
     # =================================================================
     # Step 2. Find the sheet mesh displacement. 
-    xx = s_mesh.coord_map[::2]
+    xx = q_k.view(np.ndarray)[::2]
     s_mesh_disp = np.where(
         xx <= chi_k[0], (xx + 1.0) / (chi_k[0] + 1.0) * cl_disp[0], 
         np.where(xx >= chi_k[1], (1.0 - xx) / (1.0 - chi_k[1]) * cl_disp[1], 
                  (cl_disp[0] * (chi_k[1] - xx) + cl_disp[1] * (xx - chi_k[0])) / (chi_k[1] - chi_k[0]))
     )
     s_mesh_vel = s_mesh_disp / solp.dt
-    s_mesh.coord_map[::2] += s_mesh_disp
+    q[::2] += s_mesh_disp
 
     # =================================================================
     # Step 3. Solve the fluid, the fluid-fluid interface, and the sheet deformation. 
@@ -251,12 +252,15 @@ if __name__ == "__main__":
     # cl_vsp is the function space for m3
     Q_sp = sheet_P2v # VectorElement(LineP2, 2) # for deformation and also for the fluid stress
     M_sp = FunctionSpace(s_mesh, LineP2)
+    M3_sp = cl_vsp # VectorElement(NodeElement, 2)
     
     dx = Measure(mesh, dim=2, order=3)
     ds_i = Measure(mesh, dim=1, order=3, tags=(3, )) # the fluid interface restricted from the bulk mesh
     ds = Measure(i_mesh, dim=1, order=3)
     da_x = Measure(mesh, dim=1, order=5, tags=(4, 5)) # the deformed sheet restricted from the bulk mesh
     dp_i = Measure(i_mesh, dim=0, order=1, tags=(9, )) # the CL restricted from the fluid interfacef
+    dp_s = Measure(s_mesh, dim=0, order=1, tags=(9, )) # the CL on the reference sheet mesh
+    dp = Measure(cl_mesh, dim=0, order=1)
 
     dA = Measure(s_mesh, dim=1, order=5) # the reference sheet surface measure
     da = Measure(s_mesh, dim=1, order=5, coord_map=q_k) # the deformed sheet surface measure
@@ -273,12 +277,21 @@ if __name__ == "__main__":
     y_cl_basis = FunctionBasis(Y_sp, dp_i)
     k_basis = FunctionBasis(K_sp, ds)
 
+    m3_basis = FunctionBasis(M3_sp, dp)
+
+    q_cl_basis = FunctionBasis(Q_sp, dp_s)
 
     A_XIU = a_xiu.assemble(u_basis, u_basis, dx, eta=eta)
     A_XIP1 = a_xip.assemble(u_basis, p1_basis, dx)
     A_XIP0 = a_xip.assemble(u_basis, p0_basis, dx)
     A_XIK = a_xik.assemble(u_i_basis, k_basis, ds_i)
     A_XITAU = a_xitau.assemble(u_b_basis, tau_basis, da_x)
+
+    A_ZY = a_zy.assemble(y_basis, y_basis, ds)
+    A_ZK = a_zk.assemble(y_basis, k_basis, ds)
+    A_ZM3 = a_zm3.assemble(y_cl_basis, m3_basis, dp_i)
+    
+    A_M3Q = a_zm3.assemble(m3_basis, q_cl_basis, dp_s)
 
     pass
     
