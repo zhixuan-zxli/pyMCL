@@ -104,7 +104,7 @@ def b_pitau(pi: QuadData, tau: QuadData, x: QuadData, q_k: QuadData, mu_i: np.nd
     m = m / np.linalg.norm(m, ord=None, axis=0, keepdims=True) # (2, Ne, Nq)
     Ptau =  np.sum(m * tau, axis=0, keepdims=True) # (1, Ne, Nq)
     Ppi = np.sum(m * pi, axis=0, keepdims=True) # (1, Ne, Nq)
-    return Ptau * Ppi * x.dx
+    return Ptau * Ppi * (1.0/mu_i[np.newaxis, :, np.newaxis]) * x.dx
 
 # ===========================================================
 # bilinear forms for the fluid and fluid interface
@@ -229,21 +229,26 @@ if __name__ == "__main__":
     
     # =================================================================
     # Step 2. Find the sheet mesh displacement. 
-    xx = q_k.view(np.ndarray)[::2]
+    id_k = Function(s_mesh.coord_fe)
+    id_k[:] = s_mesh.coord_map # save the previous reference sheet mesh
+
+    xx = s_mesh.coord_map.view(np.ndarray)[::2]
     s_mesh_disp = np.where(
         xx <= chi_k[0], (xx + 1.0) / (chi_k[0] + 1.0) * cl_disp[0], 
         np.where(xx >= chi_k[1], (1.0 - xx) / (1.0 - chi_k[1]) * cl_disp[1], 
                  (cl_disp[0] * (chi_k[1] - xx) + cl_disp[1] * (xx - chi_k[0])) / (chi_k[1] - chi_k[0]))
     )
     s_mesh_vel = s_mesh_disp / solp.dt
-    q[::2] += s_mesh_disp
+    s_mesh.coord_map[::2] += s_mesh_disp
 
     # =================================================================
     # Step 3. Solve the fluid, the fluid-fluid interface, and the sheet deformation. 
 
     # prepare the variable coefficients
-    eta = np.where(mesh.cell_tag[2] == 1, 1.0, phyp.eta_2)
+    viscosity = np.where(mesh.cell_tag[2] == 1, 1.0, phyp.eta_2)
+    slip_fric = np.where(s_mesh.cell_tag[1] == 5, phyp.mu_1, phyp.mu_2)
 
+    # set up the function spaces
     U_sp = FunctionSpace(mesh, VectorElement(TriP2, 2), constraint=periodic_constraint)
     P1_sp = FunctionSpace(mesh, TriP1, constraint=periodic_constraint)
     P0_sp = FunctionSpace(mesh, TriDG0)
@@ -254,6 +259,7 @@ if __name__ == "__main__":
     M_sp = FunctionSpace(s_mesh, LineP2)
     M3_sp = cl_vsp # VectorElement(NodeElement, 2)
     
+    # set up the measures
     dx = Measure(mesh, dim=2, order=3)
     ds_i = Measure(mesh, dim=1, order=3, tags=(3, )) # the fluid interface restricted from the bulk mesh
     ds = Measure(i_mesh, dim=1, order=3)
@@ -262,9 +268,11 @@ if __name__ == "__main__":
     dp_s = Measure(s_mesh, dim=0, order=1, tags=(9, )) # the CL on the reference sheet mesh
     dp = Measure(cl_mesh, dim=0, order=1)
 
+    dA_k = Measure(s_mesh, dim=1, order=5, coord_map=id_k) # the reference sheet mesh at the last time step
     dA = Measure(s_mesh, dim=1, order=5) # the reference sheet surface measure
     da = Measure(s_mesh, dim=1, order=5, coord_map=q_k) # the deformed sheet surface measure
 
+    # set up the function bases
     u_basis = FunctionBasis(U_sp, dx)
     p1_basis = FunctionBasis(P1_sp, dx)
     p0_basis = FunctionBasis(P0_sp, dx)
@@ -279,9 +287,11 @@ if __name__ == "__main__":
 
     m3_basis = FunctionBasis(M3_sp, dp)
 
+    q_k_basis = FunctionBasis(Q_sp, dA_k) # also the basis for tau
     q_cl_basis = FunctionBasis(Q_sp, dp_s)
 
-    A_XIU = a_xiu.assemble(u_basis, u_basis, dx, eta=eta)
+    # assembly by blocks
+    A_XIU = a_xiu.assemble(u_basis, u_basis, dx, eta=viscosity)
     A_XIP1 = a_xip.assemble(u_basis, p1_basis, dx)
     A_XIP0 = a_xip.assemble(u_basis, p0_basis, dx)
     A_XIK = a_xik.assemble(u_i_basis, k_basis, ds_i)
@@ -292,6 +302,12 @@ if __name__ == "__main__":
     A_ZM3 = a_zm3.assemble(y_cl_basis, m3_basis, dp_i)
     
     A_M3Q = a_zm3.assemble(m3_basis, q_cl_basis, dp_s)
+
+    B_PIQ = c_L2.assemble(q_k_basis, q_k_basis, dA_k)
+    B_PIU = a_xitau.assemble(q_k_basis, u_b_basis, dA_k) # create a form with x.dx
+    # Note: although u_b_basis is not on dA_k, 
+    # we do not need the gradient. 
+    B_PITAU = b_pitau.assemble(q_k_basis, q_k_basis, dA_k, mu_i=slip_fric)
 
     pass
     
