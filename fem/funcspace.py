@@ -60,8 +60,10 @@ class FunctionSpace:
                 uq_locs = all_locs[fw_idx] # to get rid off the rounding effect
                 inv_idx = inv_idx.astype(np.int32)
             else: # keep all the element dofs
-                uq_locs = all_locs
-                inv_idx = np.arange(all_locs.shape[0], dtype=np.int32)
+                fw_idx = np.lexsort(all_locs[:, ::-1].T)
+                uq_locs = all_locs[fw_idx, :]
+                inv_idx = np.empty_like(fw_idx, dtype=np.int32)
+                inv_idx[fw_idx] = np.arange(all_locs.shape[0], dtype=np.int32)
             # inv_idx: (num_dof_loc * num_total_sub_ent, )
 
             # 2. Broadcast to multiple dof types; save the dof locations
