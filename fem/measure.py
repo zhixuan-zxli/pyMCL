@@ -24,7 +24,8 @@ class Measure:
                  dim: int, 
                  order: int, 
                  tags: Optional[tuple[int]] = None, 
-                 interiorFacet: bool = False) -> None:
+                 interiorFacet: bool = False, 
+                 coord_map = None) -> None:
         """
         If dim == mesh.tdim, represent the volume measure. 
         If dim == mesh.tdim-1, represent the surface measure. 
@@ -75,7 +76,7 @@ class Measure:
         else:
             raise RuntimeError("This measure is neither a volume measure nor a surface measure.")
         #
-        self.update()
+        self.update(coord_map)
 
     def _global_to_local(self, quad_locs: np.ndarray) -> np.ndarray:
         """
@@ -106,7 +107,7 @@ class Measure:
         return local_x
 
 
-    def update(self) -> None:
+    def update(self, coord_map = None) -> None:
         """
         Update the quadrature data for this measure, 
         including the coordinates, the transformation gradient and its inverse, and the cell normal. 
@@ -114,7 +115,9 @@ class Measure:
         update also the facet normal and the surface Jacobian. 
         """
         self.x = None
-        temp = self.mesh.coord_map._interpolate(self)
+        if coord_map is None:
+            coord_map = self.mesh.coord_map
+        temp = coord_map._interpolate(self)
         self.x = temp
         self._derive_geometric_quantities(self.x)
         # Update the quadrature data for a surface measure. 
