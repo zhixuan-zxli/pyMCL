@@ -8,11 +8,12 @@ from matplotlib import pyplot
 
 class PhysicalParameters:
     eta_2: float = 0.1
-    mu_1: float = 1.0
-    mu_2: float = 1.0
-    mu_cl: float = 1.0
+    mu_1: float = 0.1
+    mu_2: float = 0.1
+    mu_cl: float = 0.1
     cosY: float = cos(np.pi*2.0/3)
-    B: float = 1e-2
+    B: float = 1e-1
+    Y: float = 1e1
 
 class SolverParemeters:
     dt: float = 1.0/1024
@@ -43,11 +44,12 @@ def c_phim3(phi: QuadData, m3: QuadData, x: QuadData) -> np.ndarray:
     return np.sum(phi * m3, axis=0, keepdims=True) * x.ds
 
 @BilinearForm
-def c_cl_phim(phi: QuadData, m: QuadData, _, xm: QuadData) -> np.ndarray:
+def c_cl_phim(phi: QuadData, m: QuadData, xphi: QuadData, _: QuadData) -> np.ndarray:
     # phi: (2, Nf, Nq)
     # m.grad: (1, 2, Nf, Nq)
-    # xm.fn: (2, Nf, Nq)
-    return (phi[1] * m.grad[0,0] * xm.fn[0])[np.newaxis] * xm.ds
+    # xphi.fn: (2, Nf, Nq)
+    return (m[0] * phi.grad[1,0] * xphi.fn[0])[np.newaxis] * xphi.ds
+    # return (phi[1] * m.grad[0,0] * xm.fn[0])[np.newaxis] * xm.ds
 
 @BilinearForm
 def c_phim(phi: QuadData, m: QuadData, x: QuadData) -> np.ndarray:
@@ -56,9 +58,53 @@ def c_phim(phi: QuadData, m: QuadData, x: QuadData) -> np.ndarray:
     return (phi.grad[1,0] * m.grad[0,0])[np.newaxis] * x.dx
 
 @BilinearForm
-def c_phiq(phi: QuadData, q: QuadData, x: QuadData, q_k: QuadData) -> np.ndarray:
-    return 0.0
+def c_phiq(phi: QuadData, w: QuadData, x: QuadData, w_k: QuadData) -> np.ndarray:
+    # Here the trial function w is the displacement, 
+    # and the argument w_k, q_k is the push-forward displacement, deformation (resp.) 
+    # from the last time step. 
+    c1 = (w.grad[0,0] + 0.5 * w_k.grad[1,0] * w.grad[1,0]) * phi.grad[0,0]
+    c2 = (w_k.grad[0,0] + 0.5 * w_k.grad[1,0]**2) * w.grad[1,0] * phi.grad[1,0]
+    return (c1+c2)[np.newaxis] * x.dx
 
+@BilinearForm
+def c_phiq_mf(phi: QuadData, w: QuadData, x: QuadData, gamma: np.ndarray) -> np.ndarray:
+    # Again w is the displacement; 
+    # x is the surface measure on the deformed surface from the last time step; 
+    # id is the identify mapping for the current reference domain, so that w + id is the current deformation; 
+    # gamma is the piecewise constant surface tension. 
+    # phi.grad, w.grad, id.grad: (2, 2, Nf, Nq)
+    return np.sum(phi.grad * w.grad, axis=(0,1))[np.newaxis] \
+        * gamma[np.newaxis, np.newaxis, :, np.newaxis] * x.dx
+
+# For c_wm, use c_L2
+# For c_wq, use the transpose of c_phim
+# for c_cl_wq, use the transpose of c_cl_phim
+
+# ===========================================================
+# Forms for the dynamics of the sheet
+
+# for b_piq, use c_L2. 
+# for b_piu, use a_xitau. 
+
+@LinearForm
+def l_pi(pi: QuadData, x: QuadData, q_k: QuadData, eta_k: QuadData) -> np.ndarray:
+    # q_k: the deformation of the last time step, 
+    # eta_k: the mesh velocity
+    # x: the surface measure over the reference sheet in the last time step
+    return np.sum(q_k.grad[:,0] * eta_k * pi, axis=0, keepdims=True) * x.dx
+
+@BilinearForm
+def b_pitau(pi: QuadData, tau: QuadData, x: QuadData, q_k: QuadData, mu_i: np.ndarray) -> np.ndarray:
+    # q_k: the deformation of the last time step
+    # q_k.grad: (2, 1, Ne, Nq)
+    # tau: (2, Ne, Nq)
+    # mu_i: the slip coefficient
+    # x: the surface measure over the reference sheet in the last time step
+    m = q_k.grad[:,0]
+    m = m / np.linalg.norm(m, ord=None, axis=0, keepdims=True) # (2, Ne, Nq)
+    Ptau =  np.sum(m * tau, axis=0, keepdims=True) # (1, Ne, Nq)
+    Ppi = np.sum(m * pi, axis=0, keepdims=True) # (1, Ne, Nq)
+    return Ptau * Ppi * x.dx
 
 # ===========================================================
 # bilinear forms for the fluid and fluid interface
@@ -101,6 +147,15 @@ def a_zk(z: QuadData, k: QuadData, x: QuadData) -> np.ndarray:
     # k: (1, Nf, Nq)
     return np.sum(z * x.cn, axis=0, keepdims=True) * k * x.dx 
 
+@BilinearForm
+def a_zm3(z: QuadData, m3: QuadData, x: QuadData) -> np.ndarray:
+    # z, m3: (2, Nf, Nq=1)
+    return np.sum(z * m3, axis=0, keepdims=True) * x.ds
+
+# For the constraint of attaching contact line, 
+# (i.e. the equation for m3), 
+# the bilinear form should be the same as a_zm3. 
+
 
 # ===========================================================
 
@@ -115,53 +170,60 @@ if __name__ == "__main__":
     #              "right": 6, "top": 7, "left": 8, "cl": 9, "clamp": 10}
     mesh = Mesh()
     mesh.load("mesh/two-phase.msh")
-    setMeshMapping(mesh, 2)
+    setMeshMapping(mesh)
     i_mesh = mesh.view(1, tags=(3, )) # interface mesh
     setMeshMapping(i_mesh)
-    s_mesh = mesh.view(1, tags=(4,5)) # sheet reference mesh
+    s_mesh = mesh.view(1, tags=(4, 5)) # sheet reference mesh
     setMeshMapping(s_mesh)
-    # cl_mesh = mesh.view(0, sub_ids=(9, )) # contact line mesh
-    # setMeshMapping(cl_mesh)
+    cl_mesh = mesh.view(0, tags=(9, )) # contact line mesh
+    setMeshMapping(cl_mesh)
+    # for enforcing periodic constraint
+    def periodic_constraint(x: np.ndarray) -> np.ndarray:
+        flag = np.abs(x[:,0] - 1.0) < 1e-12
+        x[flag,0] -= 2.0
 
-    sheet_def_space = FunctionSpace(s_mesh, VectorElement(LineP2, 2))
-    sheet_grad_space = s_mesh.coord_fe # type: FunctionSpace # should be FunctionSpace(s_mesh, VectorElement(LineP1, 2))
-    q_k = Function(sheet_def_space)
-    q_k[::2] = sheet_def_space.dof_loc[::2, 0]
+    sheet_P2v = FunctionSpace(s_mesh, VectorElement(LineP2, 2))
+    sheet_P1v = s_mesh.coord_fe # type: FunctionSpace # should be FunctionSpace(s_mesh, VectorElement(LineP1, 2))
+    cl_vsp = FunctionSpace(cl_mesh, VectorElement(NodeElement, 2))
+    assert cl_vsp.dof_loc[0,0] < cl_vsp.dof_loc[2,0]
+
+    q_k = Function(sheet_P2v)
+    q_k[::2] = sheet_P2v.dof_loc[::2, 0]
     q_k[1::2] = (q_k[::2] + 1.0) * (q_k[::2] - 1.0)
     
     # extract the CL dofs
-    cl_dof_in_def = np.unique(sheet_def_space.getFacetDof((9, )))
-    cl_dof_in_grad = np.unique(sheet_grad_space.getFacetDof((9, )))
+    cl_dof_P2v = np.unique(sheet_P2v.getFacetDof((9, )))
+    cl_dof_P1v = np.unique(sheet_P1v.getFacetDof((9, )))
 
-    chi_k = np.zeros(2)
-    chi_k[:] = s_mesh.coord_map[cl_dof_in_grad[::2]]
-    chi = np.zeros(2)
-    m3_k = np.zeros((2, 2))
-    m3_k[:,1] = -1.0
+    chi_k = s_mesh.coord_map[cl_dof_P1v[::2]].view(np.ndarray)
+    chi = np.zeros_like(chi_k)
+    m3_k = Function(cl_vsp)
+    m3_k[1::2] = -1.0 # manual set
     
     # set up the measures and the function basis
-    ds = Measure(s_mesh, 1, order=5)
-    sheet_grad_basis = FunctionBasis(sheet_grad_space, ds)
+    dA = Measure(s_mesh, 1, order=5)
+    sheet_P1v_basis = FunctionBasis(sheet_P1v, dA)
 
     # =================================================================
     # Step 1. Update the reference contact line. 
     # project the discontinuous deformation gradient onto P1 to find the conormal vector m1
 
-    C_L2 = c_L2.assemble(sheet_grad_basis, sheet_grad_basis, ds)
-    L_DQ = l_dq.assemble(sheet_grad_basis, ds, q_k = q_k._interpolate(ds))
+    C_L2 = c_L2.assemble(sheet_P1v_basis, sheet_P1v_basis, dA)
+    L_DQ = l_dq.assemble(sheet_P1v_basis, dA, q_k = q_k._interpolate(dA))
 
-    dq_k = Function(sheet_grad_space)
+    dq_k = Function(sheet_P1v)
     dq_k[:] = spsolve(C_L2, L_DQ)
 
     # extract the conormal at the contact line
-    dq_k_at_cl = dq_k.view(np.ndarray)[cl_dof_in_grad].reshape(-1, 2) # (-1, 2)
+    dq_k_at_cl = dq_k.view(np.ndarray)[cl_dof_P1v].reshape(-1, 2) # (-1, 2)
     m1_k = dq_k_at_cl / np.linalg.norm(dq_k_at_cl, ord=None, axis=1, keepdims=True) # (2, 2)
     # find the correct direction of m1
-    a = sheet_grad_space.dof_loc[cl_dof_in_grad[0],0] > sheet_grad_space.dof_loc[cl_dof_in_grad[2],0] # (1, )
+    a = sheet_P1v.dof_loc[cl_dof_P1v[0],0] > sheet_P1v.dof_loc[cl_dof_P1v[2],0] # (1, )
     m1_k[int(a)] = -m1_k[int(a)] 
     # find the displacement of the reference CL
     a = np.sum(dq_k_at_cl * m1_k, axis=1) #(2, )
-    cl_disp = - solp.dt / (phyp.mu_cl * a) * (phyp.cosY + 1.0 * np.sum(m3_k * m1_k, axis=1)) 
+    m3_k_ = m3_k.view(np.ndarray).reshape(2,2)
+    cl_disp = - solp.dt / (phyp.mu_cl * a) * (phyp.cosY + 1.0 * np.sum(m3_k_ * m1_k, axis=1)) 
     chi = chi_k + cl_disp
     
     # =================================================================
@@ -177,5 +239,18 @@ if __name__ == "__main__":
 
     # =================================================================
     # Step 3. Solve the fluid, the fluid-fluid interface, and the sheet deformation. 
+    
+    dx = Measure(mesh, dim=2, order=3)
+    ds_i = Measure(mesh, dim=1, order=3, tags=(3, )) # the fluid interface restricted from the bulk mesh
+    ds = Measure(i_mesh, dim=1, order=3)
+    da_x = Measure(mesh, dim=1, order=5, tags=(4, 5)) # the deformed sheet restricted from the bulk mesh
 
+    U_sp = FunctionSpace(mesh, VectorElement(TriP2, 2), constraint=periodic_constraint)
+    P1_sp = FunctionSpace(mesh, TriP1, constraint=periodic_constraint)
+    P0_sp = FunctionSpace(mesh, TriDG0)
+    Y_sp = i_mesh.coord_fe # type: FunctionSpace # should be FunctionSpace(i_mesh, VectorElement(LineP1, 2))
+    K_sp = FunctionSpace(i_mesh, LineP1)
+    # cl_vsp is the function space for m3
+    Q_sp = FunctionSpace(s_mesh, VectorElement(LineP2, 2)) # for deformation and also for the fluid stress
+    M_sp = FunctionSpace(s_mesh, LineP2)
     
