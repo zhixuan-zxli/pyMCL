@@ -12,6 +12,8 @@ class PhysicalParameters:
     mu_2: float = 0.1
     mu_cl: float = 0.1
     cosY: float = cos(np.pi*2.0/3)
+    gamma_2: float = 0.0
+    gamma_1: float = 0.0 + cos(np.pi*2.0/3) # to be consistent
     B: float = 1e-1
     Y: float = 1e1
 
@@ -33,15 +35,6 @@ def c_L2(w: QuadData, q: QuadData, x: QuadData) -> np.ndarray:
 @LinearForm
 def l_dq(w: QuadData, x: QuadData, q_k: QuadData) -> np.ndarray:
     return np.sum(w * q_k.grad[:,0], axis=0, keepdims=True) * x.dx
-
-@BilinearForm
-def c_phitau(phi: QuadData, tau: QuadData, x: QuadData) -> np.ndarray:
-    # phi, tau: (2, Nf, Nq)
-    return np.sum(phi * tau, axis=0, keepdims=True) * x.dx
-
-@BilinearForm
-def c_phim3(phi: QuadData, m3: QuadData, x: QuadData) -> np.ndarray:
-    return np.sum(phi * m3, axis=0, keepdims=True) * x.ds
 
 @BilinearForm
 def c_cl_phim(phi: QuadData, m: QuadData, xphi: QuadData, _: QuadData) -> np.ndarray:
@@ -67,7 +60,7 @@ def c_phiq(phi: QuadData, w: QuadData, x: QuadData, w_k: QuadData) -> np.ndarray
     return (c1+c2)[np.newaxis] * x.dx
 
 @BilinearForm
-def c_phiq_mf(phi: QuadData, w: QuadData, x: QuadData, gamma: np.ndarray) -> np.ndarray:
+def c_phiq_surf(phi: QuadData, w: QuadData, x: QuadData, gamma: np.ndarray) -> np.ndarray:
     # Again w is the displacement; 
     # x is the surface measure on the deformed surface from the last time step; 
     # id is the identify mapping for the current reference domain, so that w + id is the current deformation; 
@@ -210,6 +203,7 @@ if __name__ == "__main__":
     # prepare the variable coefficients
     viscosity = np.where(mesh.cell_tag[2] == 1, 1.0, phyp.eta_2)
     slip_fric = np.where(s_mesh.cell_tag[1] == 5, phyp.mu_1, phyp.mu_2)
+    surf_tens = np.where(s_mesh.cell_tag[1] == 5, phyp.gamma_1, phyp.gamma_2)
 
     # =================================================================
     # set up the function spaces
@@ -218,49 +212,60 @@ if __name__ == "__main__":
     P0_sp = FunctionSpace(mesh, TriDG0)
     Y_sp = i_mesh.coord_fe # type: FunctionSpace # should be VectorElement(LineP1, 2)
     K_sp = FunctionSpace(i_mesh, LineP1)
-    # cl_vsp is the function space for m3
     Q_sp = FunctionSpace(s_mesh, VectorElement(LineP2, 2)) # for deformation and also for the fluid stress
     Q_P1_sp = s_mesh.coord_fe # type: FunctionSpace # VectorElement(LineP1, 2), for projection to continuous gradient
-    M_sp = FunctionSpace(s_mesh, LineP2)
+    MOM_sp = FunctionSpace(s_mesh, LineP2)
     M3_sp = FunctionSpace(cl_mesh, VectorElement(NodeElement, 2))
 
     # Declare the functions related to the mesh mapping; 
     # they will needed to declare the measure
     id_k = Function(s_mesh.coord_fe)
-    id_k[:] = s_mesh.coord_map # save the previous reference sheet mesh
+    id_k[:] = s_mesh.coord_map 
     w_k = Function(Q_sp) # the displacement
     q_k = w_k + raise_to_P2(Q_sp, id_k) # type: Function
+    id = Function(s_mesh.coord_fe)
+    id[:] = s_mesh.coord_map
+    # w and q = w + id will be defined later
     
     # set up the measures
     dx = Measure(mesh, dim=2, order=3)
-    ds_i = Measure(mesh, dim=1, order=3, tags=(3, )) # the fluid interface restricted from the bulk mesh
+    ds_i = Measure(mesh, dim=1, order=3, tags=(3,)) # the fluid interface restricted from the bulk mesh
     ds = Measure(i_mesh, dim=1, order=3)
     da_x = Measure(mesh, dim=1, order=5, tags=(4, 5)) # the deformed sheet restricted from the bulk mesh
-    dp_i = Measure(i_mesh, dim=0, order=1, tags=(9, )) # the CL restricted from the fluid interfacef
-    dp_s = Measure(s_mesh, dim=0, order=1, tags=(9, )) # the CL on the reference sheet mesh
+
+    dp_i = Measure(i_mesh, dim=0, order=1, tags=(9,)) # the CL restricted from the fluid interfacef
+    dp_s = Measure(s_mesh, dim=0, order=1, tags=(9,)) # the CL on the reference sheet mesh
+    dp_is = Measure(s_mesh, dim=0, order=1, tags=(9,), interiorFacet=True, coord_map=id) 
+    # ^: the interior facets of the CL on the current reference sheet mesh
     dp = Measure(cl_mesh, dim=0, order=1)
 
     dA_k = Measure(s_mesh, dim=1, order=5, coord_map=id_k) # the reference sheet mesh at the last time step
-    # dA = Measure(s_mesh, dim=1, order=5) # the reference sheet surface measure, <<< need re-declare
-    da = Measure(s_mesh, dim=1, order=5, coord_map=q_k) # the deformed sheet surface measure
+    dA = Measure(s_mesh, dim=1, order=5, coord_map=id) # the reference sheet surface measure, <<< need re-declare
+    da_k = Measure(s_mesh, dim=1, order=5, coord_map=q_k) # the deformed sheet surface measure
 
-    # set up the function bases
+    # set up the function bases:
+    # fluid domain
     u_basis = FunctionBasis(U_sp, dx)
     p1_basis = FunctionBasis(P1_sp, dx)
     p0_basis = FunctionBasis(P0_sp, dx)
-    u_i_basis = FunctionBasis(U_sp, ds_i)
-    u_b_basis = FunctionBasis(U_sp, da_x)
-
-    tau_basis = FunctionBasis(Q_sp, da)
-
+    # interface domain
     y_basis = FunctionBasis(Y_sp, ds)
-    y_cl_basis = FunctionBasis(Y_sp, dp_i)
+    u_i_basis = FunctionBasis(U_sp, ds_i)
     k_basis = FunctionBasis(K_sp, ds)
-
-    m3_basis = FunctionBasis(M3_sp, dp)
-
+    # boundary of interface (CL)
+    y_cl_basis = FunctionBasis(Y_sp, dp_i)
+    # sheet
+    u_b_basis = FunctionBasis(U_sp, da_x)
+    q_surf_basis = FunctionBasis(Q_sp, da_k)
+    q_basis = FunctionBasis(Q_sp, dA)
+    mom_basis = FunctionBasis(MOM_sp, dA)
     q_k_basis = FunctionBasis(Q_sp, dA_k) # also the basis for tau
+    # CL from sheet
     q_cl_basis = FunctionBasis(Q_sp, dp_s)
+    q_icl_basis = FunctionBasis(Q_sp, dp_is)
+    mom_cl_basis = FunctionBasis(MOM_sp, dp_is)
+    # CL
+    m3_basis = FunctionBasis(M3_sp, dp)
     
     # =================================================================
     # Step 1. Update the reference contact line. 
@@ -325,7 +330,7 @@ if __name__ == "__main__":
     A_XIP1 = a_xip.assemble(u_basis, p1_basis, dx)
     A_XIP0 = a_xip.assemble(u_basis, p0_basis, dx)
     A_XIK = a_xik.assemble(u_i_basis, k_basis, ds_i)
-    A_XITAU = a_xitau.assemble(u_b_basis, tau_basis, da_x)
+    A_XITAU = a_xitau.assemble(u_b_basis, q_surf_basis, da_x)
 
     A_ZY = a_zy.assemble(y_basis, y_basis, ds)
     A_ZK = a_zk.assemble(y_basis, k_basis, ds)
@@ -342,6 +347,16 @@ if __name__ == "__main__":
                                q_k = q_k._interpolate(dA_k), mu_i=slip_fric)
     L_PI_ADV = l_pi_adv.assemble(q_k_basis, dA_k, q_k = q_k._interpolate(dA_k), eta_k = eta._interpolate(dA_k))
     L_PI_Q = l_pi_L2.assemble(q_k_basis, dA_k, q_k=(raise_to_P2(Q_sp, id-id_k)-w_k)._interpolate(dA_k))
+
+    #C_PHITAU = B_PIQ
+    #C_PHIM3 = A_M3Q.T
+    C_CL_PHIM = c_cl_phim.assemble(q_icl_basis, mom_cl_basis, dp_is)
+    C_PHIM = c_phim.assemble(q_basis, mom_basis, dA)
+    C_PHIQ = c_phiq.assemble(q_basis, q_basis, dA, w_k = w_k._interpolate(dA))
+    C_PHIQ_SURF = c_phiq_surf.assemble(q_surf_basis, q_surf_basis, da_k, gamma=surf_tens)
+    # C_CL_WQ = C_CL_PHIM.T
+    # C_WQ = C_PHIM.T
+    C_WM = c_L2.assemble(mom_basis, mom_basis, dA)
 
     pass
     
