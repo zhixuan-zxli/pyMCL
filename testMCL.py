@@ -84,14 +84,18 @@ def c_phiq_mf(phi: QuadData, w: QuadData, x: QuadData, gamma: np.ndarray) -> np.
 # Forms for the dynamics of the sheet
 
 # for b_piq, use c_L2. 
-# for b_piu, use a_xitau. 
+# for b_piu, use c_L2. 
 
 @LinearForm
-def l_pi(pi: QuadData, x: QuadData, q_k: QuadData, eta_k: QuadData) -> np.ndarray:
+def l_pi_adv(pi: QuadData, x: QuadData, q_k: QuadData, eta_k: QuadData) -> np.ndarray:
     # q_k: the deformation of the last time step, 
     # eta_k: the mesh velocity
     # x: the surface measure over the reference sheet in the last time step
     return np.sum(q_k.grad[:,0] * eta_k * pi, axis=0, keepdims=True) * x.dx
+
+@LinearForm
+def l_pi_L2(pi: QuadData, x: QuadData, q_k: QuadData) -> np.ndarray:
+    return np.sum(pi * q_k, axis=0, keepdims=True) * x.dx
 
 @BilinearForm
 def b_pitau(pi: QuadData, tau: QuadData, x: QuadData, q_k: QuadData, mu_i: np.ndarray) -> np.ndarray:
@@ -156,6 +160,27 @@ def a_zm3(z: QuadData, m3: QuadData, x: QuadData) -> np.ndarray:
 # (i.e. the equation for m3), 
 # the bilinear form should be the same as a_zm3. 
 
+@LinearForm
+def l_m3(m3: QuadData, x: QuadData, id: QuadData) -> np.ndarray:
+    # m3: (2, Nf, Nq)
+    # id: (2, Nf, Nq)
+    return np.sum(m3 * id, axis=0, keepdims=True) * x.ds
+
+
+# ===========================================================
+
+def raise_to_P2(P2_space: FunctionSpace, p1_func: Function) -> np.ndarray:
+    p2_func = Function(P2_space)
+    p2_func[:p1_func.size] = p1_func
+    rdim = P2_space.elem.rdim
+    assert rdim == p1_func.fe.elem.rdim
+    if P2_space.mesh.tdim == 1:
+        for d in range(rdim):
+            p2_func[P2_space.elem_dof[2*rdim+d]] = 0.5 * (p1_func[P2_space.elem_dof[d]] + p1_func[P2_space.elem_dof[rdim+d]])
+    else:
+        raise NotImplementedError
+    return p2_func
+
 
 # ===========================================================
 
@@ -182,82 +207,29 @@ if __name__ == "__main__":
         flag = np.abs(x[:,0] - 1.0) < 1e-12
         x[flag,0] -= 2.0
 
-    sheet_P2v = FunctionSpace(s_mesh, VectorElement(LineP2, 2))
-    sheet_P1v = s_mesh.coord_fe # type: FunctionSpace # should be FunctionSpace(s_mesh, VectorElement(LineP1, 2))
-    cl_vsp = FunctionSpace(cl_mesh, VectorElement(NodeElement, 2))
-    assert cl_vsp.dof_loc[0,0] < cl_vsp.dof_loc[2,0]
-
-    q = Function(sheet_P2v)
-    q_k = Function(sheet_P2v)
-    q_k[::2] = sheet_P2v.dof_loc[::2, 0]
-    q_k[1::2] = (q_k[::2] + 1.0) * (q_k[::2] - 1.0)
-    
-    # extract the CL dofs
-    cl_dof_P2v = np.unique(sheet_P2v.getFacetDof((9, )))
-    cl_dof_P1v = np.unique(sheet_P1v.getFacetDof((9, )))
-
-    chi_k = s_mesh.coord_map[cl_dof_P1v[::2]].view(np.ndarray)
-    chi = np.zeros_like(chi_k)
-    m3_k = Function(cl_vsp)
-    m3_k[1::2] = -1.0 # manual set
-    
-    # set up the measures and the function basis
-    dA = Measure(s_mesh, 1, order=5)
-    sheet_P1v_basis = FunctionBasis(sheet_P1v, dA)
-
-    # =================================================================
-    # Step 1. Update the reference contact line. 
-    # project the discontinuous deformation gradient onto P1 to find the conormal vector m1
-
-    C_L2 = c_L2.assemble(sheet_P1v_basis, sheet_P1v_basis, dA)
-    L_DQ = l_dq.assemble(sheet_P1v_basis, dA, q_k = q_k._interpolate(dA))
-
-    dq_k = Function(sheet_P1v)
-    dq_k[:] = spsolve(C_L2, L_DQ)
-
-    # extract the conormal at the contact line
-    dq_k_at_cl = dq_k.view(np.ndarray)[cl_dof_P1v].reshape(-1, 2) # (-1, 2)
-    m1_k = dq_k_at_cl / np.linalg.norm(dq_k_at_cl, ord=None, axis=1, keepdims=True) # (2, 2)
-    # find the correct direction of m1
-    a = sheet_P1v.dof_loc[cl_dof_P1v[0],0] > sheet_P1v.dof_loc[cl_dof_P1v[2],0] # (1, )
-    m1_k[int(a)] = -m1_k[int(a)] 
-    # find the displacement of the reference CL
-    a = np.sum(dq_k_at_cl * m1_k, axis=1) #(2, )
-    m3_k_ = m3_k.view(np.ndarray).reshape(2,2)
-    cl_disp = - solp.dt / (phyp.mu_cl * a) * (phyp.cosY + 1.0 * np.sum(m3_k_ * m1_k, axis=1)) 
-    chi = chi_k + cl_disp
-    
-    # =================================================================
-    # Step 2. Find the sheet mesh displacement. 
-    id_k = Function(s_mesh.coord_fe)
-    id_k[:] = s_mesh.coord_map # save the previous reference sheet mesh
-
-    xx = s_mesh.coord_map.view(np.ndarray)[::2]
-    s_mesh_disp = np.where(
-        xx <= chi_k[0], (xx + 1.0) / (chi_k[0] + 1.0) * cl_disp[0], 
-        np.where(xx >= chi_k[1], (1.0 - xx) / (1.0 - chi_k[1]) * cl_disp[1], 
-                 (cl_disp[0] * (chi_k[1] - xx) + cl_disp[1] * (xx - chi_k[0])) / (chi_k[1] - chi_k[0]))
-    )
-    s_mesh_vel = s_mesh_disp / solp.dt
-    s_mesh.coord_map[::2] += s_mesh_disp
-
-    # =================================================================
-    # Step 3. Solve the fluid, the fluid-fluid interface, and the sheet deformation. 
-
     # prepare the variable coefficients
     viscosity = np.where(mesh.cell_tag[2] == 1, 1.0, phyp.eta_2)
     slip_fric = np.where(s_mesh.cell_tag[1] == 5, phyp.mu_1, phyp.mu_2)
 
+    # =================================================================
     # set up the function spaces
     U_sp = FunctionSpace(mesh, VectorElement(TriP2, 2), constraint=periodic_constraint)
     P1_sp = FunctionSpace(mesh, TriP1, constraint=periodic_constraint)
     P0_sp = FunctionSpace(mesh, TriDG0)
-    Y_sp = i_mesh.coord_fe # type: FunctionSpace # should be FunctionSpace(i_mesh, VectorElement(LineP1, 2))
+    Y_sp = i_mesh.coord_fe # type: FunctionSpace # should be VectorElement(LineP1, 2)
     K_sp = FunctionSpace(i_mesh, LineP1)
     # cl_vsp is the function space for m3
-    Q_sp = sheet_P2v # VectorElement(LineP2, 2) # for deformation and also for the fluid stress
+    Q_sp = FunctionSpace(s_mesh, VectorElement(LineP2, 2)) # for deformation and also for the fluid stress
+    Q_P1_sp = s_mesh.coord_fe # type: FunctionSpace # VectorElement(LineP1, 2), for projection to continuous gradient
     M_sp = FunctionSpace(s_mesh, LineP2)
-    M3_sp = cl_vsp # VectorElement(NodeElement, 2)
+    M3_sp = FunctionSpace(cl_mesh, VectorElement(NodeElement, 2))
+
+    # Declare the functions related to the mesh mapping; 
+    # they will needed to declare the measure
+    id_k = Function(s_mesh.coord_fe)
+    id_k[:] = s_mesh.coord_map # save the previous reference sheet mesh
+    w_k = Function(Q_sp) # the displacement
+    q_k = w_k + raise_to_P2(Q_sp, id_k) # type: Function
     
     # set up the measures
     dx = Measure(mesh, dim=2, order=3)
@@ -269,7 +241,7 @@ if __name__ == "__main__":
     dp = Measure(cl_mesh, dim=0, order=1)
 
     dA_k = Measure(s_mesh, dim=1, order=5, coord_map=id_k) # the reference sheet mesh at the last time step
-    dA = Measure(s_mesh, dim=1, order=5) # the reference sheet surface measure
+    # dA = Measure(s_mesh, dim=1, order=5) # the reference sheet surface measure, <<< need re-declare
     da = Measure(s_mesh, dim=1, order=5, coord_map=q_k) # the deformed sheet surface measure
 
     # set up the function bases
@@ -289,6 +261,64 @@ if __name__ == "__main__":
 
     q_k_basis = FunctionBasis(Q_sp, dA_k) # also the basis for tau
     q_cl_basis = FunctionBasis(Q_sp, dp_s)
+    
+    # =================================================================
+    # Step 1. Update the reference contact line. 
+    # project the discontinuous deformation gradient onto P1 to find the conormal vector m1
+
+    
+    # w = Function(Q_sp) # the **displacement** for the current time step
+    
+    # # extract the CL dofs
+    # cl_dof_P2v = np.unique(sheet_P2v.getFacetDof((9, )))
+    # cl_dof_P1v = np.unique(sheet_P1v.getFacetDof((9, )))
+
+    # chi_k = s_mesh.coord_map[cl_dof_P1v[::2]].view(np.ndarray)
+    # chi = np.zeros_like(chi_k)
+    # m3_k = Function(cl_vsp)
+    # m3_k[1::2] = -1.0 # manual set
+    
+    # # set up the measures and the function basis
+    # sheet_P1v_basis = FunctionBasis(sheet_P1v, dA)
+    
+
+    # C_L2 = c_L2.assemble(sheet_P1v_basis, sheet_P1v_basis, dA)
+    # L_DQ = l_dq.assemble(sheet_P1v_basis, dA, q_k = q_k._interpolate(dA))
+
+    # dq_k = Function(sheet_P1v)
+    # dq_k[:] = spsolve(C_L2, L_DQ)
+
+    # # extract the conormal at the contact line
+    # dq_k_at_cl = dq_k.view(np.ndarray)[cl_dof_P1v].reshape(-1, 2) # (-1, 2)
+    # m1_k = dq_k_at_cl / np.linalg.norm(dq_k_at_cl, ord=None, axis=1, keepdims=True) # (2, 2)
+    # # find the correct direction of m1
+    # a = sheet_P1v.dof_loc[cl_dof_P1v[0],0] > sheet_P1v.dof_loc[cl_dof_P1v[2],0] # (1, )
+    # m1_k[int(a)] = -m1_k[int(a)] 
+    # # find the displacement of the reference CL
+    # a = np.sum(dq_k_at_cl * m1_k, axis=1) #(2, )
+    # m3_k_ = m3_k.view(np.ndarray).reshape(2,2)
+    # cl_disp = - solp.dt / (phyp.mu_cl * a) * (phyp.cosY + 1.0 * np.sum(m3_k_ * m1_k, axis=1)) 
+    # chi = chi_k + cl_disp
+
+    chi_k = np.zeros(2) # the last reference CL locations, force [0] to be left
+    cl_disp = np.zeros(2) # the reference CL displacement, force [0] to be left
+    
+    # =================================================================
+    # Step 2. Find the sheet mesh displacement. 
+
+    xx = id_k.view(np.ndarray)[::2] # extract the x component of the mesh nodes
+    s_mesh_disp = np.where(
+        xx <= chi_k[0], (xx + 1.0) / (chi_k[0] + 1.0) * cl_disp[0], 
+        np.where(xx >= chi_k[1], (1.0 - xx) / (1.0 - chi_k[1]) * cl_disp[1], 
+                 (cl_disp[0] * (chi_k[1] - xx) + cl_disp[1] * (xx - chi_k[0])) / (chi_k[1] - chi_k[0]))
+    )
+    eta = Function(s_mesh.coord_fe) # the mesh velocity 
+    eta[::2] = s_mesh_disp / solp.dt
+    s_mesh.coord_map[::2] += s_mesh_disp # update the reference sheet mesh
+    id = s_mesh.coord_map # type: Function
+
+    # =================================================================
+    # Step 3. Solve the fluid, the fluid-fluid interface, and the sheet deformation. 
 
     # assembly by blocks
     A_XIU = a_xiu.assemble(u_basis, u_basis, dx, eta=viscosity)
@@ -302,12 +332,16 @@ if __name__ == "__main__":
     A_ZM3 = a_zm3.assemble(y_cl_basis, m3_basis, dp_i)
     
     A_M3Q = a_zm3.assemble(m3_basis, q_cl_basis, dp_s)
+    L_M3 = l_m3.assemble(m3_basis, dp_s, id=id._interpolate(dp_s))
 
     B_PIQ = c_L2.assemble(q_k_basis, q_k_basis, dA_k)
-    B_PIU = a_xitau.assemble(q_k_basis, u_b_basis, dA_k) # create a form with x.dx
-    # Note: although u_b_basis is not on dA_k, 
-    # we do not need the gradient. 
-    B_PITAU = b_pitau.assemble(q_k_basis, q_k_basis, dA_k, mu_i=slip_fric)
+    B_PIU = c_L2.assemble(q_k_basis, u_b_basis, dA_k)
+    # Note: u_b_basis is not on dA_k.
+    # It is still OK as we do not need the gradient. 
+    B_PITAU = b_pitau.assemble(q_k_basis, q_k_basis, dA_k, \
+                               q_k = q_k._interpolate(dA_k), mu_i=slip_fric)
+    L_PI_ADV = l_pi_adv.assemble(q_k_basis, dA_k, q_k = q_k._interpolate(dA_k), eta_k = eta._interpolate(dA_k))
+    L_PI_Q = l_pi_L2.assemble(q_k_basis, dA_k, q_k=(raise_to_P2(Q_sp, id-id_k)-w_k)._interpolate(dA_k))
 
     pass
     
