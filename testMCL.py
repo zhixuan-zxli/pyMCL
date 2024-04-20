@@ -7,13 +7,13 @@ from matplotlib import pyplot
 
 
 class PhysicalParameters:
-    eta_2: float = 0.1
+    eta_2: float = 1.0
     mu_1: float = 0.1
     mu_2: float = 0.1
     mu_cl: float = 0.1
     cosY: float = cos(np.pi*2.0/3)
-    gamma_2: float = 0.0
-    gamma_1: float = 0.0 + cos(np.pi*2.0/3) # to be consistent
+    gamma_1: float = 0.0
+    gamma_2: float = 0.0 + cos(np.pi*2.0/3) # to be consistent
     B: float = 1e-1
     Y: float = 1e1
 
@@ -82,9 +82,9 @@ def c_phiq_surf(phi: QuadData, w: QuadData, x: QuadData, gamma: np.ndarray) -> n
 @LinearForm
 def l_pi_adv(pi: QuadData, x: QuadData, q_k: QuadData, eta_k: QuadData) -> np.ndarray:
     # q_k: the deformation of the last time step, 
-    # eta_k: the mesh velocity
+    # eta_k: the mesh velocity, (2, Nf, Nq)
     # x: the surface measure over the reference sheet in the last time step
-    return np.sum(q_k.grad[:,0] * eta_k * pi, axis=0, keepdims=True) * x.dx
+    return np.sum(q_k.grad[:,0] * eta_k[0][np.newaxis] * pi, axis=0, keepdims=True) * x.dx
 
 @LinearForm
 def l_pi_L2(pi: QuadData, x: QuadData, q_k: QuadData) -> np.ndarray:
@@ -229,6 +229,7 @@ if __name__ == "__main__":
     tau = Function(Q_sp)
     mom = Function(MOM_sp)
     m3 = Function(M3_sp)
+    m3[1::2] = -1.0 # need an initial value for m3
     
     id_k = Function(s_mesh.coord_fe)
     id = Function(s_mesh.coord_fe)
@@ -241,8 +242,54 @@ if __name__ == "__main__":
     # w and q = w + id will be solved later
 
     y_k[:] = i_mesh.coord_map
+
+    # =================================================================
+    # Step 1. Update the reference contact line. 
+
+    # extract the current reference CL locations
+    cl_dof_Q2 = np.unique(Q_sp.getFacetDof(tags=(9,)))
+    cl_dof_Q1 = np.unique(Q_P1_sp.getFacetDof(tags=(9,)))
+    chi_k = id.view(np.ndarray)[cl_dof_Q1[::2]] # (2,), with [0] being the left CL
+    chi = np.zeros_like(chi_k)
+    # ensure [0] is for the left CL; otherwise the code below does not make sense. 
+    assert chi_k[0] < chi_k[1]
+    assert M3_sp.dof_loc[0,0] < M3_sp.dof_loc[2,0]
+    
+    # project the discontinuous deformation gradient onto P1 to find the conormal vector m1
+    dA_k = Measure(s_mesh, dim=1, order=5, coord_map=id_k) # the reference sheet mesh at the last time step
+    q_P1_k_basis = FunctionBasis(Q_P1_sp, dA_k)
+    C_L2 = c_L2.assemble(q_P1_k_basis, q_P1_k_basis, dA_k)
+    L_DQ = l_dq.assemble(q_P1_k_basis, dA_k, q_k = q_k._interpolate(dA_k))
+    dq_k = Function(Q_P1_sp)
+    dq_k[:] = spsolve(C_L2, L_DQ)
+
+    # extract the conormal at the contact line
+    dq_k_at_cl = dq_k.view(np.ndarray)[cl_dof_Q1].reshape(-1, 2) # (-1, 2)
+    m1_k = dq_k_at_cl / np.linalg.norm(dq_k_at_cl, ord=None, axis=1, keepdims=True) # (2, 2)
+    m1_k[0] = -m1_k[0] 
+    # find the displacement of the reference CL driven by unbalanced Young force
+    a = np.sum(dq_k_at_cl * m1_k, axis=1) # (2, )
+    m3_ = m3.view(np.ndarray).reshape(2,2)
+    cl_disp = - solp.dt / (phyp.mu_cl * a) * (-phyp.cosY + 1.0 * np.sum(m3_ * m1_k, axis=1)) # gamma_3 = 1.0
+    chi = chi_k + cl_disp
     
     # =================================================================
+    # Step 2. Find the sheet mesh displacement. 
+
+    xx = id_k.view(np.ndarray)[::2] # extract the x component of the mesh nodes
+    s_mesh_disp = np.where(
+        xx <= chi_k[0], (xx + 1.0) / (chi_k[0] + 1.0) * cl_disp[0], 
+        np.where(xx >= chi_k[1], (1.0 - xx) / (1.0 - chi_k[1]) * cl_disp[1], 
+                 (cl_disp[0] * (chi_k[1] - xx) + cl_disp[1] * (xx - chi_k[0])) / (chi_k[1] - chi_k[0]))
+    )
+    eta = Function(s_mesh.coord_fe) # the mesh velocity 
+    eta[::2] = s_mesh_disp / solp.dt
+    s_mesh.coord_map[::2] += s_mesh_disp # update the reference sheet mesh
+    id = s_mesh.coord_map # type: Function
+
+    # =================================================================
+    # Step 3. Solve the fluid, the fluid-fluid interface, and the sheet deformation. 
+    
     # set up the measures
     dx = Measure(mesh, dim=2, order=3)
     ds_i = Measure(mesh, dim=1, order=3, tags=(3,)) # the fluid interface restricted from the bulk mesh
@@ -285,61 +332,6 @@ if __name__ == "__main__":
     m3_basis = FunctionBasis(M3_sp, dp)
     
     # =================================================================
-    # Step 1. Update the reference contact line. 
-    # project the discontinuous deformation gradient onto P1 to find the conormal vector m1
-    
-    # # extract the CL dofs
-    # cl_dof_P2v = np.unique(sheet_P2v.getFacetDof((9, )))
-    # cl_dof_P1v = np.unique(sheet_P1v.getFacetDof((9, )))
-
-    # chi_k = s_mesh.coord_map[cl_dof_P1v[::2]].view(np.ndarray)
-    # chi = np.zeros_like(chi_k)
-    # m3_k = Function(cl_vsp)
-    # m3_k[1::2] = -1.0 # manual set
-    
-    # # set up the measures and the function basis
-    # sheet_P1v_basis = FunctionBasis(sheet_P1v, dA)
-    
-
-    # C_L2 = c_L2.assemble(sheet_P1v_basis, sheet_P1v_basis, dA)
-    # L_DQ = l_dq.assemble(sheet_P1v_basis, dA, q_k = q_k._interpolate(dA))
-
-    # dq_k = Function(sheet_P1v)
-    # dq_k[:] = spsolve(C_L2, L_DQ)
-
-    # # extract the conormal at the contact line
-    # dq_k_at_cl = dq_k.view(np.ndarray)[cl_dof_P1v].reshape(-1, 2) # (-1, 2)
-    # m1_k = dq_k_at_cl / np.linalg.norm(dq_k_at_cl, ord=None, axis=1, keepdims=True) # (2, 2)
-    # # find the correct direction of m1
-    # a = sheet_P1v.dof_loc[cl_dof_P1v[0],0] > sheet_P1v.dof_loc[cl_dof_P1v[2],0] # (1, )
-    # m1_k[int(a)] = -m1_k[int(a)] 
-    # # find the displacement of the reference CL
-    # a = np.sum(dq_k_at_cl * m1_k, axis=1) #(2, )
-    # m3_k_ = m3_k.view(np.ndarray).reshape(2,2)
-    # cl_disp = - solp.dt / (phyp.mu_cl * a) * (phyp.cosY + 1.0 * np.sum(m3_k_ * m1_k, axis=1)) 
-    # chi = chi_k + cl_disp
-
-    # The output of this step are the followings:
-    chi_k = np.zeros(2) # the last reference CL locations, force [0] to be left
-    cl_disp = np.zeros(2) # the reference CL displacement, force [0] to be left
-    
-    # =================================================================
-    # Step 2. Find the sheet mesh displacement. 
-
-    xx = id_k.view(np.ndarray)[::2] # extract the x component of the mesh nodes
-    s_mesh_disp = np.where(
-        xx <= chi_k[0], (xx + 1.0) / (chi_k[0] + 1.0) * cl_disp[0], 
-        np.where(xx >= chi_k[1], (1.0 - xx) / (1.0 - chi_k[1]) * cl_disp[1], 
-                 (cl_disp[0] * (chi_k[1] - xx) + cl_disp[1] * (xx - chi_k[0])) / (chi_k[1] - chi_k[0]))
-    )
-    eta = Function(s_mesh.coord_fe) # the mesh velocity 
-    eta[::2] = s_mesh_disp / solp.dt
-    s_mesh.coord_map[::2] += s_mesh_disp # update the reference sheet mesh
-    id = s_mesh.coord_map # type: Function
-
-    # =================================================================
-    # Step 3. Solve the fluid, the fluid-fluid interface, and the sheet deformation. 
-
     # assembly by blocks
     A_XIU = a_xiu.assemble(u_basis, u_basis, dx, eta=viscosity)
     A_XIP1 = a_xip.assemble(u_basis, p1_basis, dx)
@@ -361,9 +353,9 @@ if __name__ == "__main__":
     B_PITAU = b_pitau.assemble(q_k_basis, q_k_basis, dA_k, \
                                q_k = q_k._interpolate(dA_k), mu_i=slip_fric)
     L_PI_ADV = l_pi_adv.assemble(q_k_basis, dA_k, q_k = q_k._interpolate(dA_k), eta_k = eta._interpolate(dA_k))
-    L_PI_Q = l_pi_L2.assemble(q_k_basis, dA_k, q_k=(raise_to_P2(Q_sp, id_k-id)+w_k)._interpolate(dA_k))
+    L_PI_Q = l_pi_L2.assemble(q_k_basis, dA_k, q_k=(q_k-raise_to_P2(Q_sp, id))._interpolate(dA_k))
 
-    #C_PHITAU = B_PIQ
+    #C_PHITAU = B_PIQ.T
     #C_PHIM3 = A_M3Q.T
     C_CL_PHIM = c_cl_phim.assemble(q_icl_basis, mom_cl_basis, dp_is)
     C_PHIM = c_phim.assemble(q_basis, mom_basis, dA)
@@ -408,8 +400,10 @@ if __name__ == "__main__":
     # so no need to homogeneize the right-hand-side.
 
     # solve the coupled system
-    sol_vec = spsolve(A[free_dof][:,free_dof], L[free_dof])
-    split_fn(sol_vec, u, p1, p0, tau, y, kappa, m3, w, mom)
+    sol_free = spsolve(A[free_dof][:,free_dof], L[free_dof])
+    sol_full = np.zeros_like(L)
+    sol_full[free_dof] = sol_free
+    split_fn(sol_full, u, p1, p0, tau, y, kappa, m3, w, mom)
 
     # =================================================================
     # Step 4. Displace the bulk mesh and update all the meshes. 
