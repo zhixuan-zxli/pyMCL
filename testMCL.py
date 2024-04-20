@@ -41,7 +41,7 @@ def c_cl_phim(phi: QuadData, m: QuadData, xphi: QuadData, _: QuadData) -> np.nda
     # phi: (2, Nf, Nq)
     # m.grad: (1, 2, Nf, Nq)
     # xphi.fn: (2, Nf, Nq)
-    return (m[0] * phi.grad[1,0] * xphi.fn[0])[np.newaxis] * xphi.ds
+    return 0.5 * (m[0] * phi.grad[1,0] * xphi.fn[0])[np.newaxis] * xphi.ds
     # return (phi[1] * m.grad[0,0] * xm.fn[0])[np.newaxis] * xm.ds
 
 @BilinearForm
@@ -217,16 +217,32 @@ if __name__ == "__main__":
     MOM_sp = FunctionSpace(s_mesh, LineP2)
     M3_sp = FunctionSpace(cl_mesh, VectorElement(NodeElement, 2))
 
-    # Declare the functions related to the mesh mapping; 
-    # they will needed to declare the measure
-    id_k = Function(s_mesh.coord_fe)
-    id_k[:] = s_mesh.coord_map 
+    # declare the solution functions
+    u = Function(U_sp)
+    p1 = Function(P1_sp)
+    p0 = Function(P0_sp)
+    y = Function(Y_sp)
+    y_k = Function(Y_sp)
+    kappa = Function(K_sp)
+    w = Function(Q_sp)   # the displacement
     w_k = Function(Q_sp) # the displacement
-    q_k = w_k + raise_to_P2(Q_sp, id_k) # type: Function
-    id = Function(s_mesh.coord_fe)
-    id[:] = s_mesh.coord_map
-    # w and q = w + id will be defined later
+    tau = Function(Q_sp)
+    mom = Function(MOM_sp)
+    m3 = Function(M3_sp)
     
+    id_k = Function(s_mesh.coord_fe)
+    id = Function(s_mesh.coord_fe)
+
+    # update the mesh mapping; 
+    # they will be needed in the measures. 
+    id_k[:] = s_mesh.coord_map 
+    q_k = w_k + raise_to_P2(Q_sp, id_k) # type: Function
+    id[:] = s_mesh.coord_map
+    # w and q = w + id will be solved later
+
+    y_k[:] = i_mesh.coord_map
+    
+    # =================================================================
     # set up the measures
     dx = Measure(mesh, dim=2, order=3)
     ds_i = Measure(mesh, dim=1, order=3, tags=(3,)) # the fluid interface restricted from the bulk mesh
@@ -236,13 +252,14 @@ if __name__ == "__main__":
     dp_i = Measure(i_mesh, dim=0, order=1, tags=(9,)) # the CL restricted from the fluid interfacef
     dp_s = Measure(s_mesh, dim=0, order=1, tags=(9,)) # the CL on the reference sheet mesh
     dp_is = Measure(s_mesh, dim=0, order=1, tags=(9,), interiorFacet=True, coord_map=id) 
-    # ^: the interior facets of the CL on the current reference sheet mesh
+    # ^: the interior facets of the CL on the current reference sheet mesh, should be set later
     dp = Measure(cl_mesh, dim=0, order=1)
 
     dA_k = Measure(s_mesh, dim=1, order=5, coord_map=id_k) # the reference sheet mesh at the last time step
     dA = Measure(s_mesh, dim=1, order=5, coord_map=id) # the reference sheet surface measure, <<< need re-declare
     da_k = Measure(s_mesh, dim=1, order=5, coord_map=q_k) # the deformed sheet surface measure
 
+    # =================================================================
     # set up the function bases:
     # fluid domain
     u_basis = FunctionBasis(U_sp, dx)
@@ -270,9 +287,6 @@ if __name__ == "__main__":
     # =================================================================
     # Step 1. Update the reference contact line. 
     # project the discontinuous deformation gradient onto P1 to find the conormal vector m1
-
-    
-    # w = Function(Q_sp) # the **displacement** for the current time step
     
     # # extract the CL dofs
     # cl_dof_P2v = np.unique(sheet_P2v.getFacetDof((9, )))
@@ -305,6 +319,7 @@ if __name__ == "__main__":
     # cl_disp = - solp.dt / (phyp.mu_cl * a) * (phyp.cosY + 1.0 * np.sum(m3_k_ * m1_k, axis=1)) 
     # chi = chi_k + cl_disp
 
+    # The output of this step are the followings:
     chi_k = np.zeros(2) # the last reference CL locations, force [0] to be left
     cl_disp = np.zeros(2) # the reference CL displacement, force [0] to be left
     
@@ -346,7 +361,7 @@ if __name__ == "__main__":
     B_PITAU = b_pitau.assemble(q_k_basis, q_k_basis, dA_k, \
                                q_k = q_k._interpolate(dA_k), mu_i=slip_fric)
     L_PI_ADV = l_pi_adv.assemble(q_k_basis, dA_k, q_k = q_k._interpolate(dA_k), eta_k = eta._interpolate(dA_k))
-    L_PI_Q = l_pi_L2.assemble(q_k_basis, dA_k, q_k=(raise_to_P2(Q_sp, id-id_k)-w_k)._interpolate(dA_k))
+    L_PI_Q = l_pi_L2.assemble(q_k_basis, dA_k, q_k=(raise_to_P2(Q_sp, id_k-id)+w_k)._interpolate(dA_k))
 
     #C_PHITAU = B_PIQ
     #C_PHIM3 = A_M3Q.T
@@ -357,6 +372,47 @@ if __name__ == "__main__":
     # C_CL_WQ = C_CL_PHIM.T
     # C_WQ = C_PHIM.T
     C_WM = c_L2.assemble(mom_basis, mom_basis, dA)
+
+    # collect the block matrices
+    #    u,        p1,      p0,      tau,      y,       k,      m3,        w,      m
+    A = bmat((
+        (A_XIU,    -A_XIP1, -A_XIP0, -A_XITAU, None,    -A_XIK, None,      None,   None),  # u
+        (A_XIP1.T, None,    None,    None,     None,    None,   None,      None,   None),  # p1
+        (A_XIP0.T, None,    None,    None,     None,    None,   None,      None,   None),  # p0
+        (-solp.dt*B_PIU, None, None, solp.dt*B_PITAU,   None, None, None,  B_PIQ,  None),  # tau
+        (None,     None,    None,    None,     A_ZY,    A_ZK,   -A_ZM3,    None,   None),  # y
+        (-solp.dt*A_XIK.T,  None, None, None,  A_ZK.T,  None,   None,      None,   None),  # k
+        (None,     None,    None,    None,     A_ZM3.T, None,   None,      -A_M3Q, None),  # m3
+        (None,     None,    None,    B_PIQ.T,  None,    None,   -A_M3Q.T,  -phyp.Y*C_PHIQ-C_PHIQ_SURF, C_PHIM-C_CL_PHIM), # w
+        (None,     None,    None,    None,     None,    None,   None,      C_PHIM.T-C_CL_PHIM.T, 1.0/phyp.B*C_WM), # m
+    ), format="csr")
+    # collect the right-hand-side
+    u[:] = 0.0; p1[:] = 0.0; p0[:] = 0.0
+    tau[:] = solp.dt * L_PI_ADV + L_PI_Q
+    y[:] = 0.0; kappa[:] = A_ZK.T @ y_k
+    m3[:] = L_M3
+    w[:] = C_PHIQ_SURF @ raise_to_P2(Q_sp, id)
+    mom[:] = 0.0
+    L = group_fn(u, p1, p0, tau, y, kappa, m3, w, mom)
+
+    # build the essential boundary conditions
+    u_noslip_dof = np.unique(U_sp.getFacetDof(tags=(7,)))
+    p_fix_dof = np.array((0,))
+    q_clamp_dof = np.unique(Q_sp.getFacetDof(tags=(10,)))
+    mom_fix_dof = np.unique(MOM_sp.getFacetDof(tags=(10,)))
+    free_dof = group_dof(
+        (U_sp, P1_sp, P0_sp, Q_sp, Y_sp, K_sp, M3_sp, Q_sp, MOM_sp), 
+        (u_noslip_dof, p_fix_dof, p_fix_dof, None, None, None, None, q_clamp_dof, mom_fix_dof)
+    )
+    # the essential boundary conditions are all homogeneous, 
+    # so no need to homogeneize the right-hand-side.
+
+    # solve the coupled system
+    sol_vec = spsolve(A[free_dof][:,free_dof], L[free_dof])
+    split_fn(sol_vec, u, p1, p0, tau, y, kappa, m3, w, mom)
+
+    # =================================================================
+    # Step 4. Displace the bulk mesh and update all the meshes. 
 
     pass
     
