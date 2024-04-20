@@ -11,9 +11,9 @@ class PhysicalParameters:
     mu_1: float = 1.0 #0.1
     mu_2: float = 1.0 #0.1
     mu_cl: float = 1.0 #0.1
-    cosY: float = cos(np.pi/2) # cos(np.pi*2.0/3)
+    cosY: float = cos(np.pi*2.0/3)
     gamma_1: float = 0.0
-    gamma_2: float = 0.0 # + cos(np.pi*2.0/3) # to be consistent
+    gamma_2: float = 0.0 + cos(np.pi*2.0/3) # to be consistent
     B: float = 1e1
     Y: float = 1e2 #1e1
 
@@ -159,10 +159,22 @@ def l_m3(m3: QuadData, x: QuadData, id: QuadData) -> np.ndarray:
     # id: (2, Nf, Nq)
     return np.sum(m3 * id, axis=0, keepdims=True) * x.ds
 
+# ===========================================================
+# linear elasticity for the bulk mesh displacement
+@BilinearForm
+def a_el(Z: QuadData, Y: QuadData, x: QuadData) -> np.ndarray:
+    # grad: (2, 2, Ne, Nq)
+    # x.dx: (1, Ne, Nq)
+    lam_dx = x.dx + (x.dx.max() - x.dx.min()) # (1, Ne, Nq)
+    r = np.zeros(x.shape[1:]) # (Ne,Nq)
+    tr = Y.grad[0,0] + Y.grad[1,1] # (Ne, Nq)
+    for i, j in (0,0), (0,1), (1,0), (1,1):
+        r += (Y.grad[i,j] + Y.grad[j,i] + (i==j) * tr) * Z.grad[i,j]
+    return r[np.newaxis] * lam_dx
 
 # ===========================================================
 
-def raise_to_P2(P2_space: FunctionSpace, p1_func: Function) -> np.ndarray:
+def lift_to_P2(P2_space: FunctionSpace, p1_func: Function) -> Function:
     p2_func = Function(P2_space)
     p2_func[:p1_func.size] = p1_func
     rdim = P2_space.elem.rdim
@@ -173,6 +185,11 @@ def raise_to_P2(P2_space: FunctionSpace, p1_func: Function) -> np.ndarray:
     else:
         raise NotImplementedError
     return p2_func
+
+def down_to_P1(P1_space: FunctionSpace, p2_func: Function) -> Function:
+    p1_func = Function(P1_space)
+    p1_func[:] = p2_func[:P1_space.num_dof]
+    return p1_func
 
 
 # ===========================================================
@@ -234,12 +251,10 @@ if __name__ == "__main__":
     id_k = Function(s_mesh.coord_fe)
     id = Function(s_mesh.coord_fe)
 
-    # update the mesh mapping; 
+    # retrieve the mesh mapping; 
     # they will be needed in the measures. 
     id_k[:] = s_mesh.coord_map 
-    q_k = w_k + raise_to_P2(Q_sp, id_k) # type: Function
-    id[:] = s_mesh.coord_map
-    # w and q = w + id will be solved later
+    q_k = w_k + lift_to_P2(Q_sp, id_k) # type: Function
 
     y_k[:] = i_mesh.coord_map
 
@@ -284,8 +299,9 @@ if __name__ == "__main__":
     )
     eta = Function(s_mesh.coord_fe) # the mesh velocity 
     eta[::2] = s_mesh_disp / solp.dt
-    s_mesh.coord_map[::2] += s_mesh_disp # update the reference sheet mesh
     id = s_mesh.coord_map # type: Function
+    id[::2] += s_mesh_disp # update the reference sheet mesh
+    id_lift = lift_to_P2(Q_sp, id)
 
     # =================================================================
     # Step 3. Solve the fluid, the fluid-fluid interface, and the sheet deformation. 
@@ -353,7 +369,7 @@ if __name__ == "__main__":
     B_PITAU = b_pitau.assemble(q_k_basis, q_k_basis, dA_k, \
                                q_k = q_k._interpolate(dA_k), mu_i=slip_fric)
     L_PI_ADV = l_pi_adv.assemble(q_k_basis, dA_k, q_k = q_k._interpolate(dA_k), eta_k = eta._interpolate(dA_k))
-    L_PI_Q = l_pi_L2.assemble(q_k_basis, dA_k, q_k=(q_k-raise_to_P2(Q_sp, id))._interpolate(dA_k))
+    L_PI_Q = l_pi_L2.assemble(q_k_basis, dA_k, q_k=(q_k-id_lift)._interpolate(dA_k))
 
     #C_PHITAU = B_PIQ.T
     #C_PHIM3 = A_M3Q.T
@@ -383,7 +399,7 @@ if __name__ == "__main__":
     tau[:] = solp.dt * L_PI_ADV + L_PI_Q
     y[:] = 0.0; kappa[:] = A_ZK.T @ y_k
     m3[:] = L_M3
-    w[:] = C_PHIQ_SURF @ raise_to_P2(Q_sp, id)
+    w[:] = C_PHIQ_SURF @ id_lift
     mom[:] = 0.0
     L = group_fn(u, p1, p0, tau, y, kappa, m3, w, mom)
 
@@ -406,11 +422,10 @@ if __name__ == "__main__":
     sol_full = np.zeros_like(L)
     sol_full[free_dof] = sol_free
     split_fn(sol_full, u, p1, p0, tau, y, kappa, m3, w, mom)
-    q = w + raise_to_P2(Q_sp, id)
-
-    print("u_max={}".format(np.linalg.norm(u, ord=np.inf)))
+    q = w + id_lift
 
     # temporary visulization
+    pyplot.ion()
     pyplot.figure()
     mesh.draw()
     u_ = u.view(np.ndarray)
@@ -418,10 +433,29 @@ if __name__ == "__main__":
     pyplot.figure()
     pyplot.plot(q[::2], q[1::2], 'ro', label="q")
     pyplot.plot(MOM_sp.dof_loc[:,0], mom, 'bx', label="mom")
-    pyplot.show()
+    pyplot.draw()
 
     # =================================================================
     # Step 4. Displace the bulk mesh and update all the meshes. 
+
+    # update the interface mesh
+    i_mesh.coord_map[:] = y
+
+    # no need to update the CL mesh as the coordinates are never used
+
+    # update the sheet mesh
+    # update already in Step 2
+
+    # solve for the bulk mesh displacement
+    BMM_basis = FunctionBasis(mesh.coord_fe, dx) # for bulk mesh mapping
+    A_EL = a_el.assemble(BMM_basis, BMM_basis, dx)
+    # attach the displacement of the interface and the sheet
+    BMM_int_dof = np.unique(mesh.coord_fe.getFacetDof(tags=(3,)))
+    BMM_s_dof = mesh.coord_fe.getFacetDof(tags=(4,5))
+    L = Function(mesh.coord_fe)
+    L[BMM_int_dof] = y
+
+    # update the bulk mesh
 
     pass
     
