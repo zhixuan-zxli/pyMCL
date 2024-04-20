@@ -1,5 +1,7 @@
+from os import mkdir
+import argparse
 import numpy as np
-from math import cos, floor
+from math import cos, ceil
 from fem import *
 from scipy.sparse import bmat
 from scipy.sparse.linalg import spsolve
@@ -20,9 +22,9 @@ class PhysicalParameters:
 
 class SolverParemeters:
     dt: float = 1.0/1024
-    Te: float = 1.0/1024 #1.0/8
+    Te: float = 128/1024 #1.0/8
     resume: bool = False
-    stride: int = 1
+    stride: int = 64
     numChekpoint: int = 0
     vis: bool = True
 
@@ -198,8 +200,12 @@ def down_to_P1(P1_space: FunctionSpace, p2_func: Function) -> Function:
 
 if __name__ == "__main__":
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--resume", help="Resume from previous computations.", action="store_true")
+    args = parser.parse_args()
     phyp = PhysicalParameters()
     solp = SolverParemeters()
+    solp.resume = args.resume
 
     # physical groups from GMSH
     # group_name = {"fluid_1": 1, "fluid_2": 2, "interface": 3, "dry": 4, "wet": 5, \
@@ -257,32 +263,33 @@ if __name__ == "__main__":
     id = Function(s_mesh.coord_fe)
 
     # resume from checkpoints
+    try:
+        mkdir("MCL-ouput")
+    except FileExistsError:
+        pass
     if solp.resume:
         pass
 
     # create the figures
     if solp.vis:
-        # pyplot.ion()
-        # pyplot.figure()
-        pass
+        pyplot.ion()
+        ax = pyplot.subplot()
 
     step = 0
     if solp.stride == 0 and solp.numChekpoint > 0:
-        solp.stride = floor(solp.Te / solp.dt / solp.numChekpoint)
+        solp.stride = ceil(solp.Te / solp.dt / solp.numChekpoint)
 
     while True:
         t = step * solp.dt
         if solp.vis:
-            # mesh.draw()
-            # u_ = u.view(np.ndarray)
-            # pyplot.quiver(U_sp.dof_loc[::2,0], U_sp.dof_loc[::2,1], u_[::2], u_[1::2])
-            # pyplot.figure()
-            # pyplot.plot(q[::2], q[1::2], 'ro', label="q")
-            # pyplot.plot(MOM_sp.dof_loc[:,0], mom, 'bx', label="mom")
-            # pyplot.draw()
-            pass
+            ax.clear()
+            mesh.draw()
+            ax.axis("equal")
+            pyplot.draw()
+            pyplot.pause(1e-3)
         if step % solp.stride == 0:
-            # Save checkpoints ...
+            filename = "MCL-output/{:04}.npz".format(step)
+            np.savez(filename, y_k=y_k, id_k=id_k, w_k=w_k, m3=m3, bmm=mesh.coord_map)
             print(Fore.GREEN + "{:>10}{:>16}{:>16}".format("Time", "Int. Disp.", "Sh. Disp.") + Style.RESET_ALL)
         if t >= solp.Te:
             print(Fore.GREEN + "Completed." + Style.RESET_ALL)
