@@ -8,14 +8,14 @@ from matplotlib import pyplot
 
 class PhysicalParameters:
     eta_2: float = 1.0
-    mu_1: float = 0.1
-    mu_2: float = 0.1
-    mu_cl: float = 0.1
-    cosY: float = cos(np.pi*2.0/3)
+    mu_1: float = 1.0 #0.1
+    mu_2: float = 1.0 #0.1
+    mu_cl: float = 1.0 #0.1
+    cosY: float = cos(np.pi/2) # cos(np.pi*2.0/3)
     gamma_1: float = 0.0
-    gamma_2: float = 0.0 + cos(np.pi*2.0/3) # to be consistent
-    B: float = 1e-1
-    Y: float = 1e1
+    gamma_2: float = 0.0 # + cos(np.pi*2.0/3) # to be consistent
+    B: float = 1e1
+    Y: float = 1e2 #1e1
 
 class SolverParemeters:
     dt: float = 1.0/1024
@@ -209,7 +209,7 @@ if __name__ == "__main__":
     # set up the function spaces
     U_sp = FunctionSpace(mesh, VectorElement(TriP2, 2), constraint=periodic_constraint)
     P1_sp = FunctionSpace(mesh, TriP1, constraint=periodic_constraint)
-    P0_sp = FunctionSpace(mesh, TriDG0)
+    P0_sp = FunctionSpace(mesh, TriDG0, constraint=periodic_constraint)
     Y_sp = i_mesh.coord_fe # type: FunctionSpace # should be VectorElement(LineP1, 2)
     K_sp = FunctionSpace(i_mesh, LineP1)
     Q_sp = FunctionSpace(s_mesh, VectorElement(LineP2, 2)) # for deformation and also for the fluid stress
@@ -390,8 +390,10 @@ if __name__ == "__main__":
     # build the essential boundary conditions
     u_noslip_dof = np.unique(U_sp.getFacetDof(tags=(7,)))
     p_fix_dof = np.array((0,))
-    q_clamp_dof = np.unique(Q_sp.getFacetDof(tags=(10,)))
-    mom_fix_dof = np.unique(MOM_sp.getFacetDof(tags=(10,)))
+    # q_clamp_dof = np.unique(np.concatenate((Q_sp.getFacetDof(tags=(10,)), np.arange(1, Q_sp.num_dof, 2))))
+    q_clamp_dof = np.unique(np.concatenate((Q_sp.getFacetDof(tags=(10,)).reshape(-1), np.arange(1, Q_sp.num_dof, 2))))
+    # mom_fix_dof = np.unique(MOM_sp.getFacetDof(tags=(10,)))
+    mom_fix_dof = np.arange(MOM_sp.num_dof)
     free_dof = group_dof(
         (U_sp, P1_sp, P0_sp, Q_sp, Y_sp, K_sp, M3_sp, Q_sp, MOM_sp), 
         (u_noslip_dof, p_fix_dof, p_fix_dof, None, None, None, None, q_clamp_dof, mom_fix_dof)
@@ -404,6 +406,19 @@ if __name__ == "__main__":
     sol_full = np.zeros_like(L)
     sol_full[free_dof] = sol_free
     split_fn(sol_full, u, p1, p0, tau, y, kappa, m3, w, mom)
+    q = w + raise_to_P2(Q_sp, id)
+
+    print("u_max={}".format(np.linalg.norm(u, ord=np.inf)))
+
+    # temporary visulization
+    pyplot.figure()
+    mesh.draw()
+    u_ = u.view(np.ndarray)
+    pyplot.quiver(U_sp.dof_loc[::2,0], U_sp.dof_loc[::2,1], u_[::2], u_[1::2])
+    pyplot.figure()
+    pyplot.plot(q[::2], q[1::2], 'ro', label="q")
+    pyplot.plot(MOM_sp.dof_loc[:,0], mom, 'bx', label="mom")
+    pyplot.show()
 
     # =================================================================
     # Step 4. Displace the bulk mesh and update all the meshes. 
