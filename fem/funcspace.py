@@ -138,8 +138,7 @@ def group_dof(mixed_fe: tuple[FunctionSpace], dof_list: tuple[Optional[np.ndarra
     # combine these dof to get the free dof
     offset = 0
     for fs, dof in zip(mixed_fe, dof_list):
-        if dof is None:
-            continue
-        free_dof[offset+dof] = False
+        if dof is not None:
+            free_dof[offset+dof] = False
         offset += fs.num_dof
     return free_dof
