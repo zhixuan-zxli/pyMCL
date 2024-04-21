@@ -16,13 +16,13 @@ class PhysicalParameters:
     mu_cl: float = 1.0
     cosY: float = cos(np.pi*2.0/3)
     gamma_1: float = 0.0
-    gamma_3: float = 1.0
-    gamma_2: float = 0.0 + 1.0 * cos(np.pi*2.0/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
+    gamma_3: float = 10.0
+    gamma_2: float = 0.0 + 10.0 * cos(np.pi*2.0/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
     B: float = 0.1
     Y: float = 1e1 #1e1
 
 class SolverParemeters:
-    dt: float = 1.0/1024/128
+    dt: float = 1.0/1024
     Te: float = 256.0/1024 #1.0/8
     resume: bool = False
     stride: int = 0
@@ -275,6 +275,7 @@ if __name__ == "__main__":
     if solp.vis:
         pyplot.ion()
         ax = pyplot.subplot()
+        bulk_triangles = mesh.coord_fe.elem_dof[::2,:].T//2
 
     step = 0
     if solp.stride == 0 and solp.numChekpoint > 0:
@@ -291,7 +292,8 @@ if __name__ == "__main__":
         t = step * solp.dt
         if solp.vis:
             ax.clear()
-            ax.triplot(mesh.coord_map[::2], mesh.coord_map[1::2], triangles=mesh.coord_fe.elem_dof[::2,:].T//2)
+            ax.tripcolor(mesh.coord_map[::2], mesh.coord_map[1::2], mesh.cell_tag[2], triangles=bulk_triangles)
+            ax.triplot(mesh.coord_map[::2], mesh.coord_map[1::2], triangles=bulk_triangles)
             m3_ = m3.view(np.ndarray)
             ax.quiver(q_k[cl_dof_Q2[::2]], q_k[cl_dof_Q2[1::2]], m3_[::2], m3_[1::2])
             ax.plot(id_k[::2], -0.1*np.ones(id_k.size//2), 'b+') # plot reference sheet mesh
@@ -453,10 +455,10 @@ if __name__ == "__main__":
         # build the essential boundary conditions
         u_noslip_dof = np.unique(U_sp.getFacetDof(tags=(7,)))
         p_fix_dof = np.array((0,))
-        q_clamp_dof = np.unique(Q_sp.getFacetDof(tags=(10,)))
-        # q_clamp_dof = np.unique(np.concatenate((Q_sp.getFacetDof(tags=(10,)).reshape(-1), np.arange(1, Q_sp.num_dof, 2)))) # for no-bending
-        mom_fix_dof = np.unique(MOM_sp.getFacetDof(tags=(10,)))
-        # mom_fix_dof = np.arange(MOM_sp.num_dof) # for no-bending
+        # q_clamp_dof = np.unique(Q_sp.getFacetDof(tags=(10,)))
+        q_clamp_dof = np.unique(np.concatenate((Q_sp.getFacetDof(tags=(10,)).reshape(-1), np.arange(1, Q_sp.num_dof, 2)))) # for no-bending
+        # mom_fix_dof = np.unique(MOM_sp.getFacetDof(tags=(10,)))
+        mom_fix_dof = np.arange(MOM_sp.num_dof) # for no-bending
         free_dof = group_dof(
             (U_sp, P1_sp, P0_sp, Q_sp, Y_sp, K_sp, M3_sp, Q_sp, MOM_sp), 
             (u_noslip_dof, p_fix_dof, p_fix_dof, None, None, None, None, q_clamp_dof, mom_fix_dof)
