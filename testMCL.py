@@ -11,8 +11,8 @@ from colorama import Fore, Style
 
 class PhysicalParameters:
     eta_2: float = 0.1
-    mu_1: float = 1.0
-    mu_2: float = 1.0
+    mu_1: float = 0.1
+    mu_2: float = 0.1
     mu_cl: float = 1.0
     cosY: float = cos(np.pi*2.0/3)
     gamma_1: float = 0.0
@@ -292,9 +292,11 @@ if __name__ == "__main__":
         if solp.vis:
             ax.clear()
             ax.triplot(mesh.coord_map[::2], mesh.coord_map[1::2], triangles=mesh.coord_fe.elem_dof[::2,:].T//2)
-            # q_k_ = q_k.view(np.ndarray)
             m3_ = m3.view(np.ndarray)
             ax.quiver(q_k[cl_dof_Q2[::2]], q_k[cl_dof_Q2[1::2]], m3_[::2], m3_[1::2])
+            ax.plot(id_k[::2], -0.1*np.ones(id_k.size//2), 'b+') # plot reference sheet mesh
+            ax.plot(id_k[cl_dof_Q1[::2]], -0.1*np.ones(2), 'ro')
+            ax.plot([-1,1], [-0.1,-0.1], 'b-')
             ax.axis("equal")
             pyplot.draw()
             pyplot.pause(1e-3)
