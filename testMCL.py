@@ -16,17 +16,17 @@ class PhysicalParameters:
     mu_cl: float = 1.0
     cosY: float = cos(np.pi*2.0/3)
     gamma_1: float = 0.0
-    gamma_3: float = 10.0
-    gamma_2: float = 0.0 + 10.0 * cos(np.pi*2.0/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
-    B: float = 1.0
-    Y: float = 1e3 #1e1
+    gamma_3: float = 1.0
+    gamma_2: float = 0.0 + 1.0 * cos(np.pi*2.0/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
+    B: float = 0.1
+    Y: float = 1e1 #1e1
 
 class SolverParemeters:
-    dt: float = 1.0/1024
+    dt: float = 1.0/1024/128
     Te: float = 256.0/1024 #1.0/8
     resume: bool = False
-    stride: int = 64
-    numChekpoint: int = 0
+    stride: int = 0
+    numChekpoint: int = 1
     vis: bool = True
 
 # ===========================================================
@@ -453,10 +453,10 @@ if __name__ == "__main__":
         # build the essential boundary conditions
         u_noslip_dof = np.unique(U_sp.getFacetDof(tags=(7,)))
         p_fix_dof = np.array((0,))
-        # q_clamp_dof = np.unique(np.concatenate((Q_sp.getFacetDof(tags=(10,)), np.arange(1, Q_sp.num_dof, 2))))
-        q_clamp_dof = np.unique(np.concatenate((Q_sp.getFacetDof(tags=(10,)).reshape(-1), np.arange(1, Q_sp.num_dof, 2)))) # for no-bending
-        # mom_fix_dof = np.unique(MOM_sp.getFacetDof(tags=(10,)))
-        mom_fix_dof = np.arange(MOM_sp.num_dof) # for no-bending
+        q_clamp_dof = np.unique(Q_sp.getFacetDof(tags=(10,)))
+        # q_clamp_dof = np.unique(np.concatenate((Q_sp.getFacetDof(tags=(10,)).reshape(-1), np.arange(1, Q_sp.num_dof, 2)))) # for no-bending
+        mom_fix_dof = np.unique(MOM_sp.getFacetDof(tags=(10,)))
+        # mom_fix_dof = np.arange(MOM_sp.num_dof) # for no-bending
         free_dof = group_dof(
             (U_sp, P1_sp, P0_sp, Q_sp, Y_sp, K_sp, M3_sp, Q_sp, MOM_sp), 
             (u_noslip_dof, p_fix_dof, p_fix_dof, None, None, None, None, q_clamp_dof, mom_fix_dof)
@@ -470,6 +470,11 @@ if __name__ == "__main__":
         sol_full[free_dof] = sol_free
         split_fn(sol_full, u, p1, p0, tau, y, kappa, m3, w, mom)
         q = w + id_lift
+        
+        # force unit length of m3
+        # m3_ = m3.view(np.ndarray).reshape(2,2)
+        # m3_ = m3_ / np.linalg.norm(m3_, axis=1, keepdims=True)
+        # m3[:] = m3_.reshape(-1)
         
         # =================================================================
         # Step 4. Displace the bulk mesh and update all the meshes. 
