@@ -8,3 +8,4 @@ build/
 *.geo
 *.msh
 *.xml
+*.npz

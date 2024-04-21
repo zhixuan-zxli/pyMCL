@@ -10,19 +10,20 @@ from colorama import Fore, Style
 
 
 class PhysicalParameters:
-    eta_2: float = 1.0
+    eta_2: float = 0.1
     mu_1: float = 1.0
     mu_2: float = 1.0
     mu_cl: float = 1.0
     cosY: float = cos(np.pi*2.0/3)
     gamma_1: float = 0.0
-    gamma_2: float = 0.0 + cos(np.pi*2.0/3) # to be consistent
+    gamma_3: float = 10.0
+    gamma_2: float = 0.0 + 10.0 * cos(np.pi*2.0/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
     B: float = 1.0
-    Y: float = 1e2 #1e1
+    Y: float = 1e3 #1e1
 
 class SolverParemeters:
     dt: float = 1.0/1024
-    Te: float = 128/1024 #1.0/8
+    Te: float = 256.0/1024 #1.0/8
     resume: bool = False
     stride: int = 64
     numChekpoint: int = 0
@@ -264,7 +265,7 @@ if __name__ == "__main__":
 
     # resume from checkpoints
     try:
-        mkdir("MCL-ouput")
+        mkdir("MCL-output")
     except FileExistsError:
         pass
     if solp.resume:
@@ -280,10 +281,20 @@ if __name__ == "__main__":
         solp.stride = ceil(solp.Te / solp.dt / solp.numChekpoint)
 
     while True:
+        # retrieve the mesh mapping; 
+        # they will be needed in the measures. 
+        y_k[:] = i_mesh.coord_map
+        id_k[:] = s_mesh.coord_map 
+        w_k[:] = w
+        q_k = w_k + lift_to_P2(Q_sp, id_k) # type: Function
+
         t = step * solp.dt
         if solp.vis:
             ax.clear()
-            mesh.draw()
+            ax.triplot(mesh.coord_map[::2], mesh.coord_map[1::2], triangles=mesh.coord_fe.elem_dof[::2,:].T//2)
+            # q_k_ = q_k.view(np.ndarray)
+            m3_ = m3.view(np.ndarray)
+            ax.quiver(q_k[cl_dof_Q2[::2]], q_k[cl_dof_Q2[1::2]], m3_[::2], m3_[1::2])
             ax.axis("equal")
             pyplot.draw()
             pyplot.pause(1e-3)
@@ -294,12 +305,6 @@ if __name__ == "__main__":
         if t >= solp.Te:
             print(Fore.GREEN + "Completed." + Style.RESET_ALL)
             break
-
-        # retrieve the mesh mapping; 
-        # they will be needed in the measures. 
-        y_k[:] = i_mesh.coord_map
-        id_k[:] = s_mesh.coord_map 
-        q_k = w_k + lift_to_P2(Q_sp, id_k) # type: Function
 
         # =================================================================
         # Step 1. Update the reference contact line. 
@@ -326,7 +331,7 @@ if __name__ == "__main__":
         # find the displacement of the reference CL driven by unbalanced Young force
         a = np.sum(dq_k_at_cl * m1_k, axis=1) # (2, )
         m3_ = m3.view(np.ndarray).reshape(2,2)
-        rcl_disp = - solp.dt / (phyp.mu_cl * a) * (-phyp.cosY + 1.0 * np.sum(m3_ * m1_k, axis=1)) # gamma_3 = 1.0
+        rcl_disp = - solp.dt / (phyp.mu_cl * a) * (phyp.gamma_1-phyp.gamma_2 + phyp.gamma_3 * np.sum(m3_ * m1_k, axis=1))
         chi = chi_k + rcl_disp
 
         # =================================================================
@@ -424,14 +429,14 @@ if __name__ == "__main__":
         # collect the block matrices
         #    u,        p1,      p0,      tau,      y,       k,      m3,        w,      m
         A = bmat((
-            (A_XIU,    -A_XIP1, -A_XIP0, -A_XITAU, None,    -A_XIK, None,      None,   None),  # u
+            (A_XIU,    -A_XIP1, -A_XIP0, -A_XITAU, None,    -phyp.gamma_3*A_XIK, None, None,   None),  # u
             (A_XIP1.T, None,    None,    None,     None,    None,   None,      None,   None),  # p1
             (A_XIP0.T, None,    None,    None,     None,    None,   None,      None,   None),  # p0
             (-solp.dt*B_PIU, None, None, solp.dt*B_PITAU,   None, None, None,  B_PIQ,  None),  # tau
             (None,     None,    None,    None,     A_ZY,    A_ZK,   -A_ZM3,    None,   None),  # y
             (-solp.dt*A_XIK.T,  None, None, None,  A_ZK.T,  None,   None,      None,   None),  # k
             (None,     None,    None,    None,     A_ZM3.T, None,   None,      -A_M3Q, None),  # m3
-            (None,     None,    None,    B_PIQ.T,  None,    None,   -A_M3Q.T,  -phyp.Y*C_PHIQ-C_PHIQ_SURF, C_PHIM-C_CL_PHIM), # w
+            (None,     None,    None,    B_PIQ.T,  None,    None,   -phyp.gamma_3*A_M3Q.T, -phyp.Y*C_PHIQ-C_PHIQ_SURF, C_PHIM-C_CL_PHIM), # w
             (None,     None,    None,    None,     None,    None,   None,      C_PHIM.T-C_CL_PHIM.T, 1.0/phyp.B*C_WM), # m
         ), format="csr")
         # collect the right-hand-side
@@ -492,9 +497,13 @@ if __name__ == "__main__":
         mesh.coord_map += bulk_disp
 
         print("{:>10.4f}{:>16.2e}{:>16.2e}".format(
-            t + solp.dt, np.linalg.norm(y-y_k, ord=np.inf), np.linalg.norm(q-q_k, ord=np.inf)))
+            t + solp.dt, np.linalg.norm(y-y_k, ord=np.inf), np.linalg.norm(q-q_k, ord=np.inf)), end="")
+        print("  ({:.4f}, {:.4f}), ".format(q[cl_dof_Q2[0]], q[cl_dof_Q2[2]]), end="")
+        print("  ({:.4f}, {:.4f})".format(np.sqrt(m3[0]**2+m3[1]**2), np.sqrt(m3[2]**2+m3[3]**2)))
 
         step += 1
 
     # end time loop
-    
+    if solp.vis:
+        pyplot.ioff()
+        pyplot.show()
