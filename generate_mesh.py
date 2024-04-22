@@ -114,9 +114,7 @@ if __name__ == "__main__":
     mesh_name = argv[1] if len(argv) >= 2 else "unit_square"
     if mesh_name == "two-phase":
         bbox = np.array([[-1,0], [1,1]], dtype=np.float64)
-        # markers = np.array([[0.5,0], [0.5, 0.25], [-0.5, 0.25], [-0.5,0]])
-        theta = (np.arange(41) / 40.0 * np.pi).reshape(-1, 1)
-        markers = np.hstack((np.cos(theta), np.sin(theta))) * 0.5
+        markers = np.array([[0.5,0], [0.5, 0.25], [-0.5, 0.25], [-0.5,0]])
         build_two_phase_mesh(bbox, markers, [0.04, 0.1], 0.5)
     elif mesh_name == "unit_square":
         build_unit_square(0.1)
