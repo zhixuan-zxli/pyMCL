@@ -245,6 +245,17 @@ if __name__ == "__main__":
     # extract the useful DOFs
     cl_dof_Q2 = np.unique(Q_sp.getFacetDof(tags=(9,)))
     cl_dof_Q1 = np.unique(Q_P1_sp.getFacetDof(tags=(9,)))
+    #
+    u_noslip_dof = np.unique(U_sp.getFacetDof(tags=(7,)))
+    p_fix_dof = np.array((0,))
+    # q_clamp_dof = np.unique(Q_sp.getFacetDof(tags=(10,)))
+    q_clamp_dof = np.unique(np.concatenate((Q_sp.getFacetDof(tags=(10,)).reshape(-1), np.arange(1, Q_sp.num_dof, 2)))) # for no-bending
+    # mom_fix_dof = np.unique(MOM_sp.getFacetDof(tags=(10,)))
+    mom_fix_dof = np.arange(MOM_sp.num_dof) # for no-bending
+    free_dof = group_dof(
+        (U_sp, P1_sp, P0_sp, Q_sp, Y_sp, K_sp, M3_sp, Q_sp, MOM_sp), 
+        (u_noslip_dof, p_fix_dof, p_fix_dof, None, None, None, None, q_clamp_dof, mom_fix_dof)
+    )
 
     # declare the solution functions
     u = Function(U_sp)
@@ -452,17 +463,6 @@ if __name__ == "__main__":
         mom[:] = 0.0
         L = group_fn(u, p1, p0, tau, y, kappa, m3, w, mom)
 
-        # build the essential boundary conditions
-        u_noslip_dof = np.unique(U_sp.getFacetDof(tags=(7,)))
-        p_fix_dof = np.array((0,))
-        # q_clamp_dof = np.unique(Q_sp.getFacetDof(tags=(10,)))
-        q_clamp_dof = np.unique(np.concatenate((Q_sp.getFacetDof(tags=(10,)).reshape(-1), np.arange(1, Q_sp.num_dof, 2)))) # for no-bending
-        # mom_fix_dof = np.unique(MOM_sp.getFacetDof(tags=(10,)))
-        mom_fix_dof = np.arange(MOM_sp.num_dof) # for no-bending
-        free_dof = group_dof(
-            (U_sp, P1_sp, P0_sp, Q_sp, Y_sp, K_sp, M3_sp, Q_sp, MOM_sp), 
-            (u_noslip_dof, p_fix_dof, p_fix_dof, None, None, None, None, q_clamp_dof, mom_fix_dof)
-        )
         # the essential boundary conditions are all homogeneous, 
         # so no need to homogeneize the right-hand-side.
 
