@@ -19,7 +19,7 @@ class PhysicalParameters:
     gamma_3: float = 10.0
     gamma_2: float = 0.0 + 10.0 * cos(np.pi*2.0/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
     B: float = 1.0
-    Y: float = 1e2 #1e1
+    Y: float = 1e3 #1e1
 
 class SolverParemeters:
     dt: float = 1.0/1024/8
@@ -233,9 +233,9 @@ if __name__ == "__main__":
 
     # =================================================================
     # set up the function spaces
-    U_sp = FunctionSpace(mesh, VectorElement(TriP2, 2), constraint=periodic_constraint)
-    P1_sp = FunctionSpace(mesh, TriP1, constraint=periodic_constraint)
-    P0_sp = FunctionSpace(mesh, TriDG0, constraint=periodic_constraint)
+    U_sp = FunctionSpace(mesh, VectorElement(TriP2, 2))
+    P1_sp = FunctionSpace(mesh, TriP1)
+    P0_sp = FunctionSpace(mesh, TriDG0)
     Y_sp = i_mesh.coord_fe # type: FunctionSpace # should be VectorElement(LineP1, 2)
     K_sp = FunctionSpace(i_mesh, LineP1)
     Q_sp = FunctionSpace(s_mesh, VectorElement(LineP2, 2)) # for deformation and also for the fluid stress
