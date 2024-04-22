@@ -18,15 +18,15 @@ class PhysicalParameters:
     gamma_1: float = 0.0
     gamma_3: float = 10.0
     gamma_2: float = 0.0 + 10.0 * cos(np.pi*2.0/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
-    B: float = 0.1
-    Y: float = 1e1 #1e1
+    B: float = 1.0
+    Y: float = 1e2 #1e1
 
 class SolverParemeters:
     dt: float = 1.0/1024
-    Te: float = 256.0/1024 #1.0/8
+    Te: float = 1.0/2 #1.0/8
     resume: bool = False
     stride: int = 0
-    numChekpoint: int = 1
+    numChekpoint: int = 8
     vis: bool = True
 
 # ===========================================================
@@ -249,10 +249,10 @@ if __name__ == "__main__":
     #
     u_noslip_dof = np.unique(U_sp.getFacetDof(tags=(7,)))
     p_fix_dof = np.array((0,))
-    # q_clamp_dof = np.unique(Q_sp.getFacetDof(tags=(10,)))
-    q_clamp_dof = np.unique(np.concatenate((Q_sp.getFacetDof(tags=(10,)).reshape(-1), np.arange(1, Q_sp.num_dof, 2)))) # for no-bending
-    # mom_fix_dof = np.unique(MOM_sp.getFacetDof(tags=(10,)))
-    mom_fix_dof = np.arange(MOM_sp.num_dof) # for no-bending
+    q_clamp_dof = np.unique(Q_sp.getFacetDof(tags=(10,)))
+    # q_clamp_dof = np.unique(np.concatenate((Q_sp.getFacetDof(tags=(10,)).reshape(-1), np.arange(1, Q_sp.num_dof, 2)))) # for no-bending
+    mom_fix_dof = np.unique(MOM_sp.getFacetDof(tags=(10,)))
+    # mom_fix_dof = np.arange(MOM_sp.num_dof) # for no-bending
     free_dof = group_dof(
         (U_sp, P1_sp, P0_sp, Q_sp, Y_sp, K_sp, M3_sp, Q_sp, MOM_sp), 
         (u_noslip_dof, p_fix_dof, p_fix_dof, None, None, None, None, q_clamp_dof, mom_fix_dof)
@@ -445,7 +445,7 @@ if __name__ == "__main__":
         # collect the block matrices
         #    u,        p1,      p0,      tau,      y,       k,      m3,        w,      m
         A = bmat((
-            (A_XIU,    -A_XIP1, -A_XIP0, -A_XITAU, None,    -phyp.gamma_3*A_XIK, None, None,   None),  # u
+            (A_XIU,    -A_XIP1, -A_XIP0, A_XITAU,  None,    -phyp.gamma_3*A_XIK, None, None,   None),  # u
             (A_XIP1.T, None,    None,    None,     None,    None,   None,      None,   None),  # p1
             (A_XIP0.T, None,    None,    None,     None,    None,   None,      None,   None),  # p0
             (-solp.dt*B_PIU, None, None, solp.dt*B_PITAU,   None, None, None,  B_PIQ,  None),  # tau
