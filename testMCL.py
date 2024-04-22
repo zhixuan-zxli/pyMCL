@@ -59,9 +59,10 @@ def c_phiq(phi: QuadData, w: QuadData, x: QuadData, w_k: QuadData) -> np.ndarray
     # Here the trial function w is the displacement, 
     # and the argument w_k, q_k is the push-forward displacement, deformation (resp.) 
     # from the last time step. 
-    c1 = (w.grad[0,0] + 0.5 * w_k.grad[1,0] * w.grad[1,0]) * phi.grad[0,0]
-    c2 = (w_k.grad[0,0] + 0.5 * w_k.grad[1,0]**2) * w.grad[1,0] * phi.grad[1,0]
-    return (c1+c2)[np.newaxis] * x.dx
+    # c1 = (w.grad[0,0] + 0.5 * w_k.grad[1,0] * w.grad[1,0]) * phi.grad[0,0]
+    # c2 = (w_k.grad[0,0] + 0.5 * w_k.grad[1,0]**2) * w.grad[1,0] * phi.grad[1,0]
+    # return (c1+c2)[np.newaxis] * x.dx
+    return (w.grad[0,0] * phi.grad[0,0])[np.newaxis] * x.dx
 
 @BilinearForm
 def c_phiq_surf(phi: QuadData, w: QuadData, x: QuadData, gamma: np.ndarray) -> np.ndarray:
