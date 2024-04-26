@@ -1,105 +1,109 @@
 from sys import argv
 import numpy as np
-from mesh import Mesh
-from mesh_util import setMeshMapping
-from fe import Measure, TriP1
-from function import Function, group_fn, split_fn
-from assemble import assembler, Form
-from scipy import sparse
+from fem import *
+from scipy.sparse import bmat
 from scipy.sparse.linalg import spsolve
 from matplotlib import pyplot
 
-def a10(x, chi, coord) -> np.ndarray:
-    # x : (3, 1, Nq)
-    # coord.n : (3, Ne, Nq)
-    # chi : (1, 1, Nq)
-    # return (1, 3, Ne, Nq)
-    data = x * coord.n * chi * coord.dx # (3, Ne, Nq)
-    return data[np.newaxis]
-
-def a11(kappa, chi, coord) -> np.ndarray:
-    # kappa : (1, 1, Nq)
-    # chi : (1, 1, Nq)
-    return -kappa * chi * coord.dx
-
-def a00(x, eta, coord) -> np.ndarray:
+@BilinearForm
+def a00(eta, x, z) -> np.ndarray:
     # x.grad (3, 3, Ne, Nq)
     # eta.grad (3, 3, Ne, Nq)
-    data = np.zeros((3, 3, coord.shape[1], coord.shape[2]))
-    data[0,0,:,:] = np.sum(x.grad[0,:,:,:] * eta.grad[0,:,:,:], axis=0)
-    data[1,1,:,:] = np.sum(x.grad[1,:,:,:] * eta.grad[1,:,:,:], axis=0)
-    data[2,2,:,:] = np.sum(x.grad[2,:,:,:] * eta.grad[2,:,:,:], axis=0)
-    return data * coord.dx[np.newaxis]
+    return np.sum(x.grad * eta.grad, axis=(0,1))[np.newaxis] * z.dx
 
-def a01(kappa, eta, coord) -> np.ndarray:
+@BilinearForm
+def a10(chi, x, z) -> np.ndarray:
+    # x : (3, 1, Nq)
+    # z.cn : (3, Ne, Nq)
+    # chi : (1, 1, Nq)
+    return np.sum(x * z.cn, axis=0, keepdims=True) * chi * z.dx
+
+@BilinearForm
+def a11(chi, kappa, z) -> np.ndarray:
     # kappa : (1, 1, Nq)
-    # eta : (3, 1, Nq)
-    # coord.n : (3, Ne, Nq)
-    # return (3, 1, Ne, Nq)
-    data = eta * coord.n * kappa * coord.dx # (3, Ne, Nq)
-    return data[:, np.newaxis]
+    # chi : (1, 1, Nq)
+    return kappa * chi * z.dx
 
-def l1(chi, coord, x_m) -> np.ndarray:
+@LinearForm
+def l1(chi, z, x_m) -> np.ndarray:
     # chi : (1,1,Nq)
-    # coord.n : (3, Ne, Nq)
+    # z.n : (3, Ne, Nq)
     # x_m : (3, Ne, Nq)
-    return np.sum(x_m * coord.n, axis=0, keepdims=True) * chi * coord.dx
+    return np.sum(x_m * z.cn, axis=0, keepdims=True) * chi * z.dx
+
+class SolverParameters:
+    dt: float = 1.0/1000
+    maxStep: int = 60
 
 if __name__ == "__main__":
 
-    plot_or_not = len(argv) >= 2 and argv[1] == "yes"
+    vis = len(argv) >= 2 and bool(argv[1])
+
+    solp = SolverParameters()
 
     mesh = Mesh()
     mesh.load("mesh/dumbbell.msh")
     setMeshMapping(mesh)
 
-    X_space = mesh.coord_fe
-    K_space = TriP1(mesh, num_copy=1)
-    x_m = Function(X_space)
-    x = Function(X_space)
-    k = Function(K_space)
+    mixed_fs = (
+        mesh.coord_fe, # X
+        FunctionSpace(mesh, TriP1),  # kappa
+    )
+    dx = Measure(mesh, 2, order=3)
+    x_b = FunctionBasis(mixed_fs[0], dx)
+    k_b = FunctionBasis(mixed_fs[1], dx)
 
-    params = {"dt" : 1.0/1000, "maxStep" : 60}
-    geom_hint = ("f", "grad", "dx", "inv_grad", "n")
-    
+    x_m = Function(mixed_fs[0])
+    x = Function(mixed_fs[0])
+    k = Function(mixed_fs[1])
+
+
     # visualize
-    if plot_or_not:
+    if vis:
         pyplot.ion()
         fig = pyplot.figure()
         ax = fig.add_subplot(projection="3d")
-        ts = ax.plot_trisurf(mesh.point[:,0], mesh.point[:,1], mesh.point[:,2], triangles=mesh.cell[2][:, :-1])
+        nv = NodeVisualizer(mesh, mixed_fs[1])
+
+    def redraw() -> None:
+        z = nv.remap(x_m, num_copy=3)
+        ax.clear()
+        ts = ax.plot_trisurf(z[:,0], z[:,1], z[:,2], triangles=mesh.cell[2])
         ts.set(linewidth=0.5)
         ts.set_edgecolor("tab:blue")
         ts.set_facecolor((0.0, 0.0, 0.0, 0.0))
-        fig.canvas.draw() 
-        fig.canvas.flush_events()
+        ax.set_xlim(-0.8, 0.8)
+        ax.set_ylim(-0.8, 0.8)
+        ax.set_zlim(-0.8, 0.8)
+        pyplot.draw()
+        pyplot.pause(1e-3)
 
-    for m in range(params["maxStep"]):
-        print("Solving t = {0:.4f}, ".format((m+1) * params["dt"]), end="")
+    for m in range(solp.maxStep):
+        print("Solving t = {0:.4f}, ".format((m+1) * solp.dt), end="")
         # get the current mesh
         x_m[:] = mesh.coord_map
         x[:] = 0.0
+        if vis:
+            redraw()
         # assemble the system
-        A00 = assembler(X_space, X_space, Measure(2), 3, geom_hint).bilinear(Form(a00, "grad"))
-        A01 = assembler(X_space, K_space, Measure(2), 3, geom_hint).bilinear(Form(a01, "f"))
-        A10 = assembler(K_space, X_space, Measure(2), 3, geom_hint).bilinear(Form(a10, "f"))
-        A11 = assembler(K_space, K_space, Measure(2), 3, geom_hint).bilinear(Form(a11, "f"))
-        L1 = assembler(K_space, None, Measure(2), 3, geom_hint).linear(Form(l1, "f"), x_m = x_m)
-        Aa = sparse.bmat(((A00, A01), (A10 / params["dt"], A11)), format="csr")
-        La = group_fn(x, L1 / params["dt"])
+        dx.update()
+        x_b.update()
+        k_b.update()
+        A00 = a00.assemble(x_b, x_b, dx)
+        A10 = a10.assemble(k_b, x_b, dx)
+        A11 = a11.assemble(k_b, k_b, dx)
+        L1 = l1.assemble(k_b, dx, x_m=x_m._interpolate(dx))
+        Aa = bmat(((A00, A10.T), (A10, -solp.dt * A11)), format="csr")
+        La = group_fn(x, L1)
         # solve the system
         sol_vec = spsolve(Aa, La)
         split_fn(sol_vec, x, k)
         # update the mesh
         mesh.coord_map[:] = x
-        disp = (x - x_m).reshape(-1)
+        disp = x - x_m
         print('disp = {0:.3e}'.format(np.linalg.norm(disp, ord=np.inf)))
         # update plot
-        if plot_or_not:
-            ax.clear()
-            ts = ax.plot_trisurf(x[:,0], x[:,1], x[:,2], triangles=mesh.cell[2][:, :-1])
-            ts.set(linewidth=0.5)
-            ts.set_edgecolor("tab:blue")
-            ts.set_facecolor((0.0, 0.0, 0.0, 0.0))
-            fig.canvas.draw() 
-            fig.canvas.flush_events()
+        if vis:
+            redraw()
+    
+    print("Finished.\n")

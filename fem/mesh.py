@@ -1,13 +1,11 @@
-from typing import Optional
+from typing import Optional, Any
 import meshio
 import numpy as np
-from scipy.sparse import csr_array
+from .refdom import ref_doms
+from tools.binsearchkw import binsearchkw
 from matplotlib import pyplot
 
-class Measure:
-    def __init__(self, tdim: int, sub_id: Optional[tuple[int]] = None) -> None:
-        self.tdim = tdim
-        self.sub_id = sub_id
+INTERIOR_FACET_TAG: int = 99
 
 class Mesh:
 
@@ -16,20 +14,27 @@ class Mesh:
     point: np.ndarray
     point_tag: np.ndarray
     cell: list[np.ndarray]
-    # coord_fe: "FiniteElement"
-    # coord_map: "Function"
+    # cell[d] stores the node representation of a d-dimensional simplex, appended by a tag. 
+    cell_tag: list[np.ndarray]
+
+    facet_ref: np.ndarray
+    # mapping from facets to elements, (2, 2, num_facets = cell[tdim-1].shape[0])
+    # [positive/negaive side, element id/facet id, *] 
+
+    coord_fe: Any # type: FunctionSpace # the finite element space for the mesh mapping
+    coord_map: Any # type: MeshMapping # the finite element function for the mesh mapping
+    
 
     def __init__(self) -> None:
         self.gdim = 0
         self.tdim = 0
         self.point = None
         self.point_tag = None
-        self.cell = [
-            None, 
-            np.zeros((0, 3), dtype=np.uint32), # edge
-            np.zeros((0, 4), dtype=np.uint32), # triangle
-            np.zeros((0, 5), dtype=np.uint32)                    
-        ]
+        self.cell = [np.zeros((0, i+1), dtype=np.int32) for i in range(4)]
+        self.cell_tag = [np.zeros((0, ), dtype=np.int32) for _ in range(4)]
+        self.facet_ref = None
+        self.coord_fe = None
+        self.coord_map = None
 
     def load(self, mesh_name: str) -> None:
         """
@@ -41,7 +46,7 @@ class Mesh:
         while np.all(self.point[:,-1] == 0.): 
             self.point = self.point[:,:-1] # Remove the z coordinates if this is a planar mesh
         self.gdim = self.point.shape[1]
-        self.point_tag = np.zeros((self.point.shape[0],), dtype=np.uint32)
+        self.point_tag = np.zeros((self.point.shape[0],), dtype=np.int32)
 
         # 2. read the higher-dimensional entities
         assert("gmsh:physical" in msh.cell_data)
@@ -50,112 +55,119 @@ class Mesh:
             if cell.type == "vertex":
                 self.point_tag[cell.data] = data
             elif cell.type == "line":
-                self.cell[1] = np.vstack((self.cell[1], np.hstack((cell.data, data[:, np.newaxis]))))
-                if self.tdim < 1: 
-                    self.tdim = 1
+                self.cell[1] = np.vstack((self.cell[1], cell.data.astype(np.int32)))
+                self.cell_tag[1] = np.concatenate((self.cell_tag[1], data.astype(np.int32)))
+                self.tdim = max(self.tdim, 1)
             elif cell.type == "triangle":
-                self.cell[2] = np.vstack((self.cell[2], np.hstack((cell.data, data[:, np.newaxis]))))
-                if self.tdim < 2:
-                    self.tdim = 2
+                self.cell[2] = np.vstack((self.cell[2], cell.data.astype(np.int32)))
+                self.cell_tag[2] = np.concatenate((self.cell_tag[2], data.astype(np.int32)))
+                self.tdim = max(self.tdim, 2)
             else:
                 raise RuntimeError("Unrecognized cell type. ")
-            
-    def add_constraint(self, master_marker, slave_marker, transform, tol: float = 1e-14) -> None:
-        master_idx = np.nonzero(master_marker(self.point))[0] if callable(master_marker) else master_marker # master indices
-        master_data = np.hstack((transform(self.point[master_idx]), master_idx[:,np.newaxis]))
-        slave_idx = np.nonzero(slave_marker(self.point))[0] if callable(slave_marker) else slave_marker # slave indices
-        slave_data = np.hstack((self.point[slave_idx], -slave_idx[:,np.newaxis]-1))
-        assert master_data.shape[0] == slave_data.shape[0], "Number of nodes unmatched. "
-        # try to match the slave/master pair by sorting
-        data = np.vstack((master_data, slave_data))
-        si = np.lexsort((data[:,2], data[:,1], data[:,0]))
-        data = data[si, :]
-        error = data[::2, :2] - data[1::2, :2]
-        assert np.linalg.norm(error.reshape(-1), ord=np.inf) < tol
-        # save the matching pairs
-        con = data[:, 2].astype(np.int32).reshape(-1, 2)
-        con = np.vstack((np.min(con, axis=1), np.max(con, axis=1))).T #(x,2)
-        con[:,0] = -con[:,0] - 1
-        if not hasattr(self, "constraint_table"):
-            self.constraint_table = []
-        self.constraint_table.append(con)
+        # assign the 0-th dim cells to be the tagged nodes
+        self.cell[0] = np.nonzero(self.point_tag)[0].reshape(-1, 1).astype(np.int32)
+        self.cell_tag[0] = self.point_tag[self.cell[0]].reshape(-1)
 
-    def _get_point_remap(self) -> None:
+        # 3. build the facets. 
+        self.build_facet_ref()
+
+    def build_facet_ref(self) -> None:
         """
-        Link the slave points to the master points. 
-        Ensure that there is no intermediate slave poitns. 
+        This function will tag all the untagged facets with ID 99. 
         """
-        assert hasattr(self, "constraint_table"), "Why get point remap if there is no constraint?"
-        if not hasattr(self, "point_remap"):
-            con = np.vstack(self.constraint_table)
-            remap = np.arange(self.point.shape[0], dtype=np.uint32)
-            temp = remap.copy()
-            while True:
-                temp[con[:,0]] = remap[con[:,1]]
-                if np.all(temp == remap):
-                    break
-                remap[:] = temp
-            self.point_remap = remap
-        return self.point_remap
-    
+        if self.tdim == 0:
+            return
+        # collect all the facets
+        all_facets = ref_doms[self.tdim]._get_sub_entities(self.cell[self.tdim], dim=self.tdim-1) # (Ne, num_sub_ent, tdim-1+1)
+        num_facet = all_facets.shape[1]
+        all_facets = all_facets.reshape(-1, self.tdim)
+        all_facets, _ = self._sort_with_orienation(all_facets)
+        uq_facets, idx = np.unique(all_facets, return_index=True, axis=0)
+        tagged_facets, orientation = self._sort_with_orienation(self.cell[self.tdim-1])
+        sub_idx = binsearchkw(uq_facets.astype(np.int32), tagged_facets)
+        assert np.all(sub_idx != -1)
+        # the first side 
+        Nf = uq_facets.shape[0]
+        self.facet_ref = np.zeros((2, 2, Nf), dtype=np.int32)
+        self.facet_ref[0,0], self.facet_ref[0,1] = np.divmod(idx, num_facet)
+        # the other side
+        _, idx = np.unique(all_facets[::-1], return_index=True, axis=0)
+        idx = all_facets.shape[0] - idx - 1
+        self.facet_ref[1,0], self.facet_ref[1,1] = np.divmod(idx, num_facet)
+        # save all the facets
+        self.cell[self.tdim-1] = uq_facets
+        if self.tdim >= 2:
+            self.cell[self.tdim-1][sub_idx[orientation], :2] = self.cell[self.tdim-1][sub_idx[orientation], 1::-1]
+        old_tags = self.cell_tag[self.tdim-1]
+        self.cell_tag[self.tdim-1] = INTERIOR_FACET_TAG * np.ones((Nf, ), dtype=np.int32)
+        self.cell_tag[self.tdim-1][sub_idx] = old_tags
+        # fix the facet orientation
+        tags = self.cell_tag[self.tdim][self.facet_ref[:,0]] # (2, num_facet)
+        flipped = tags[0] > tags[1]
+        self.facet_ref[:,:,flipped] = self.facet_ref[::-1,:,flipped]
+
     @staticmethod
-    def _get_edges_from_tri(Np, tri):
-        """
-        Build the edge map e -> id, 
-        where e = (p1, p2) with p1 < p2 represents an edge, 
-        and id is 1-based and unique among the edges. 
-        Return: m: csr_array, edges: (Nt*3, 2)
-        """
-        Nt = tri.shape[0]
-        edges = tri[:, [0,1,1,2,2,0]].reshape(-1, 3, 2)
-        edges = np.stack((np.min(edges, axis=2), np.max(edges, axis=2)), axis=2).reshape(-1, 2)
-        m = csr_array((np.ones((Nt*3,), dtype=np.int64), (edges[:,0], edges[:,1])), shape=(Np, Np))
-        m.data = np.arange(m.nnz) + 1
-        return m, edges
-    
-    def view(self, mea: Measure) -> "Mesh":
-        submesh = Mesh()
-        submesh.tdim = mea.tdim
-        submesh.gdim = self.gdim
-        # select the entities to preserve
-        keep_idx = [None] * 4
-        if mea.tdim == 3:
+    def _sort_with_orienation(entities: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        N, d = entities.shape
+        orientation = np.empty((N, ), dtype=np.bool8)
+        res = entities.copy()
+        if d == 1:
+            orientation[:] = False
+        elif d == 2:
+            orientation = res[:,0] > res[:,1]
+            res[orientation,:] = res[orientation,::-1]
+        elif d == 3:
+            orientation = res[:,1] > res[:,2]
+            res[orientation, 1::3] = res[orientation, 2:0:-1]
+            flag = res[:,0] > res[:,1]
+            orientation = np.logical_xor(orientation, flag)
+            res[flag, 0::2] = res[flag, 1::-1]
+            flag = res[:,1] > res[:,2]
+            orientation = np.logical_xor(orientation, flag)
+            res[flag, 1::3] = res[flag, 2:0:-1]
+        else:
             raise NotImplementedError
-        elif mea.tdim == 2:
-            flag = np.zeros((self.cell[2].shape[0], ), dtype=np.bool8)
-            for t in mea.sub_id:
-                flag[self.cell[2][:,-1] == t] = True
-            keep_idx[2] = np.nonzero(flag)[0]
-            # find out the edges to be preserved
-            edge_map, _ = self._get_edges_from_tri(self.point.shape[0], self.cell[2][keep_idx[2], :])
-            edge_flag = edge_map[np.min(self.cell[1][:, :-1], axis=1), np.max(self.cell[1][:, :-1], axis=1)] > 0
-            keep_idx[1] = np.nonzero(edge_flag)[0]
-            # find out the vertices to be preserved
-            keep_idx[0] = np.unique(self.cell[2][keep_idx[2], :-1])
-        elif mea.tdim == 1:
-            flag = np.zeros((self.cell[1].shape[0], ), dtype=np.bool8)
-            for t in mea.sub_id:
-                flag[self.cell[1][:, -1] == t] = True
-            keep_idx[1] = np.nonzero(flag)[0]
-            keep_idx[0] = np.unique(self.cell[1][keep_idx[1], :-1])
-        elif mea.tdim == 0:
-            flag = np.zeros((self.point.shape[0], ), dtype=np.bool8)
-            for t in mea.sub_id:
-                flag[self.point_tag == t] = True
-            keep_idx[0] = np.nonzero(flag)[0]
-        # copy the nodes
+        return res, orientation
+    
+    def view(self, dim: int, tags: Optional[tuple[int]] = None) -> "Mesh":
+        submesh = Mesh()
+        submesh.tdim = dim
+        submesh.gdim = self.gdim
+        keep_idx = [None] * (dim+1)
+        # 1. select the entities of the highest dimension to preserve
+        elem_tag = self.point_tag if dim == 0 else self.cell_tag[dim]
+        keep_idx[dim] = np.zeros((elem_tag.shape[0], ), dtype=np.bool_)
+        if tags == None:
+            keep_idx = True
+        else:
+            assert isinstance(tags, tuple)
+            for t in tags:
+                keep_idx[dim][elem_tag == t] = True
+        if dim == 0:
+            submesh.point = self.point[keep_idx[0]]
+            submesh.point_tag = self.point_tag[keep_idx[0]]
+            # assign the 0-th dim cells to be the tagged nodes
+            submesh.cell[0] = np.nonzero(submesh.point_tag)[0].reshape(-1, 1).astype(np.int32)
+            submesh.cell_tag[0] = submesh.point_tag[submesh.cell[0]].reshape(-1)
+            return submesh
+        submesh.cell[dim] = self.cell[dim][keep_idx[dim]]
+        submesh.cell_tag[dim] = self.cell_tag[dim][keep_idx[dim]]
+        # 2. Select the nodes to preserve and construct the node remap
+        keep_idx[0] = np.unique(submesh.cell[dim].reshape(-1))
         submesh.point = self.point[keep_idx[0]]
         submesh.point_tag = self.point_tag[keep_idx[0]]
-        submesh.parent_point = keep_idx[0] # child-to-parent information saved here
-        Np = submesh.point.shape[0]
-        # remap the nodes
-        point_remap = np.zeros((self.point.shape[0], ), dtype=np.uint32)
-        point_remap[keep_idx[0]] = np.arange(Np)
-        for d in (1,2,3):
-            if keep_idx[d] is not None and keep_idx[d].size > 0:
-                submesh.cell[d] = np.zeros((keep_idx[d].shape[0], self.cell[d].shape[1]), dtype=np.uint32)
-                submesh.cell[d][:, :-1] = point_remap[self.cell[d][keep_idx[d], :-1]]
-                submesh.cell[d][:, -1] = self.cell[d][keep_idx[d], -1]
+        point_remap = -np.ones((self.point.shape[0],), dtype=np.int32)
+        point_remap[keep_idx[0]] = np.arange(submesh.point.shape[0], dtype=np.int32)
+        # 3. Collect the entites of lower dimensions
+        for d in range(0, dim):
+            submesh.cell[d] = point_remap[self.cell[d]]
+            keep_idx[d] = np.all(submesh.cell[d] != -1, axis=1)
+            submesh.cell[d] = submesh.cell[d][keep_idx[d]]
+            submesh.cell_tag[d] = self.cell_tag[d][keep_idx[d]]
+        # 3. Remap the elements
+        submesh.cell[dim] = point_remap[submesh.cell[dim]]
+        # 4. 
+        submesh.build_facet_ref()
         return submesh
     
     def draw(self) -> None:

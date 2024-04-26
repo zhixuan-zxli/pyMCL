@@ -1,5 +1,7 @@
 from math import log2
 
+# todo: save, load of functions
+
 def printConvergenceTable(mesh_table, error_table) -> None:
     """ 
     Print the convergence table. 
@@ -8,7 +10,7 @@ def printConvergenceTable(mesh_table, error_table) -> None:
     """
     m = len(mesh_table)
     # print the header
-    header_str = "\n{0: <20}".format("")
+    header_str = "{0: <20}".format("")
     for i in range(m-1):
         header_str += "{0: <10}{1: <8}".format(mesh_table[i], "rate")
     header_str += "{0: <10}".format(mesh_table[-1])

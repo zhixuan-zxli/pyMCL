@@ -1,49 +1,74 @@
 from typing import Optional
 import numpy as np
-from .fe import FiniteElement
+from .funcspace import FunctionSpace
+from .measure import Measure
 
 class QuadData(np.ndarray):
     """
-    Array of size rdim * Ne * Nquad, for assembly. 
-    Attributes: 
-    grad rdim * tdim * Ne * Nquad
-    inv_grad
-    dx
-    n
+    Discrete function values on quadrature points, (rdim, Ne, Nquad).
     """
 
-    def __new__(cls, value : Optional[np.ndarray]):
+    grad: np.ndarray
+    inv_grad: np.ndarray
+    dx: np.ndarray
+    cn: np.ndarray # cell normal
+    fn: np.ndarray # facet normal
+    ds: np.ndarray # surface Jacobian
+
+    def __new__(cls, value: Optional[np.ndarray] = None):
         if value is None:
-            obj = np.array([0]).view(cls)
+            obj = np.array((0,)).view(cls)
         else:
             obj = value.view(cls)
         obj.grad = None
-        obj.dx = None
-        obj.n = None
         obj.inv_grad = None
+        obj.dx = None
+        obj.cn = None
+        obj.fn = None
+        obj.ds = None
         return obj
     
     def __array_finalize__(self, obj) -> None:
         if obj is None: return
         self.grad = getattr(obj, "grad", None)
-        self.dx = getattr(obj, "dx", None)
-        self.n = getattr(obj, "n", None)
         self.inv_grad = getattr(obj, "inv_grad", None)
+        self.dx = getattr(obj, "dx", None)
+        self.cn = getattr(obj, "cn", None)
+        self.fn = getattr(obj, "fn", None)
+        self.ds = getattr(obj, "ds", None)
 
     def __array_wrap__(self, out_arr, context=None):
         # invalidate the attributes
         return np.array(out_arr)
 
+    def sides(self) -> tuple["QuadData", "QuadData"]:
+        assert self.shape[1] % 2 == 0
+        Nf = self.shape[1] // 2
+        u1, u2 = QuadData(self[:,:Nf,:]), QuadData(self[:,Nf:,:])
+        u1.grad, u2.grad = np.split(self.grad, 2, axis=2)
+        if self.dx is not None:
+            u1.dx, u2.dx = np.split(self.dx, 2, axis=1)
+        if self.cn is not None:
+            u1.cn, u2.cn = np.split(self.cn, 2, axis=1)
+        if self.fn is not None:
+            u1.fn, u2.fn = np.split(self.fn, 2, axis=1)
+        if self.ds is not None:
+            u1.ds, u2.ds = np.split(self.ds, 2, axis=1)
+        # omit inv_grad
+        return u1, u2
+
+
+# ===============================================================================
 
 
 class Function(np.ndarray):
     """
     Array of size num_dof. 
     """
-    fe: FiniteElement
+    fe: FunctionSpace
     
-    def __new__(cls, fe: FiniteElement):
-        obj = np.zeros((fe.num_dof, fe.num_copy)).view(cls)
+    def __new__(cls, fe: FunctionSpace):
+        obj = np.zeros((fe.num_dof,)).view(cls)
         obj.fe = fe
         return obj
     
@@ -59,81 +84,49 @@ class Function(np.ndarray):
     def update(self) -> None:
         # Update self to account for periodic BC. 
         if self.fe.periodic:
-            temp = self.copy()
-            self[:] = temp[self.fe.dof_remap]
+            raise NotImplementedError
     
-    def _get_quad_data(self, basis_type, cell_dof: np.ndarray, x: Optional[QuadData], quadTable: np.ndarray, hint) -> QuadData:
-        """
-        See the doc of QuadData for hints. 
-        """
-        tdim = basis_type.tdim
-        num_dof_per_elem = basis_type.num_dof_per_elem
-        rdim = max(self.fe.num_copy, self.fe.rdim)
-        data = None
-        if "f" in hint:
-            data = np.zeros((rdim, cell_dof.shape[0], quadTable.shape[1]))
-            for i in range(num_dof_per_elem):
-                basis = basis_type._eval_basis(i, quadTable) # (rdim, Nq)
-                temp = np.array(self)[cell_dof[:,i], :].T
-                data = data + temp[:,:,np.newaxis] * basis[:, np.newaxis, :] # (rdim, Ne, Nq)
+    def _interpolate(self, mea: Measure) -> QuadData:
+        assert self.fe.mesh is mea.mesh
+        tdim, rdim = self.fe.elem.tdim, self.fe.elem.rdim
+        Nq = mea.quad_w.size
+        elem_dof = self.fe.elem_dof
+        Ne = elem_dof.shape[1] if isinstance(mea.elem_ix, slice) else mea.elem_ix.size # Ne, or n * Nf
+        gdim = tdim if mea.x is None else mea.mesh.gdim
+        data = np.zeros((rdim, Ne, Nq))
+        grad = np.zeros((rdim, gdim, Ne, Nq))
+        # interpolate on cells
+        if mea.dim == tdim:
+            for i in range(elem_dof.shape[0]): # loop over each basis function
+                nodal = self.view(np.ndarray)[elem_dof[i, mea.elem_ix]] # (Ne, )
+                basis_data, grad_data = self.fe.elem._eval(i, mea.quad_tab.T) # (rdim, Nq), (rdim, tdim, Nq)
+                # interpolate function values
+                data += nodal[np.newaxis,:,np.newaxis] * basis_data[:, np.newaxis, :] # (rdim, Ne, Nq)
+                # interpolate the gradients
+                grad_temp = nodal[np.newaxis,np.newaxis,:,np.newaxis] \
+                    * grad_data[:,:,np.newaxis,:] # (rdim, gdim, Ne, Nq)
+                if mea.x is not None:
+                    grad_temp = np.einsum("ij...,jk...->ik...", grad_temp, mea.x.inv_grad)
+                grad += grad_temp
+        elif mea.dim == tdim-1:
+            for i in range(elem_dof.shape[0]):
+                nodal = self.view(np.ndarray)[elem_dof[i, mea.elem_ix]] # (n*Nf, )
+                # interpolate function values
+                basis_data, grad_data = self.fe.elem._eval(i, mea.quad_tab.reshape(-1, tdim).T) 
+                basis_data = basis_data.reshape(rdim, -1, Nq) # (rdim, n*Nf, Nq)
+                data += nodal[np.newaxis,:,np.newaxis] * basis_data # (rdim, n*Nf, Nq)
+                # interpolate the gradients
+                grad_data = grad_data.reshape(rdim, tdim, -1, Nq) # (rdim, tdim, n*Nf, Nq)
+                grad_temp = nodal[np.newaxis,np.newaxis,:,np.newaxis] * grad_data # (rdim, tdim, n*Nf, Nq)
+                if mea.x is not None:
+                    grad_temp = np.einsum("ij...,jk...->ik...", grad_temp, mea.x.inv_grad) # (rdim, gdim, n*Nf, Nq)
+                grad += grad_temp
+        else:
+            raise RuntimeError("Incorrect measure dimension")
+        #
         data = QuadData(data)
-        if "grad" in hint:
-            grad = np.zeros((rdim, tdim, cell_dof.shape[0], quadTable.shape[1])) # (rdim, tdim, Ne, Nq)
-            for i in range(num_dof_per_elem):
-                basis_grad = basis_type._eval_grad(i, quadTable) # (rdim, tdim, Nq)
-                temp = np.array(self)[cell_dof[:,i], :].T
-                grad = grad + temp[:,np.newaxis,:,np.newaxis] * basis_grad[:, :, np.newaxis, :]
-            if x is not None:
-                grad = np.einsum("ij...,jk...->ik...", grad, x.inv_grad)
-            data.grad = grad # (rdim, gdim, Ne, Nq)
-        if "dx" in hint:
-            assert x is None
-            if tdim == 1:
-                data.dx = np.linalg.norm(grad[:,0,:,:], axis=0)
-                data.dx = data.dx[np.newaxis] # (1, Ne, Nq)
-            elif tdim == 2:
-                data.dx = np.cross(grad[:, 0, :, :], grad[:, 1, :, :], axis=0)
-                if rdim == 3:
-                    data.dx = np.linalg.norm(data.dx, ord=None, axis=0) # (Ne, Nq)
-                data.dx = data.dx[np.newaxis] # (1, Ne, Nq)
-            else:
-                raise NotImplementedError
-        if "n" in hint:
-            assert x is None
-            if tdim == 1:
-                assert(rdim == 2)
-                t = np.squeeze(grad) / data.dx
-                data.n = np.zeros_like(t)
-                data.n[0] = t[1]
-                data.n[1] = -t[0]
-            elif tdim == 2:
-                assert(rdim == 3)
-                temp = np.cross(grad[:, 0, :, :], grad[:, 1, :, :], axis=0) # (3, Ne, Nq)
-                data.n = temp / data.dx
-            else:
-                raise RuntimeError("Cannot calculate the normal of a 3D cell. ")
-        if "inv_grad" in hint:
-            assert x is None
-            if tdim == 1 and rdim == 1:
-                data.inv_grad = 1.0 / data.grad
-            elif tdim == 1 and rdim == 2:
-                temp = np.squeeze(data.grad) # (2, Ne, Nq)
-                data.inv_grad = (temp / data.dx**2).reshape(1, 2, data.grad.shape[2], data.grad.shape[3])
-            elif tdim == 2 and rdim == 2:
-                data.inv_grad = np.zeros_like(data.grad)
-                data.inv_grad[0, 0, :, :] = data.grad[1, 1, :, :] / data.dx[0,:,:]
-                data.inv_grad[0, 1, :, :] = -data.grad[0, 1, :, :] / data.dx[0,:,:]
-                data.inv_grad[1, 0, :, :] = -data.grad[1, 0, :, :] / data.dx[0,:,:]
-                data.inv_grad[1, 1, :, :] = data.grad[0, 0, :, :] / data.dx[0,:,:]
-            elif tdim == 2 and rdim == 3:
-                data.inv_grad = np.zeros((2, 3, data.grad.shape[2], data.grad.shape[3]))
-                data.inv_grad[0, :, :, :] = np.cross(data.grad[:,1,:,:], data.n, axis=0) / data.dx
-                data.inv_grad[1, :, :, :] = np.cross(data.n, data.grad[:,0,:,:], axis=0) / data.dx
-            else:
-                raise RuntimeError("Unable to calculate inv_grad for tdim={} and rdim={}.".format(self.fe.tdim, rdim))
-        # todo: conormal
+        data.grad = grad
         return data
-
 
 # =============================================================
     
@@ -142,13 +135,13 @@ def group_fn(*fnlist: Function) -> np.ndarray:
     vec = np.zeros((v_size, ))
     index = 0
     for f in fnlist:
-        vec[index:index+f.size] = f.reshape(-1)
+        vec[index:index+f.size] = f
         index += f.size
     return vec
 
 def split_fn(vec: np.ndarray, *fnlist: Function) -> None:
     index = 0
     for f in fnlist:
-        f[:] = vec[index:index+f.size].reshape(f.shape)
+        f[:] = vec[index:index+f.size]
         index += f.size
     assert index == vec.size
