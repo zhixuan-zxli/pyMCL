@@ -13,20 +13,20 @@ class PhysicalParameters:
     eta_2: float = 0.1
     mu_1: float = 0.1
     mu_2: float = 0.1
-    mu_cl: float = 1.0
+    mu_cl: float = 0.1
     cosY: float = cos(np.pi*2.0/3)
-    gamma_1: float = 0.0
+    gamma_1: float = 5.0
     gamma_3: float = 10.0
-    gamma_2: float = 0.0 + 10.0 * cos(np.pi*2.0/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
-    B: float = 1.0
-    Y: float = 1e3 #1e1
+    gamma_2: float = 5.0 + 10.0 * cos(np.pi*2.0/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
+    B: float = 5e-2
+    Y: float = 4e2 #1e1
 
 class SolverParemeters:
-    dt: float = 1.0/1024/8
+    dt: float = 1.0/1024/16
     Te: float = 1.0/2 #1.0/8
     resume: bool = False
     stride: int = 0
-    numChekpoint: int = 8
+    numChekpoint: int = 16
     vis: bool = True
 
 # ===========================================================
