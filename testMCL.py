@@ -204,16 +204,24 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--resume", help="Resume from previous computations.", action="store_true")
+    parser.add_argument("--spaceref", type=int, help="Spatial refinement level", default=0)
+    parser.add_argument("--timeref", type=int, help="Time refinement level")
     args = parser.parse_args()
+    if args.timeref is None and args.spaceref is not None:
+        args.timeref = args.spaceref
     phyp = PhysicalParameters()
     solp = SolverParemeters()
     solp.resume = args.resume
+    solp.dt = solp.dt / 2**args.timeref
 
     # physical groups from GMSH
     # group_name = {"fluid_1": 1, "fluid_2": 2, "interface": 3, "dry": 4, "wet": 5, \
     #              "right": 6, "top": 7, "left": 8, "cl": 9, "clamp": 10}
     mesh = Mesh()
     mesh.load("mesh/two-phase.msh")
+    if args.spaceref:
+        for i in range(args.spaceref):
+            mesh = splitRefine(mesh)
     setMeshMapping(mesh)
     i_mesh = mesh.view(1, tags=(3, )) # interface mesh
     setMeshMapping(i_mesh)
@@ -287,6 +295,7 @@ if __name__ == "__main__":
     if solp.vis:
         pyplot.ion()
         ax = pyplot.subplot()
+        ax.axis("equal")
         bulk_triangles = mesh.coord_fe.elem_dof[::2,:].T//2
 
     step = 0
@@ -298,20 +307,24 @@ if __name__ == "__main__":
         # they will be needed in the measures. 
         y_k[:] = i_mesh.coord_map
         id_k[:] = s_mesh.coord_map 
+        id_k_lift = lift_to_P2(Q_sp, id_k)
         w_k[:] = w
-        q_k = w_k + lift_to_P2(Q_sp, id_k) # type: Function
+        q_k = w_k + id_k_lift # type: Function
 
         t = step * solp.dt
         if solp.vis:
             ax.clear()
             ax.tripcolor(mesh.coord_map[::2], mesh.coord_map[1::2], mesh.cell_tag[2], triangles=bulk_triangles)
             ax.triplot(mesh.coord_map[::2], mesh.coord_map[1::2], triangles=bulk_triangles)
-            m3_ = m3.view(np.ndarray)
-            ax.quiver(q_k[cl_dof_Q2[::2]], q_k[cl_dof_Q2[1::2]], m3_[::2], m3_[1::2])
-            ax.plot(id_k[::2], -0.1*np.ones(id_k.size//2), 'b+') # plot reference sheet mesh
+            # m3_ = m3.view(np.ndarray)
+            # ax.quiver(q_k[cl_dof_Q2[::2]], q_k[cl_dof_Q2[1::2]], m3_[::2], m3_[1::2])
+            # plot reference sheet mesh
+            ax.plot(id_k[::2], -0.1*np.ones(id_k.size//2), 'b+') 
             ax.plot(id_k[cl_dof_Q1[::2]], -0.1*np.ones(2), 'ro')
             ax.plot([-1,1], [-0.1,-0.1], 'b-')
-            ax.axis("equal")
+            # plot the bending moment
+            ax.plot(id_k_lift[::2], mom-0.1, 'kv')
+            ax.set_ylim(-0.15, 1.0)
             pyplot.draw()
             pyplot.pause(1e-3)
         if step % solp.stride == 0:
