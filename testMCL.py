@@ -198,7 +198,7 @@ class MCL_Runner(Runner):
         super().prepare()
 
         self.phyp = PhysicalParameters()
-        with open(self._get_filename("PhysicalParameters"), "wb") as f:
+        with open(self._get_output_name("PhysicalParameters"), "wb") as f:
             pickle.dump(self.phyp, f)
         
         # physical groups from GMSH
@@ -281,6 +281,7 @@ class MCL_Runner(Runner):
             self.ax = pyplot.subplot()
             self.ax.axis("equal")
             self.bulk_triangles = self.mesh.coord_fe.elem_dof[::2,:].T//2
+            self.triangle_color = np.where(self.mesh.cell_tag[2] == 1, 1, np.nan)
 
     def pre_step(self) -> bool:
         # retrieve the mesh mapping; 
@@ -294,8 +295,8 @@ class MCL_Runner(Runner):
         t = self.step * self.solp.dt
         if self.args.vis:
             self.ax.clear()
-            self.ax.tripcolor(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], self.mesh.cell_tag[2], triangles=self.bulk_triangles)
-            self.ax.triplot(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], triangles=self.bulk_triangles)
+            self.ax.tripcolor(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], self.triangle_color, triangles=self.bulk_triangles)
+            self.ax.triplot(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], triangles=self.bulk_triangles, linewidth=0.5)
             # m3_ = m3.view(np.ndarray)
             # ax.quiver(q_k[cl_dof_Q2[::2]], q_k[cl_dof_Q2[1::2]], m3_[::2], m3_[1::2])
             # plot reference sheet mesh
@@ -304,14 +305,15 @@ class MCL_Runner(Runner):
             self.ax.plot([-1,1], [-0.1,-0.1], 'b-')
             # plot the bending moment
             # self.ax.plot(id_k_lift[::2], mom-0.1, 'kv')
-            # self.ax.set_ylim(-0.15, 1.0)
+            self.ax.set_ylim(-0.15, 1.0)
             pyplot.draw()
             pyplot.pause(1e-3)
             # output image files
             if self.step % self.solp.stride_frame == 0:
-                pass # todo ...
+                filename = self._get_output_name("{:04}.png".format(self.step))
+                pyplot.savefig(filename, dpi=300.0)
         if self.step % self.solp.stride_checkpoint == 0:
-            filename = self._get_filename("{:04}.npz".format(self.step))
+            filename = self._get_output_name("{:04}.npz".format(self.step))
             np.savez(filename, y_k=self.y_k, id_k=self.id_k, w_k=self.w_k, m3=self.m3, bmm=self.mesh.coord_map)
             print(Fore.GREEN + "Checkpoint saved to " + filename + Style.RESET_ALL)
         
@@ -513,6 +515,7 @@ class MCL_Runner(Runner):
         print("|m| = ({:.4f}, {:.4f})".format(np.sqrt(self.m3[0]**2+self.m3[1]**2), np.sqrt(self.m3[2]**2+self.m3[3]**2)))
 
     def finish(self) -> None:
+        super().finish()
         if self.args.vis:
             pyplot.ioff()
             pyplot.show()
@@ -520,5 +523,5 @@ class MCL_Runner(Runner):
 # ===========================================================
 
 if __name__ == "__main__":
-    solp = SolverParameters(dt=1.0/1024/16, Te=0.5, num_checkpoints=32)
-    MCL_Runner("result/MCL", solp=solp).run()
+    solp = SolverParameters(dt=1.0/1024/16, Te=0.5)
+    MCL_Runner(solp).run()
