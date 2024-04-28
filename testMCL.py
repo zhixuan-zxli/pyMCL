@@ -510,9 +510,9 @@ class MCL_Runner(Runner):
         q = self.w + id_lift
         
         # force unit length of m3
-        # m3_ = m3.view(np.ndarray).reshape(2,2)
-        # m3_ = m3_ / np.linalg.norm(m3_, axis=1, keepdims=True)
-        # m3[:] = m3_.reshape(-1)
+        m3_ = self.m3.view(np.ndarray).reshape(2,2)
+        m3_ = m3_ / np.linalg.norm(m3_, axis=1, keepdims=True)
+        self.m3[:] = m3_.reshape(-1)
         
         # =================================================================
         # Step 4. Displace the bulk mesh and update all the meshes. 
