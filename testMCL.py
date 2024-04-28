@@ -20,7 +20,7 @@ class PhysicalParameters:
     gamma_3: float = 10.0
     gamma_2: float = 5.0 + 10.0 * cos(np.pi*2.0/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
     B: float = 5e-2
-    Y: float = 4e2 #1e1
+    Y: float = 4e2
 
 # ===========================================================
 # bilinear forms for the elastic sheet
@@ -252,7 +252,7 @@ class MCL_Runner(Runner):
         self.cl_dof_Q1 = np.unique(self.Q_P1_sp.getFacetDof(tags=(9,)))
         #
         u_noslip_dof = np.unique(self.U_sp.getFacetDof(tags=(7,)))
-        p_fix_dof = np.array((0,))
+        p_fix_dof = None # np.array((0,))
         q_clamp_dof = np.unique(self.Q_sp.getFacetDof(tags=(10,)))
         # q_clamp_dof = np.unique(np.concatenate((Q_sp.getFacetDof(tags=(10,)).reshape(-1), np.arange(1, Q_sp.num_dof, 2)))) # for no-bending
         mom_fix_dof = np.unique(self.MOM_sp.getFacetDof(tags=(10,)))
