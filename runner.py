@@ -53,14 +53,14 @@ class Runner:
             pickle.dump(self.solp, f)
         # calculate the time stepping information
         self.solp.dt /= 2**self.args.timeref
-        num_steps = self.solp.Te / self.solp.dt
-        print("Time steps = {}".format(num_steps))
-        self.solp.stride_checkpoint = ceil(num_steps / self.args.checkpoint) if self.args.checkpoint else 99999999
-        self.solp.stride_frame = ceil(num_steps / self.args.frame) if self.args.frame else 99999999
+        self.num_steps = ceil(self.solp.Te / self.solp.dt)
+        print("Time steps = {}".format(self.num_steps))
+        self.solp.stride_checkpoint = ceil(self.num_steps / self.args.checkpoint) if self.args.checkpoint else 99999999
+        self.solp.stride_frame = ceil(self.num_steps / self.args.frame) if self.args.frame else 99999999
         
 
     def finish(self) -> None:
-        print(Fore.GREEN + "Completed. " + Style.RESET_ALL)
+        print(Fore.GREEN + "\nCompleted. " + Style.RESET_ALL)
 
     def pre_step(self) -> bool:
         raise NotImplementedError

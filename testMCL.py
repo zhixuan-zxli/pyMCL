@@ -25,6 +25,19 @@ class PhysicalParameters:
 # ===========================================================
 # bilinear forms for the elastic sheet
 
+@Functional
+def dx(x: QuadData) -> np.ndarray:
+    return x.dx
+
+@Functional
+def e_stretch(x: QuadData, w: QuadData) -> np.ndarray:
+    strain = w.grad[0,0] + 0.5 * w.grad[1,0]**2 # (Ne, Nq)
+    return 0.5 * strain[np.newaxis]**2 * x.dx
+
+@Functional
+def e_bend(x: QuadData, mom: QuadData) -> np.ndarray:
+    return 0.5 * mom**2 * x.dx
+
 @BilinearForm
 def c_L2(w: QuadData, q: QuadData, x: QuadData) -> np.ndarray:
     return np.sum(w * q, axis=0, keepdims=True) * x.dx
@@ -266,6 +279,10 @@ class MCL_Runner(Runner):
         self.id_k = Function(self.s_mesh.coord_fe)
         self.id = Function(self.s_mesh.coord_fe)
 
+        # initialize the arrays for storing the energies
+        self.energy = np.zeros((self.num_steps+1, 5))
+        # the columns are stretching energy, bending energy, surface energy for Sigma_1, 2, 3. 
+
         # read checkpoints from file
         if self.args.resume:
             self.mesh.coord_map[:] = self.resume_file["bmm"]
@@ -273,6 +290,8 @@ class MCL_Runner(Runner):
             self.s_mesh.coord_map[:] = self.resume_file["id_k"]
             self.w[:] = self.resume_file["w_k"]
             self.m3[:] = self.resume_file["m3"]
+            self.mom[:] = self.resume_file["mom"]
+            self.energy[:] = self.resume_file["energy"]
             del self.resume_file
 
         # prepare visualization
@@ -292,6 +311,18 @@ class MCL_Runner(Runner):
         id_k_lift = lift_to_P2(self.Q_sp, self.id_k)
         self.q_k = self.w_k + id_k_lift # type: Function
 
+        # calculate the energy
+        dA_k = Measure(self.s_mesh, dim=1, order=5, coord_map=self.id_k) 
+        self.energy[self.step, 0] = self.phyp.Y * e_stretch.assemble(dA_k, w=self.w_k._interpolate(dA_k))
+        self.energy[self.step, 1] = 1.0/self.phyp.B * e_bend.assemble(dA_k, mom=self.mom._interpolate(dA_k))
+        da_1 = Measure(self.s_mesh, dim=1, order=5, tags=(4,), coord_map=self.q_k)
+        da_2 = Measure(self.s_mesh, dim=1, order=5, tags=(5,), coord_map=self.q_k)
+        self.energy[self.step, 2] = self.phyp.gamma_1 * dx.assemble(da_1)
+        self.energy[self.step, 3] = self.phyp.gamma_2 * dx.assemble(da_2)
+        ds = Measure(self.i_mesh, dim=1, order=3)
+        self.energy[self.step, 4] = self.phyp.gamma_3 * dx.assemble(ds)
+        print("  energy={:.5f}, {}".format(np.sum(self.energy[self.step]), self.energy[self.step]))
+
         t = self.step * self.solp.dt
         if self.args.vis:
             self.ax.clear()
@@ -306,6 +337,7 @@ class MCL_Runner(Runner):
             # plot the bending moment
             # self.ax.plot(id_k_lift[::2], mom-0.1, 'kv')
             self.ax.set_ylim(-0.15, 1.0)
+            pyplot.title("t={:.5f}".format(t))
             pyplot.draw()
             pyplot.pause(1e-3)
             # output image files
@@ -314,10 +346,11 @@ class MCL_Runner(Runner):
                 pyplot.savefig(filename, dpi=300.0)
         if self.step % self.solp.stride_checkpoint == 0:
             filename = self._get_output_name("{:04}.npz".format(self.step))
-            np.savez(filename, y_k=self.y_k, id_k=self.id_k, w_k=self.w_k, m3=self.m3, bmm=self.mesh.coord_map)
+            np.savez(filename, y_k=self.y_k, id_k=self.id_k, w_k=self.w_k, m3=self.m3, \
+                     mom = self.mom, bmm=self.mesh.coord_map, energy=self.energy)
             print(Fore.GREEN + "Checkpoint saved to " + filename + Style.RESET_ALL)
         
-        return t >= solp.Te
+        return self.step >= self.num_steps
     
     def main_step(self) -> None:
         
