@@ -22,9 +22,6 @@ class PhysicalParameters:
     B: float = 5e-2
     Y: float = 4e2
 
-# ===========================================================
-# bilinear forms for the elastic sheet
-
 @Functional
 def dx(x: QuadData) -> np.ndarray:
     return x.dx
@@ -38,6 +35,9 @@ def e_stretch(x: QuadData, w: QuadData) -> np.ndarray:
 def e_bend(x: QuadData, mom: QuadData) -> np.ndarray:
     return 0.5 * mom**2 * x.dx
 
+# ===========================================================
+# bilinear forms for the elastic sheet
+
 @BilinearForm
 def c_L2(w: QuadData, q: QuadData, x: QuadData) -> np.ndarray:
     return np.sum(w * q, axis=0, keepdims=True) * x.dx
@@ -48,8 +48,8 @@ def l_dq(w: QuadData, x: QuadData, q_k: QuadData) -> np.ndarray:
 
 @BilinearForm
 def c_cl_phim(phi: QuadData, m: QuadData, xphi: QuadData, _: QuadData) -> np.ndarray:
-    # phi: (2, Nf, Nq)
-    # m.grad: (1, 2, Nf, Nq)
+    # phi.grad: (1, 2, Nf, Nq)
+    # m: (2, Nf, Nq)
     # xphi.fn: (2, Nf, Nq)
     return 0.5 * (m[0] * phi.grad[1,0] * xphi.fn[0])[np.newaxis] * xphi.ds
     # return (phi[1] * m.grad[0,0] * xm.fn[0])[np.newaxis] * xm.ds
@@ -102,14 +102,11 @@ def l_pi_L2(pi: QuadData, x: QuadData, q_k: QuadData) -> np.ndarray:
     return np.sum(pi * q_k, axis=0, keepdims=True) * x.dx
 
 @BilinearForm
-def b_pitau(pi: QuadData, tau: QuadData, x: QuadData, q_k: QuadData, mu_i: np.ndarray) -> np.ndarray:
-    # q_k: the deformation of the last time step
-    # q_k.grad: (2, 1, Ne, Nq)
+def b_pitau(pi: QuadData, tau: QuadData, x: QuadData, mu_i: np.ndarray) -> np.ndarray:
     # tau: (2, Ne, Nq)
     # mu_i: the slip coefficient
-    # x: the surface measure over the reference sheet in the last time step
-    m = q_k.grad[:,0]
-    m = m / np.linalg.norm(m, ord=None, axis=0, keepdims=True) # (2, Ne, Nq)
+    # x: the measure on the deformed surface in the last time step
+    m = x.cn[::-1].copy(); m[0] = -m[0]
     Ptau =  np.sum(m * tau, axis=0, keepdims=True) # (1, Ne, Nq)
     Ppi = np.sum(m * pi, axis=0, keepdims=True) # (1, Ne, Nq)
     return Ptau * Ppi * (1.0/mu_i[np.newaxis, :, np.newaxis]) * x.dx
@@ -144,7 +141,7 @@ def a_xik(xi: QuadData, kappa: QuadData, x: QuadData) -> np.ndarray:
 def a_xitau(xi: QuadData, tau: QuadData, x: QuadData) -> np.ndarray:
     # xi: (2, Nf, Nq)
     # tau: (2, Nf, Nq)
-    return np.sum(xi * tau, axis=0, keepdims=True) * x.ds
+    return np.sum(xi * tau, axis=0, keepdims=True) * x.dx
 
 @BilinearForm
 def a_zy(z: QuadData, y: QuadData, x: QuadData) -> np.ndarray:
@@ -382,7 +379,7 @@ class MCL_Runner(Runner):
         a = np.sum(dq_k_at_cl * m1_k, axis=1) # (2, )
         m3_ = self.m3.view(np.ndarray).reshape(2,2)
         rcl_disp = - solp.dt / (phyp.mu_cl * a) * \
-            (phyp.gamma_1-phyp.gamma_2 + phyp.gamma_3 * np.sum(m3_ * m1_k, axis=1))
+            (phyp.gamma_1-phyp.gamma_2 + phyp.gamma_3 * np.sum(m3_ * m1_k, axis=1)) # (2, )
 
         # =================================================================
         # Step 2. Find the reference sheet mesh displacement. 
@@ -438,7 +435,7 @@ class MCL_Runner(Runner):
         # CL from sheet
         q_cl_basis = FunctionBasis(self.Q_sp, dp_s)
         q_icl_basis = FunctionBasis(self.Q_sp, dp_is)
-        mom_cl_basis = FunctionBasis(self.MOM_sp, dp_is)
+        mom_icl_basis = FunctionBasis(self.MOM_sp, dp_is)
         # CL
         m3_basis = FunctionBasis(self.M3_sp, dp)
         
@@ -448,7 +445,7 @@ class MCL_Runner(Runner):
         A_XIP1 = a_xip.assemble(u_basis, p1_basis, dx)
         A_XIP0 = a_xip.assemble(u_basis, p0_basis, dx)
         A_XIK = a_xik.assemble(u_i_basis, k_basis, ds_i)
-        A_XITAU = a_xitau.assemble(u_b_basis, q_surf_basis, da_x)
+        A_XITAU = a_xitau.assemble(u_b_basis, q_surf_basis, da_k)
 
         A_ZY = a_zy.assemble(y_basis, y_basis, ds)
         A_ZK = a_zk.assemble(y_basis, k_basis, ds)
@@ -457,20 +454,23 @@ class MCL_Runner(Runner):
         A_M3Q = a_zm3.assemble(m3_basis, q_cl_basis, dp_s)
         L_M3 = l_m3.assemble(m3_basis, dp_s, id=id._interpolate(dp_s))
 
-        B_PIQ = c_L2.assemble(q_k_basis, q_k_basis, dA_k)
-        B_PIU = c_L2.assemble(q_k_basis, u_b_basis, dA_k)
-        # Note: u_b_basis is not on dA_k.
-        # It is still OK as we do not need the gradient. 
-        B_PITAU = b_pitau.assemble(q_k_basis, q_k_basis, dA_k, \
-                                q_k = self.q_k._interpolate(dA_k), mu_i=self.slip_fric)
-        L_PI_ADV = l_pi_adv.assemble(q_k_basis, dA_k, q_k = self.q_k._interpolate(dA_k), eta_k = eta._interpolate(dA_k))
-        L_PI_Q = l_pi_L2.assemble(q_k_basis, dA_k, q_k=(self.q_k-id_lift)._interpolate(dA_k))
+        # Note: in the following the FunctionBasis may not match with the measure 
+        # provided as the argument to assemble. 
+        # This is to achieve "push-forward" as intended, 
+        # and it is valid as long as the gradient in the FunctionBasis is not used. 
+        B_PIQ = c_L2.assemble(q_k_basis, q_k_basis, da_k)
+        B_PIU = c_L2.assemble(q_k_basis, u_b_basis, da_k)
+        B_PITAU = b_pitau.assemble(q_k_basis, q_k_basis, da_k, mu_i=self.slip_fric)
+        # Note: in the following "interpolated on dA_k assemble on da_k" means
+        # differentiate on the reference mesh then push forward to the deformed mesh. 
+        L_PI_ADV = l_pi_adv.assemble(q_k_basis, da_k, q_k = self.q_k._interpolate(dA_k), eta_k = eta._interpolate(dA_k))
+        L_PI_Q = l_pi_L2.assemble(q_k_basis, da_k, q_k=(self.q_k-id_lift)._interpolate(dA_k))
 
         #C_PHITAU = B_PIQ.T
         #C_PHIM3 = A_M3Q.T
-        C_CL_PHIM = c_cl_phim.assemble(q_icl_basis, mom_cl_basis, dp_is)
+        C_CL_PHIM = c_cl_phim.assemble(q_icl_basis, mom_icl_basis, dp_is)
         C_PHIM = c_phim.assemble(q_basis, mom_basis, dA)
-        C_PHIQ = c_phiq.assemble(q_basis, q_basis, dA, w_k = self.w_k._interpolate(dA))
+        C_PHIQ = c_phiq.assemble(q_basis, q_basis, dA, w_k = self.w_k._interpolate(dA)) # push-forward then differentiate; c.f. L_PI_ADV
         C_PHIQ_SURF = c_phiq_surf.assemble(q_surf_basis, q_surf_basis, da_k, gamma=self.surf_tens)
         # C_CL_WQ = C_CL_PHIM.T
         # C_WQ = C_PHIM.T
