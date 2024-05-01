@@ -291,7 +291,7 @@ class MCL_Runner(Runner):
             self.w[:] = self.resume_file["w_k"]
             self.m3[:] = self.resume_file["m3"]
             self.mom[:] = self.resume_file["mom"]
-            self.energy[:] = self.resume_file["energy"]
+            self.energy[:self.step+1] = self.resume_file["energy"]
             del self.resume_file
 
         # prepare visualization
@@ -330,6 +330,9 @@ class MCL_Runner(Runner):
             self.ax.triplot(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], triangles=self.bulk_triangles, linewidth=0.5)
             # m3_ = m3.view(np.ndarray)
             # ax.quiver(q_k[cl_dof_Q2[::2]], q_k[cl_dof_Q2[1::2]], m3_[::2], m3_[1::2])
+            # plot the fluid stress
+            self.ax.plot(id_k_lift[::2], self.tau[::2]-0.1, 'k^')
+            self.ax.plot(id_k_lift[::2], self.tau[1::2]-0.1, 'mv')
             # plot reference sheet mesh
             self.ax.plot(self.id_k[self.cl_dof_Q1[::2]], -0.1*np.ones(2), 'ro')
             self.ax.plot(self.id_k[::2], -0.1*np.ones(self.id_k.size//2), 'b+') 
@@ -347,7 +350,7 @@ class MCL_Runner(Runner):
         if self.step % self.solp.stride_checkpoint == 0:
             filename = self._get_output_name("{:04}.npz".format(self.step))
             np.savez(filename, y_k=self.y_k, id_k=self.id_k, w_k=self.w_k, m3=self.m3, \
-                     mom = self.mom, bmm=self.mesh.coord_map, energy=self.energy)
+                     mom = self.mom, bmm=self.mesh.coord_map, energy=self.energy[:self.step+1])
             print(Fore.GREEN + "Checkpoint saved to " + filename + Style.RESET_ALL)
         
         return self.step >= self.num_steps
