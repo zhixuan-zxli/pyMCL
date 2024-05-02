@@ -559,5 +559,5 @@ class MCL_Runner(Runner):
 # ===========================================================
 
 if __name__ == "__main__":
-    solp = SolverParameters(dt=1.0/1024/32, Te=0.5)
+    solp = SolverParameters(dt=1.0/1024/32, Te=0.25)
     MCL_Runner(solp).run()
