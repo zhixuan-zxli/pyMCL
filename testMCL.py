@@ -312,8 +312,8 @@ class MCL_Runner(Runner):
         dA_k = Measure(self.s_mesh, dim=1, order=5, coord_map=self.id_k) 
         self.energy[self.step, 0] = self.phyp.Y * e_stretch.assemble(dA_k, w=self.w_k._interpolate(dA_k))
         self.energy[self.step, 1] = 1.0/self.phyp.B * e_bend.assemble(dA_k, mom=self.mom._interpolate(dA_k))
-        da_1 = Measure(self.s_mesh, dim=1, order=5, tags=(4,), coord_map=self.q_k)
-        da_2 = Measure(self.s_mesh, dim=1, order=5, tags=(5,), coord_map=self.q_k)
+        da_1 = Measure(self.s_mesh, dim=1, order=5, tags=(5,), coord_map=self.q_k)
+        da_2 = Measure(self.s_mesh, dim=1, order=5, tags=(4,), coord_map=self.q_k)
         self.energy[self.step, 2] = self.phyp.gamma_1 * dx.assemble(da_1)
         self.energy[self.step, 3] = self.phyp.gamma_2 * dx.assemble(da_2)
         ds = Measure(self.i_mesh, dim=1, order=3)
@@ -328,8 +328,8 @@ class MCL_Runner(Runner):
             # m3_ = m3.view(np.ndarray)
             # ax.quiver(q_k[cl_dof_Q2[::2]], q_k[cl_dof_Q2[1::2]], m3_[::2], m3_[1::2])
             # plot the fluid stress
-            self.ax.plot(id_k_lift[::2], self.tau[::2]-0.1, 'k^')
-            self.ax.plot(id_k_lift[::2], self.tau[1::2]-0.1, 'mv')
+            # self.ax.plot(id_k_lift[::2], self.tau[::2]-0.1, 'k^')
+            # self.ax.plot(id_k_lift[::2], self.tau[1::2]-0.1, 'mv')
             # plot reference sheet mesh
             self.ax.plot(self.id_k[self.cl_dof_Q1[::2]], -0.1*np.ones(2), 'ro')
             self.ax.plot(self.id_k[::2], -0.1*np.ones(self.id_k.size//2), 'b+') 
