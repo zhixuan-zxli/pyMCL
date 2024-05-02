@@ -46,13 +46,13 @@ def c_L2(w: QuadData, q: QuadData, x: QuadData) -> np.ndarray:
 def l_dq(w: QuadData, x: QuadData, q_k: QuadData) -> np.ndarray:
     return np.sum(w * q_k.grad[:,0], axis=0, keepdims=True) * x.dx
 
-@BilinearForm
-def c_cl_phim(phi: QuadData, m: QuadData, xphi: QuadData, _: QuadData) -> np.ndarray:
-    # phi.grad: (1, 2, Nf, Nq)
-    # m: (2, Nf, Nq)
-    # xphi.fn: (2, Nf, Nq)
-    return 0.5 * (m[0] * phi.grad[1,0] * xphi.fn[0])[np.newaxis] * xphi.ds
-    # return (phi[1] * m.grad[0,0] * xm.fn[0])[np.newaxis] * xm.ds
+# @BilinearForm
+# def c_cl_phim(phi: QuadData, m: QuadData, xphi: QuadData, _: QuadData) -> np.ndarray:
+#     # phi.grad: (1, 2, Nf, Nq)
+#     # m: (2, Nf, Nq)
+#     # xphi.fn: (2, Nf, Nq)
+#     return 0.5 * (m[0] * phi.grad[1,0] * xphi.fn[0])[np.newaxis] * xphi.ds
+#     # return (phi[1] * m.grad[0,0] * xm.fn[0])[np.newaxis] * xm.ds
 
 @BilinearForm
 def c_phim(phi: QuadData, m: QuadData, x: QuadData) -> np.ndarray:
@@ -468,7 +468,7 @@ class MCL_Runner(Runner):
 
         #C_PHITAU = B_PIQ.T
         #C_PHIM3 = A_M3Q.T
-        C_CL_PHIM = c_cl_phim.assemble(q_icl_basis, mom_icl_basis, dp_is)
+        # C_CL_PHIM = c_cl_phim.assemble(q_icl_basis, mom_icl_basis, dp_is)
         C_PHIM = c_phim.assemble(q_basis, mom_basis, dA)
         C_PHIQ = c_phiq.assemble(q_basis, q_basis, dA, w_k = self.w_k._interpolate(dA)) # push-forward then differentiate; c.f. L_PI_ADV
         C_PHIQ_SURF = c_phiq_surf.assemble(q_surf_basis, q_surf_basis, da_k, gamma=self.surf_tens)
@@ -486,8 +486,8 @@ class MCL_Runner(Runner):
             (None,     None,    None,    None,     A_ZY,    A_ZK,   -A_ZM3,    None,   None),  # y
             (-solp.dt*A_XIK.T,  None, None, None,  A_ZK.T,  None,   None,      None,   None),  # k
             (None,     None,    None,    None,     A_ZM3.T, None,   None,      -A_M3Q, None),  # m3
-            (None,     None,    None,    B_PIQ.T,  None,    None,   -phyp.gamma_3*A_M3Q.T, -phyp.Y*C_PHIQ-C_PHIQ_SURF, C_PHIM-C_CL_PHIM), # w
-            (None,     None,    None,    None,     None,    None,   None,      C_PHIM.T-C_CL_PHIM.T, 1.0/phyp.B*C_WM), # m
+            (None,     None,    None,    B_PIQ.T,  None,    None,   -phyp.gamma_3*A_M3Q.T, -phyp.Y*C_PHIQ-C_PHIQ_SURF, C_PHIM), # w
+            (None,     None,    None,    None,     None,    None,   None,      C_PHIM.T, 1.0/phyp.B*C_WM), # m
         ), format="csr")
         # collect the right-hand-side
         self.u[:] = 0.0; self.p1[:] = 0.0; self.p0[:] = 0.0
@@ -559,5 +559,5 @@ class MCL_Runner(Runner):
 # ===========================================================
 
 if __name__ == "__main__":
-    solp = SolverParameters(dt=1.0/1024/16, Te=0.5)
+    solp = SolverParameters(dt=1.0/1024/32, Te=0.5)
     MCL_Runner(solp).run()
