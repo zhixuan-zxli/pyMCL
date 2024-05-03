@@ -5,7 +5,7 @@ from math import cos
 from runner import *
 from fem import *
 from scipy.sparse import bmat
-from scipy.sparse.linalg import spsolve
+from scikits.umfpack import spsolve
 from matplotlib import pyplot
 from colorama import Fore, Style
 
@@ -249,7 +249,7 @@ class MCL_Runner(Runner):
         self.cl_dof_Q1 = np.unique(self.Q_P1_sp.getFacetDof(tags=(9,)))
         #
         u_noslip_dof = np.unique(self.U_sp.getFacetDof(tags=(7,)))
-        p_fix_dof = None # np.array((0,))
+        p_fix_dof = np.array((0,))
         q_clamp_dof = np.unique(self.Q_sp.getFacetDof(tags=(10,)))
         # q_clamp_dof = np.unique(np.concatenate((Q_sp.getFacetDof(tags=(10,)).reshape(-1), np.arange(1, Q_sp.num_dof, 2)))) # for no-bending
         mom_fix_dof = np.unique(self.MOM_sp.getFacetDof(tags=(10,)))
