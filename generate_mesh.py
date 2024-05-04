@@ -128,8 +128,8 @@ if __name__ == "__main__":
     if mesh_name == "two-phase":
         bbox = np.array([[-1,0], [1,1]], dtype=np.float64)
         # markers = np.array([[0.5,0], [0.5, 0.25], [-0.5, 0.25], [-0.5,0]])
-        theta = np.arange(41) / 40.0 * np.pi
+        theta = np.arange(21) / 20 * np.pi
         markers = np.vstack((0.5*np.cos(theta), 0.5*np.sin(theta)))
-        build_two_phase_mesh(bbox, markers.T, np.array(((0.04, 0.1, 0.0, 0.5), (0.005, 0.1, 0.015, 0.1))))
+        build_two_phase_mesh(bbox, markers.T, np.array(((0.08, 0.2, 0.0, 0.5), (0.01, 0.2, 0.03, 0.2))))
     elif mesh_name == "unit_square":
         build_unit_square(0.1)
