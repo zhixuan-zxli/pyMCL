@@ -251,9 +251,7 @@ class MCL_Runner(Runner):
         u_noslip_dof = np.unique(self.U_sp.getFacetDof(tags=(7,)))
         p_fix_dof = np.array((0,))
         q_clamp_dof = np.unique(self.Q_sp.getFacetDof(tags=(10,)))
-        # q_clamp_dof = np.unique(np.concatenate((Q_sp.getFacetDof(tags=(10,)).reshape(-1), np.arange(1, Q_sp.num_dof, 2)))) # for no-bending
         mom_fix_dof = np.unique(self.MOM_sp.getFacetDof(tags=(10,)))
-        # mom_fix_dof = np.arange(MOM_sp.num_dof) # for no-bending
         self.free_dof = group_dof(
             (self.U_sp, self.P1_sp, self.P0_sp, self.Q_sp, self.Y_sp, self.K_sp, self.M3_sp, self.Q_sp, self.MOM_sp), 
             (u_noslip_dof, p_fix_dof, p_fix_dof, None, None, None, None, q_clamp_dof, mom_fix_dof)
@@ -279,16 +277,20 @@ class MCL_Runner(Runner):
         # initialize the arrays for storing the energies
         self.energy = np.zeros((self.num_steps+1, 5))
         # the columns are stretching energy, bending energy, surface energy for Sigma_1, 2, 3. 
+        self.phycl_hist = np.zeros((self.num_steps+1, 4)) # history of physical CL
+        self.refcl_hist = np.zeros((self.num_steps+1, 4)) # history of reference CL
 
         # read checkpoints from file
         if self.args.resume:
-            self.mesh.coord_map[:] = self.resume_file["bmm"]
+            self.mesh.coord_map[:] = self.resume_file["bulk_coord_map"]
             self.i_mesh.coord_map[:] = self.resume_file["y_k"]
             self.s_mesh.coord_map[:] = self.resume_file["id_k"]
             self.w[:] = self.resume_file["w_k"]
             self.m3[:] = self.resume_file["m3"]
             self.mom[:] = self.resume_file["mom"]
             self.energy[:self.step+1] = self.resume_file["energy"]
+            self.phycl_hist[:self.step+1] = self.resume_file["phycl_hist"]
+            self.refcl_hist[:self.step+1] = self.resume_file["refcl_hist"]
             del self.resume_file
 
         # prepare visualization
@@ -307,6 +309,13 @@ class MCL_Runner(Runner):
         self.w_k[:] = self.w
         id_k_lift = lift_to_P2(self.Q_sp, self.id_k)
         self.q_k = self.w_k + id_k_lift # type: Function
+
+        # record the CL locations
+        refcl = self.id_k.view(np.ndarray)[self.cl_dof_Q1]
+        phycl = self.w_k.view(np.ndarray)[self.cl_dof_Q2]
+        phycl += refcl
+        self.phycl_hist[self.step] = phycl
+        self.refcl_hist[self.step] = refcl
 
         # calculate the energy
         dA_k = Measure(self.s_mesh, dim=1, order=5, coord_map=self.id_k) 
@@ -339,7 +348,7 @@ class MCL_Runner(Runner):
             self.ax.set_ylim(-0.15, 1.0)
             pyplot.title("t={:.5f}".format(t))
             pyplot.draw()
-            pyplot.pause(1e-3)
+            pyplot.pause(1e-4)
             # output image files
             if self.step % self.solp.stride_frame == 0:
                 filename = self._get_output_name("{:04}.png".format(self.step))
@@ -347,7 +356,10 @@ class MCL_Runner(Runner):
         if self.step % self.solp.stride_checkpoint == 0:
             filename = self._get_output_name("{:04}.npz".format(self.step))
             np.savez(filename, y_k=self.y_k, id_k=self.id_k, w_k=self.w_k, m3=self.m3, \
-                     mom = self.mom, bmm=self.mesh.coord_map, energy=self.energy[:self.step+1])
+                     mom=self.mom, bulk_coord_map=self.mesh.coord_map, \
+                     phycl_hist=self.phycl_hist[:self.step+1], \
+                     refcl_hist=self.refcl_hist[:self.step+1], \
+                     energy=self.energy[:self.step+1])
             print(Fore.GREEN + "Checkpoint saved to " + filename + Style.RESET_ALL)
         
         return self.step >= self.num_steps
@@ -434,8 +446,6 @@ class MCL_Runner(Runner):
         q_k_basis = FunctionBasis(self.Q_sp, dA_k) # also the basis for tau
         # CL from sheet
         q_cl_basis = FunctionBasis(self.Q_sp, dp_s)
-        q_icl_basis = FunctionBasis(self.Q_sp, dp_is)
-        mom_icl_basis = FunctionBasis(self.MOM_sp, dp_is)
         # CL
         m3_basis = FunctionBasis(self.M3_sp, dp)
         
@@ -547,7 +557,6 @@ class MCL_Runner(Runner):
         print(Fore.GREEN + "t = {:.5f}, ".format((self.step+1) * self.solp.dt) + Style.RESET_ALL, end="")
         print("i-disp = {:.2e}, s-disp = {:.2e}, ".format(
             np.linalg.norm(self.y-self.y_k, ord=np.inf), np.linalg.norm(q-self.q_k, ord=np.inf)), end="")
-        print("cl = ({:.4f}, {:.4f}), ".format(q[self.cl_dof_Q2[0]], q[self.cl_dof_Q2[2]]), end="")
         print("|m| = ({:.4f}, {:.4f})".format(np.sqrt(self.m3[0]**2+self.m3[1]**2), np.sqrt(self.m3[2]**2+self.m3[3]**2)))
 
     def finish(self) -> None:
