@@ -5,7 +5,7 @@ from math import cos
 from runner import *
 from fem import *
 from scipy.sparse import bmat
-from scikits.umfpack import spsolve
+from scipy.sparse.linalg import spsolve
 from matplotlib import pyplot
 from colorama import Fore, Style
 
@@ -270,6 +270,7 @@ class MCL_Runner(Runner):
         self.mom = Function(self.MOM_sp)
         self.m3 = Function(self.M3_sp)
         self.m3[1::2] = -1.0 # need an initial value for m3
+        self.m1_k = np.zeros((2, 2)) # the projected m1
         
         self.id_k = Function(self.s_mesh.coord_fe)
         self.id = Function(self.s_mesh.coord_fe)
@@ -355,7 +356,7 @@ class MCL_Runner(Runner):
                 pyplot.savefig(filename, dpi=300.0)
         if self.step % self.solp.stride_checkpoint == 0:
             filename = self._get_output_name("{:04}.npz".format(self.step))
-            np.savez(filename, y_k=self.y_k, id_k=self.id_k, w_k=self.w_k, m3=self.m3, \
+            np.savez(filename, y_k=self.y_k, id_k=self.id_k, w_k=self.w_k, m3=self.m3, m1=self.m1_k, \
                      mom=self.mom, bulk_coord_map=self.mesh.coord_map, \
                      phycl_hist=self.phycl_hist[:self.step+1], \
                      refcl_hist=self.refcl_hist[:self.step+1], \
@@ -385,13 +386,13 @@ class MCL_Runner(Runner):
 
         # extract the conormal at the contact line
         dq_k_at_cl = dq_k.view(np.ndarray)[self.cl_dof_Q1].reshape(-1, 2) # (-1, 2)
-        m1_k = dq_k_at_cl / np.linalg.norm(dq_k_at_cl, ord=None, axis=1, keepdims=True) # (2, 2)
-        m1_k[0] = -m1_k[0] 
+        self.m1_k[:] = dq_k_at_cl / np.linalg.norm(dq_k_at_cl, ord=None, axis=1, keepdims=True) # (2, 2)
+        self.m1_k[0] = -self.m1_k[0] 
         # find the displacement of the reference CL driven by unbalanced Young force
-        a = np.sum(dq_k_at_cl * m1_k, axis=1) # (2, )
+        a = np.sum(dq_k_at_cl * self.m1_k, axis=1) # (2, )
         m3_ = self.m3.view(np.ndarray).reshape(2,2)
         rcl_disp = - solp.dt / (phyp.mu_cl * a) * \
-            (phyp.gamma_1-phyp.gamma_2 + phyp.gamma_3 * np.sum(m3_ * m1_k, axis=1)) # (2, )
+            (phyp.gamma_1-phyp.gamma_2 + phyp.gamma_3 * np.sum(m3_ * self.m1_k, axis=1)) # (2, )
 
         # =================================================================
         # Step 2. Find the reference sheet mesh displacement. 
@@ -423,7 +424,6 @@ class MCL_Runner(Runner):
 
         dp_i = Measure(self.i_mesh, dim=0, order=1, tags=(9,)) # the CL restricted from the fluid interfacef
         dp_s = Measure(self.s_mesh, dim=0, order=1, tags=(9,)) # the CL on the reference sheet mesh
-        dp_is = Measure(self.s_mesh, dim=0, order=1, tags=(9,), interiorFacet=True)
         dp = Measure(self.cl_mesh, dim=0, order=1)
 
         # =================================================================
