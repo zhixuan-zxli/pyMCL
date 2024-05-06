@@ -17,8 +17,8 @@ class PhysicalParameters:
     mu_cl: float = 0.1
     gamma_1: float = 2.5
     gamma_3: float = 5.0
-    gamma_2: float = 2.5 + 5.0 * cos(np.pi/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
-    cos_theta_0: float = 2.0*np.pi
+    gamma_2: float = 2.5 + 5.0 * cos(2*np.pi/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
+    cos_theta_0: float = np.pi/3
     B: float = 1e-1
     Y: float = 1e2
 
@@ -215,7 +215,7 @@ class MCL_Runner(Runner):
         # group_name = {"fluid_1": 1, "fluid_2": 2, "interface": 3, "dry": 4, "wet": 5, \
         #              "right": 6, "top": 7, "left": 8, "cl": 9, "clamp": 10}
         self.mesh = Mesh()
-        self.mesh.load("mesh/two-phase.msh")
+        self.mesh.load(self.args.mesh_name)
         for _ in range(self.args.spaceref):
             self.mesh = splitRefine(self.mesh)
         setMeshMapping(self.mesh)
@@ -568,5 +568,5 @@ class MCL_Runner(Runner):
 # ===========================================================
 
 if __name__ == "__main__":
-    solp = SolverParameters(dt=1.0/1024/16, Te=1.0/8)
+    solp = SolverParameters(dt=1.0/1024/16, Te=1.0/4)
     MCL_Runner(solp).run()

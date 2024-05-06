@@ -24,6 +24,7 @@ class Runner:
         self.solp = solp
         
         self._parser = argparse.ArgumentParser()
+        self._parser.add_argument("mesh_name", help="Input mesh")
         self._parser.add_argument("output_dir", help="Output directory")
         self._parser.add_argument("--vis", help="Visualize the computation", action="store_true")
         self._parser.add_argument("--resume", help="Resume from previous computations")
