@@ -16,11 +16,11 @@ class PhysicalParameters:
     mu_2: float = 0.1
     mu_cl: float = 0.1
     cosY: float = cos(np.pi*2.0/3)
-    gamma_1: float = 5.0
-    gamma_3: float = 10.0
-    gamma_2: float = 5.0 + 10.0 * cos(np.pi*2.0/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
-    B: float = 5e-2
-    Y: float = 4e2
+    gamma_1: float = 2.5
+    gamma_3: float = 5.0
+    gamma_2: float = 2.5 + 5.0 * cos(np.pi*2.0/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
+    B: float = 1e-1
+    Y: float = 1e2
 
 @Functional
 def dx(x: QuadData) -> np.ndarray:
@@ -523,9 +523,9 @@ class MCL_Runner(Runner):
         q = self.w + id_lift
         
         # force unit length of m3
-        # m3_ = m3.view(np.ndarray).reshape(2,2)
-        # m3_ = m3_ / np.linalg.norm(m3_, axis=1, keepdims=True)
-        # m3[:] = m3_.reshape(-1)
+        m3_ = self.m3.view(np.ndarray).reshape(2,2)
+        m3_ = m3_ / np.linalg.norm(m3_, axis=1, keepdims=True)
+        self.m3[:] = m3_.reshape(-1)
         
         # =================================================================
         # Step 4. Displace the bulk mesh and update all the meshes. 
@@ -568,5 +568,5 @@ class MCL_Runner(Runner):
 # ===========================================================
 
 if __name__ == "__main__":
-    solp = SolverParameters(dt=1.0/1024/32, Te=0.25)
+    solp = SolverParameters(dt=1.0/1024/16, Te=1.0/8)
     MCL_Runner(solp).run()
