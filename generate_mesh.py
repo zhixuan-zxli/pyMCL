@@ -127,9 +127,16 @@ if __name__ == "__main__":
     mesh_name = argv[1] if len(argv) >= 2 else "unit_square"
     if mesh_name == "two-phase":
         bbox = np.array([[-1,0], [1,1]], dtype=np.float64)
-        # markers = np.array([[0.5,0], [0.5, 0.25], [-0.5, 0.25], [-0.5,0]])
-        theta = np.arange(21) / 20 * np.pi
-        markers = np.vstack((0.5*np.cos(theta), 0.5*np.sin(theta)))
-        build_two_phase_mesh(bbox, markers.T, np.array(((0.06, 0.2, 0.0, 0.5), (0.01, 0.2, 0.03, 0.2))))
+        theta_0 = np.pi/3 # change this
+        print("Theta_0 = {}".format(theta_0*180/np.pi))
+        vol_0 = np.pi/8 # the volume of the droplet
+        h_min, h_max = 0.06, 0.2
+        R = np.sqrt(vol_0 / (theta_0 - 0.5 * np.sin(2*theta_0)))
+        arcl = 2*R*theta_0
+        num_segs = np.ceil(arcl / h_min)
+        theta = np.arange(num_segs+1) / num_segs * (2*theta_0) + np.pi/2 - theta_0 # the theta span
+        markers = np.vstack((R * np.cos(theta), R * (np.sin(theta) - np.cos(theta_0))))
+        markers[1,0] = 0.0; markers[1,-1] = 0.0 # attach on the substrate
+        build_two_phase_mesh(bbox, markers.T, np.array(((h_min, h_max, 0.0, 0.5), (0.01, 0.2, 0.03, 0.2))))
     elif mesh_name == "unit_square":
         build_unit_square(0.1)

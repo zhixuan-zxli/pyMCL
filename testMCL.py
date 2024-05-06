@@ -5,7 +5,7 @@ from math import cos
 from runner import *
 from fem import *
 from scipy.sparse import bmat
-from scipy.sparse.linalg import spsolve
+from scikits.umfpack import spsolve
 from matplotlib import pyplot
 from colorama import Fore, Style
 
@@ -15,10 +15,10 @@ class PhysicalParameters:
     mu_1: float = 0.1
     mu_2: float = 0.1
     mu_cl: float = 0.1
-    cosY: float = cos(np.pi*2.0/3)
     gamma_1: float = 2.5
     gamma_3: float = 5.0
-    gamma_2: float = 2.5 + 5.0 * cos(np.pi*2.0/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
+    gamma_2: float = 2.5 + 5.0 * cos(np.pi/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
+    cos_theta_0: float = 2.0*np.pi
     B: float = 1e-1
     Y: float = 1e2
 
@@ -269,7 +269,7 @@ class MCL_Runner(Runner):
         self.tau = Function(self.Q_sp)
         self.mom = Function(self.MOM_sp)
         self.m3 = Function(self.M3_sp)
-        self.m3[1::2] = -1.0 # need an initial value for m3
+        self.m3[:] = (np.cos(self.phyp.cos_theta_0), -np.sin(self.phyp.cos_theta_0), -np.cos(self.phyp.cos_theta_0), -np.sin(self.phyp.cos_theta_0), ) # need an initial value for m3
         self.m1_k = np.zeros((2, 2)) # the projected m1
         
         self.id_k = Function(self.s_mesh.coord_fe)
