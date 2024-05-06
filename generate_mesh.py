@@ -46,20 +46,20 @@ def build_two_phase_mesh(bbox: np.ndarray, markers: np.ndarray, field_params: np
     gmsh.model.mesh.field.setNumber(2, "DistMin", field_params[0,2])
     gmsh.model.mesh.field.setNumber(2, "DistMax", field_params[0,3])
 
-    gmsh.model.mesh.field.add("Distance", 3)
-    gmsh.model.mesh.field.setNumbers(3, "PointsList", [pts_marker[0], pts_marker[-1]])
+    # gmsh.model.mesh.field.add("Distance", 3)
+    # gmsh.model.mesh.field.setNumbers(3, "PointsList", [pts_marker[0], pts_marker[-1]])
 
-    gmsh.model.mesh.field.add("Threshold", 4)
-    gmsh.model.mesh.field.setNumber(4, "InField", 3)
-    gmsh.model.mesh.field.setNumber(4, "SizeMin", field_params[1,0])
-    gmsh.model.mesh.field.setNumber(4, "SizeMax", field_params[1,1])
-    gmsh.model.mesh.field.setNumber(4, "DistMin", field_params[1,2])
-    gmsh.model.mesh.field.setNumber(4, "DistMax", field_params[1,3])
+    # gmsh.model.mesh.field.add("Threshold", 4)
+    # gmsh.model.mesh.field.setNumber(4, "InField", 3)
+    # gmsh.model.mesh.field.setNumber(4, "SizeMin", field_params[1,0])
+    # gmsh.model.mesh.field.setNumber(4, "SizeMax", field_params[1,1])
+    # gmsh.model.mesh.field.setNumber(4, "DistMin", field_params[1,2])
+    # gmsh.model.mesh.field.setNumber(4, "DistMax", field_params[1,3])
 
-    gmsh.model.mesh.field.add("Min", 5)
-    gmsh.model.mesh.field.setNumbers(5, "FieldsList", [2, 4])
+    # gmsh.model.mesh.field.add("Min", 5)
+    # gmsh.model.mesh.field.setNumbers(5, "FieldsList", [2, 4])
 
-    gmsh.model.mesh.field.setAsBackgroundMesh(5)
+    gmsh.model.mesh.field.setAsBackgroundMesh(2)
 
     gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
     gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
@@ -130,6 +130,6 @@ if __name__ == "__main__":
         # markers = np.array([[0.5,0], [0.5, 0.25], [-0.5, 0.25], [-0.5,0]])
         theta = np.arange(21) / 20 * np.pi
         markers = np.vstack((0.5*np.cos(theta), 0.5*np.sin(theta)))
-        build_two_phase_mesh(bbox, markers.T, np.array(((0.08, 0.2, 0.0, 0.5), (0.01, 0.2, 0.03, 0.2))))
+        build_two_phase_mesh(bbox, markers.T, np.array(((0.06, 0.2, 0.0, 0.5), (0.01, 0.2, 0.03, 0.2))))
     elif mesh_name == "unit_square":
         build_unit_square(0.1)
