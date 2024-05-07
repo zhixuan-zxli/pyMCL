@@ -1,4 +1,3 @@
-from os import path
 import numpy as np
 from matplotlib import pyplot
 from fem import *
@@ -128,7 +127,7 @@ if __name__ == "__main__":
         id_k = Function(Q_P1_sp)
         id_k[:] = cp["id_k"]
         q_k += lift_to_P2(Q_sp, id_k)
-        vol += xdy_ydx.assemble(Measure(s_mesh, dim=1, order=5, coord_map=q_k)) # type: float
+        vol += xdy_ydx.assemble(Measure(s_mesh, dim=1, order=5, tags=(5,), coord_map=q_k)) # type: float
         print("volume at level {} = {}".format(k, vol))
 
         if k > 0:
