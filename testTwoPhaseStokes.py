@@ -109,7 +109,7 @@ if __name__ == "__main__":
     solp.vis = len(argv) >= 2 and bool(argv[1])
 
     mesh = Mesh()
-    mesh.load("mesh/two-phase.msh")
+    mesh.load("mesh/two-phase-a90.msh")
     setMeshMapping(mesh)
     def periodic_constraint(x: np.ndarray) -> np.ndarray:
         flag = np.abs(x[:,0] - 1.0) < 1e-12
@@ -168,6 +168,7 @@ if __name__ == "__main__":
         assert np.all(triangles % 2 == 0)
         triangles = triangles // 2
 
+    colorbar = None
     m = solp.startStep
     while True:
         t = m * solp.dt
@@ -179,7 +180,13 @@ if __name__ == "__main__":
         # visualization
         if solp.vis:
             ax.clear()
-            pyplot.tripcolor(mesh.coord_map[::2], mesh.coord_map[1::2], mesh.cell_tag[2], triangles=triangles)
+            press = p0.view(np.ndarray)[mixed_fs[2].elem_dof][0] + np.sum(p1.view(np.ndarray)[mixed_fs[1].elem_dof], axis=0) / 3 # (Nt, )
+            tpc = ax.tripcolor(mesh.coord_map[::2], mesh.coord_map[1::2], press, triangles=triangles)
+            if colorbar is None:
+                colorbar = pyplot.colorbar(tpc)
+            else:
+                colorbar.update_normal(tpc)
+            # pyplot.tripcolor(mesh.coord_map[::2], mesh.coord_map[1::2], mesh.cell_tag[2], triangles=triangles)
             pyplot.triplot(mesh.coord_map[::2], mesh.coord_map[1::2], triangles=triangles)
             ax.axis("equal")
             pyplot.draw()

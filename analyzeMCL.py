@@ -3,26 +3,18 @@ import numpy as np
 from matplotlib import pyplot
 from fem import *
 
-cp_group = (
-    "result/MCL-B0.1-g5.0-s0t0/0256.npz", 
-    "result/MCL-B0.1-g5.0-s1t2/1024.npz", 
-)
-base_dt = (
-    1.0/1024/16, 
-    1.0/1024/16/4,
-)
-num_hier = len(cp_group)
+mesh_name = "mesh/two-phase-a90.msh"
+cp_group = "result/MCL-B0.1-g5.0-cvg-s{}t{}/{:04d}.npz"
+base_step = 1024
+base_dt = 1.0/1024/16
+ref_level = ((1,1), (1,2), (1,3)) # (spatial, time) for each pair
+num_hier = 3
 
 @Functional
 def xdy_ydx(x: QuadData) -> np.ndarray:
     # x: (2, Ne, Nq)
     # x.grad: (2, 1, Ne, Nq)
     return 0.5 * (x[0] * x.grad[1,0] - x[1] * x.grad[0,0])[np.newaxis]
-
-@Functional
-def c_L2(x: QuadData, u: QuadData) -> np.ndarray:
-    # u: (?, Ne, Nq)
-    return np.sum(u**2, axis=0, keepdims=True) * x.dx
 
 def lift_to_P2(P2_space: FunctionSpace, p1_func: Function) -> Function:
     p2_func = Function(P2_space)
@@ -35,6 +27,20 @@ def lift_to_P2(P2_space: FunctionSpace, p1_func: Function) -> Function:
     else:
         raise NotImplementedError
     return p2_func
+
+def interp_P1(fine_fs: FunctionSpace, coarse_fs: FunctionSpace, y: Function) -> Function:
+    # y: Function on the coarse space
+    rdim = fine_fs.elem.rdim
+    y_interp = Function(fine_fs)
+    fine_dof = fine_fs.elem_dof
+    coarse_dof = coarse_fs.elem_dof    
+    # According to the implementation of splitRefine, 
+    # the refined elements are ordered interlaced. 
+    for d in range(rdim):
+        y_interp[fine_dof[0*rdim+d, ::2]] = y[coarse_dof[0*rdim+d]]
+        y_interp[fine_dof[1*rdim+d, 1::2]] = y[coarse_dof[1*rdim+d]]
+        y_interp[fine_dof[1*rdim+d, ::2]] = 0.5 * (y[coarse_dof[0*rdim+d]] + y[coarse_dof[1*rdim+d]])
+    return y_interp
 
 def error_between_interface(y_coarse: Function, y_fine: Function) -> float:
     elem_dof = y_fine.fe.elem_dof
@@ -73,9 +79,12 @@ if __name__ == "__main__":
         # prepare the mesh
         if k == 0:
             mesh = Mesh()
-            mesh.load("mesh/two-phase.msh")
+            mesh.load(mesh_name)
+            for _ in range(ref_level[0][0]):
+                mesh = splitRefine(mesh)
         else:
-            mesh = splitRefine(mesh)
+            for _ in range(ref_level[k][0] - ref_level[k-1][0]):
+                mesh = splitRefine(mesh)
         # setMeshMapping(mesh)
         i_mesh = mesh.view(1, tags=(3, )) # interface mesh
         setMeshMapping(i_mesh)
@@ -87,7 +96,7 @@ if __name__ == "__main__":
         Q_sp = FunctionSpace(s_mesh, VectorElement(LineP2, 2)) # for deformation and also for the fluid stress
 
         # read the data from checkpoint
-        cp_file = path.join(cp_group[k])
+        cp_file = cp_group.format(ref_level[k][0], ref_level[k][1], base_step * 2**ref_level[k][1])
         cp = np.load(cp_file)
         energy = cp["energy"] # type: np.ndarray
         refcl_hist = cp["refcl_hist"] # type: np.ndarray
@@ -95,7 +104,7 @@ if __name__ == "__main__":
 
         # plot the total energy
         if k == num_hier-1:
-            t_span = np.arange(energy.shape[0]) * base_dt[k]
+            t_span = np.arange(energy.shape[0]) * base_dt / 2**ref_level[k][1]
             # pyplot.figure()
             # pyplot.plot(t_span, np.sum(energy, axis=1), '-', label="total")
             # pyplot.legend()
@@ -123,13 +132,9 @@ if __name__ == "__main__":
         print("volume at level {} = {}".format(k, vol))
 
         if k > 0:
+            # error_table["y"][k-1] = np.linalg.norm(y_k - y_k_prev, ord=np.inf)
             error_table["y"][k-1] = error_between_interface(y_k_prev, y_k)
             error_table["vol"][k-1] = np.abs(vol - vol_prev)
-            # calculate the error of the cos contact angle
-            # m1 = cp["m1"]
-            # m3 = cp["m3"].reshape(2,2)
-            # error_table["ca L"][k-1] = np.abs(np.dot(m1[0], m3[0]) - cos_Young)
-            # error_table["ca R"][k-1] = np.abs(np.dot(m1[0], m3[0]) - cos_Young)
         # keep the results for the next level
         y_k_prev = y_k # type: Function
         Y_sp_prev = Y_sp # type: FunctionSpace
