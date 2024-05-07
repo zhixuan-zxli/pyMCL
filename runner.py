@@ -50,10 +50,12 @@ class Runner:
             mkdir(self.args.output_dir)
             print("Start from step = 0")
         # save the parameters to disk
+        self.solp.spaceref = self.args.spaceref
+        self.solp.timeref = self.args.timeref
+        self.solp.dt /= 2**self.args.timeref
         with open(self._get_output_name("SolverParameters"), "wb") as f:
             pickle.dump(self.solp, f)
         # calculate the time stepping information
-        self.solp.dt /= 2**self.args.timeref
         self.num_steps = ceil(self.solp.Te / self.solp.dt)
         print("Time steps = {}".format(self.num_steps))
         self.solp.stride_checkpoint = ceil(self.num_steps / self.args.checkpoint) if self.args.checkpoint else 99999999

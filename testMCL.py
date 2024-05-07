@@ -18,7 +18,7 @@ class PhysicalParameters:
     gamma_1: float = 2.5
     gamma_3: float = 5.0
     gamma_2: float = 2.5 + 5.0 * cos(2*np.pi/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
-    cos_theta_0: float = np.pi/3
+    cos_theta_0: float = np.pi/2
     B: float = 1e-1
     Y: float = 1e2
 
