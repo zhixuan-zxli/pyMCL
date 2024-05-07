@@ -333,8 +333,19 @@ class MCL_Runner(Runner):
         t = self.step * self.solp.dt
         if self.args.vis:
             self.ax.clear()
-            self.ax.tripcolor(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], self.triangle_color, triangles=self.bulk_triangles)
+            # self.ax.tripcolor(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], self.triangle_color, triangles=self.bulk_triangles)
+            press = self.p0.view(np.ndarray)[self.P0_sp.elem_dof][0] + np.sum(self.p1.view(np.ndarray)[self.P1_sp.elem_dof], axis=0) / 3 # (Nt, )
+            tpc = self.ax.tripcolor(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], press, triangles=self.bulk_triangles)
+            if not hasattr(self, "colorbar"):
+                self.colorbar = pyplot.colorbar(tpc)
+            else:
+                self.colorbar.update_normal(tpc)
             self.ax.triplot(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], triangles=self.bulk_triangles, linewidth=0.5)
+            # plot the velocity
+            _u = self.u.view(np.ndarray)
+            _n = self.mesh.coord_map.size
+            self.ax.quiver(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], _u[:_n:2], _u[1:_n:2])
+            # plot the conormal
             # m3_ = m3.view(np.ndarray)
             # ax.quiver(q_k[cl_dof_Q2[::2]], q_k[cl_dof_Q2[1::2]], m3_[::2], m3_[1::2])
             # plot the fluid stress
@@ -345,7 +356,7 @@ class MCL_Runner(Runner):
             self.ax.plot(self.id_k[::2], -0.1*np.ones(self.id_k.size//2), 'b+') 
             self.ax.plot([-1,1], [-0.1,-0.1], 'b-')
             # plot the bending moment
-            # self.ax.plot(id_k_lift[::2], mom-0.1, 'kv')
+            # self.ax.plot(id_k_lift[::2], self.mom-0.1, 'kv')
             self.ax.set_ylim(-0.15, 1.0)
             pyplot.title("t={:.5f}".format(t))
             pyplot.draw()
