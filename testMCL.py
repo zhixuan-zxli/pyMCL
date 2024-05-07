@@ -250,8 +250,10 @@ class MCL_Runner(Runner):
         #
         u_noslip_dof = np.unique(self.U_sp.getFacetDof(tags=(7,)))
         p_fix_dof = np.array((0,))
-        q_clamp_dof = np.unique(self.Q_sp.getFacetDof(tags=(10,)))
-        mom_fix_dof = np.unique(self.MOM_sp.getFacetDof(tags=(10,)))
+        # q_clamp_dof = np.unique(self.Q_sp.getFacetDof(tags=(10,)))
+        q_clamp_dof = np.unique(np.concatenate((self.Q_sp.getFacetDof(tags=(10,)).reshape(-1), np.arange(1, self.Q_sp.num_dof, 2)))) # for no-bending
+        # mom_fix_dof = np.unique(self.MOM_sp.getFacetDof(tags=(10,)))
+        mom_fix_dof = np.arange(self.MOM_sp.num_dof) # for no-bending
         self.free_dof = group_dof(
             (self.U_sp, self.P1_sp, self.P0_sp, self.Q_sp, self.Y_sp, self.K_sp, self.M3_sp, self.Q_sp, self.MOM_sp), 
             (u_noslip_dof, p_fix_dof, p_fix_dof, None, None, None, None, q_clamp_dof, mom_fix_dof)
