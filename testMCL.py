@@ -46,14 +46,6 @@ def c_L2(w: QuadData, q: QuadData, x: QuadData) -> np.ndarray:
 def l_dq(w: QuadData, x: QuadData, q_k: QuadData) -> np.ndarray:
     return np.sum(w * q_k.grad[:,0], axis=0, keepdims=True) * x.dx
 
-# @BilinearForm
-# def c_cl_phim(phi: QuadData, m: QuadData, xphi: QuadData, _: QuadData) -> np.ndarray:
-#     # phi.grad: (1, 2, Nf, Nq)
-#     # m: (2, Nf, Nq)
-#     # xphi.fn: (2, Nf, Nq)
-#     return 0.5 * (m[0] * phi.grad[1,0] * xphi.fn[0])[np.newaxis] * xphi.ds
-#     # return (phi[1] * m.grad[0,0] * xm.fn[0])[np.newaxis] * xm.ds
-
 @BilinearForm
 def c_phim(phi: QuadData, m: QuadData, x: QuadData) -> np.ndarray:
     # phi.grad: (2, 2, Nf, Nq)
@@ -256,7 +248,7 @@ class MCL_Runner(Runner):
         mom_fix_dof = np.arange(self.MOM_sp.num_dof) # for no-bending
         self.free_dof = group_dof(
             (self.U_sp, self.P1_sp, self.P0_sp, self.Q_sp, self.Y_sp, self.K_sp, self.M3_sp, self.Q_sp, self.MOM_sp), 
-            (u_noslip_dof, p_fix_dof, p_fix_dof, None, None, None, None, q_clamp_dof, mom_fix_dof)
+            (u_noslip_dof, None, p_fix_dof, None, None, None, None, q_clamp_dof, mom_fix_dof)
         )
 
         # declare the solution functions
@@ -344,9 +336,9 @@ class MCL_Runner(Runner):
                 self.colorbar.update_normal(tpc)
             self.ax.triplot(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], triangles=self.bulk_triangles, linewidth=0.5)
             # plot the velocity
-            _u = self.u.view(np.ndarray)
-            _n = self.mesh.coord_map.size
-            self.ax.quiver(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], _u[:_n:2], _u[1:_n:2])
+            # _u = self.u.view(np.ndarray)
+            # _n = self.mesh.coord_map.size
+            # self.ax.quiver(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], _u[:_n:2], _u[1:_n:2])
             # plot the conormal
             # m3_ = m3.view(np.ndarray)
             # ax.quiver(q_k[cl_dof_Q2[::2]], q_k[cl_dof_Q2[1::2]], m3_[::2], m3_[1::2])
