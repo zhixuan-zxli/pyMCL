@@ -71,8 +71,12 @@ if __name__ == "__main__":
     error_table = {
         "y": [0.0] * (num_hier-1), 
         "vol": [0.0] * (num_hier-1),
+        "id": [0.0] * (num_hier-1),
     }
     # print("\n * Showing t = {}".format(cp_base_num * base_dt))
+    marker_styles = ("bo", "m+", "rx", "y*")
+    ax = pyplot.subplot()
+    ax.axis("equal")
 
     for k in range(num_hier):
         # prepare the mesh
@@ -130,15 +134,22 @@ if __name__ == "__main__":
         vol += xdy_ydx.assemble(Measure(s_mesh, dim=1, order=5, tags=(5,), coord_map=q_k)) # type: float
         print("volume at level {} = {}".format(k, vol))
 
+        ax.plot(y_k[::2], y_k[1::2], marker_styles[k], label=str(k))
+        ax.plot(q_k[::2], q_k[1::2], marker_styles[k], label=str(k))
+
         if k > 0:
             # error_table["y"][k-1] = np.linalg.norm(y_k - y_k_prev, ord=np.inf)
             error_table["y"][k-1] = error_between_interface(y_k_prev, y_k)
             error_table["vol"][k-1] = np.abs(vol - vol_prev)
+            error_table["id"][k-1] = np.linalg.norm(id_k - id_k_prev, ord=np.inf)
         # keep the results for the next level
-        y_k_prev = y_k # type: Function
-        Y_sp_prev = Y_sp # type: FunctionSpace
+        y_k_prev = y_k.view(np.ndarray).copy() # type: Function
+        # Y_sp_prev = Y_sp # type: FunctionSpace
+        id_k_prev = id_k.view(np.ndarray).copy() # type: Function
+        # Q_P1_sp_prev = Q_P1_sp # type: FunctionSpace
         vol_prev = vol
 
     if num_hier >= 2:
         printConvergenceTable(table_header, error_table)
+    ax.legend()
     pyplot.show()
