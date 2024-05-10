@@ -82,9 +82,9 @@ def c_phiq_surf(phi: QuadData, w: QuadData, x: QuadData, gamma: np.ndarray) -> n
 # for b_piq, use c_L2. 
 # for b_piu, use c_L2. 
 
-@LinearForm
-def l_pi_adv(pi: QuadData, x: QuadData, q_k: QuadData, eta_k: QuadData) -> np.ndarray:
-    # q_k: the deformation of the last time step, 
+@BilinearForm
+def b_pi_adv(pi: QuadData, q_k: QuadData, x: QuadData, eta_k: QuadData) -> np.ndarray:
+    # q_k: the deformation interpolated at the current sheet mesh
     # eta_k: the mesh velocity, (2, Nf, Nq)
     # x: the surface measure over the reference sheet in the last time step
     return np.sum(q_k.grad[:,0] * eta_k[0][np.newaxis] * pi, axis=0, keepdims=True) * x.dx
@@ -242,10 +242,10 @@ class MCL_Runner(Runner):
         #
         u_noslip_dof = np.unique(self.U_sp.getFacetDof(tags=(7,)))
         p_fix_dof = np.array((0,))
-        q_clamp_dof = np.unique(self.Q_sp.getFacetDof(tags=(10,)))
-        # q_clamp_dof = np.unique(np.concatenate((self.Q_sp.getFacetDof(tags=(10,)).reshape(-1), np.arange(1, self.Q_sp.num_dof, 2)))) # for no-bending
-        mom_fix_dof = np.unique(self.MOM_sp.getFacetDof(tags=(10,)))
-        # mom_fix_dof = np.arange(self.MOM_sp.num_dof) # for no-bending
+        # q_clamp_dof = np.unique(self.Q_sp.getFacetDof(tags=(10,)))
+        q_clamp_dof = np.unique(np.concatenate((self.Q_sp.getFacetDof(tags=(10,)).reshape(-1), np.arange(1, self.Q_sp.num_dof, 2)))) # for no-bending
+        # mom_fix_dof = np.unique(self.MOM_sp.getFacetDof(tags=(10,)))
+        mom_fix_dof = np.arange(self.MOM_sp.num_dof) # for no-bending
         self.free_dof = group_dof(
             (self.U_sp, self.P1_sp, self.P0_sp, self.Q_sp, self.Y_sp, self.K_sp, self.M3_sp, self.Q_sp, self.MOM_sp), 
             (u_noslip_dof, None, p_fix_dof, None, None, None, None, q_clamp_dof, mom_fix_dof)
@@ -479,7 +479,7 @@ class MCL_Runner(Runner):
         B_PITAU = b_pitau.assemble(q_k_basis, q_k_basis, da_k, mu_i=self.slip_fric)
         # Note: in the following "interpolated on dA_k assemble on da_k" means
         # differentiate on the reference mesh then push forward to the deformed mesh. 
-        L_PI_ADV = l_pi_adv.assemble(q_k_basis, da_k, q_k = self.q_k._interpolate(dA_k), eta_k = eta._interpolate(dA_k))
+        B_PI_ADV = b_pi_adv.assemble(q_k_basis, q_basis, dA_k, eta_k = eta._interpolate(dA_k))
         L_PI_Q = l_pi_L2.assemble(q_k_basis, da_k, q_k=(self.q_k-id_lift)._interpolate(dA_k))
 
         #C_PHITAU = B_PIQ.T
@@ -498,7 +498,7 @@ class MCL_Runner(Runner):
             (A_XIU,    -A_XIP1, -A_XIP0, A_XITAU,  None,    -phyp.gamma_3*A_XIK, None, None,   None),  # u
             (A_XIP1.T, None,    None,    None,     None,    None,   None,      None,   None),  # p1
             (A_XIP0.T, None,    None,    None,     None,    None,   None,      None,   None),  # p0
-            (-solp.dt*B_PIU, None, None, solp.dt*B_PITAU,   None, None, None,  B_PIQ,  None),  # tau
+            (-solp.dt*B_PIU, None, None, solp.dt*B_PITAU,   None, None, None,  B_PIQ-solp.dt*B_PI_ADV,  None),  # tau
             (None,     None,    None,    None,     A_ZY,    A_ZK,   -A_ZM3,    None,   None),  # y
             (-solp.dt*A_XIK.T,  None, None, None,  A_ZK.T,  None,   None,      None,   None),  # k
             (None,     None,    None,    None,     A_ZM3.T, None,   None,      -A_M3Q, None),  # m3
@@ -507,7 +507,7 @@ class MCL_Runner(Runner):
         ), format="csr")
         # collect the right-hand-side
         self.u[:] = 0.0; self.p1[:] = 0.0; self.p0[:] = 0.0
-        self.tau[:] = solp.dt * L_PI_ADV + L_PI_Q
+        self.tau[:] = solp.dt * B_PI_ADV @ id_lift + L_PI_Q
         self.y[:] = 0.0; self.kappa[:] = A_ZK.T @ self.y_k
         self.m3[:] = L_M3
         self.w[:] = C_PHIQ_SURF @ id_lift
