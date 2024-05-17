@@ -74,8 +74,7 @@ class Runner:
     def run(self) -> None:
         self.prepare()
         while True:
-            flag = self.pre_step()
-            if flag:
+            if self.pre_step():
                 break
             self.main_step()
             self.step += 1
