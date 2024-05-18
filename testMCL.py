@@ -178,22 +178,22 @@ def down_to_P1(P1_space: FunctionSpace, p2_func: Function) -> Function:
 def arrange_as_FD(P2_space: FunctionSpace, p2_func: Function) -> np.ndarray:
     assert P2_space.mesh.tdim == 1
     rdim = P2_space.elem.rdim
-    f = np.zeros_like(p2_func).reshape(-1, rdim)
+    arr = np.zeros_like(p2_func).reshape(-1, rdim)
     for d in range(rdim):
-        f[0:-1:rdim, d] = p2_func[P2_space.elem_dof[d]]
-        f[-1, d] = p2_func[P2_space.elem_dof[rdim+d, -1]]
-        f[1::rdim, d] = p2_func[P2_space.elem_dof[2*rdim+d]]
-    return f
+        arr[0:-1:rdim, d] = p2_func[P2_space.elem_dof[d]]
+        arr[-1, d] = p2_func[P2_space.elem_dof[rdim+d, -1]]
+        arr[1::rdim, d] = p2_func[P2_space.elem_dof[2*rdim+d]]
+    return arr
 
-def arrange_as_FE(P2_space: FunctionSpace, fd_arr: np.ndarray) -> Function:
+def arrange_as_FE(P2_space: FunctionSpace, arr: np.ndarray) -> Function:
     assert P2_space.mesh.tdim == 1
     rdim = P2_space.elem.rdim
-    f = Function(P2_space)
+    func = Function(P2_space)
     for d in range(rdim):
-        f[P2_space.elem_dof[d]] = fd_arr[0:-1:rdim, d]
-        f[P2_space.elem_dof[rdim+d, -1]] = fd_arr[-1, d]
-        f[P2_space.elem_dof[2*rdim+1]] = f[1::rdim, d]
-    return f
+        func[P2_space.elem_dof[d]] = arr[0:-1:rdim, d]
+        func[P2_space.elem_dof[rdim+d, -1]] = arr[-1, d]
+        func[P2_space.elem_dof[2*rdim+d]] = arr[1::rdim, d]
+    return func
 
 
 # ===========================================================
@@ -274,9 +274,9 @@ class MCL_Runner(Runner):
         self.id_k = Function(self.s_mesh.coord_fe)
 
         # mark the CL node for finite difference arrangement
-        temp = -np.ones_like(self.w, dtype=int)
-        temp[self.cl_dof_Q2] = (0, 1, 2, 3)
-        self.cl_dof_fd = arrange_as_FD(self.Q_sp, temp)
+        _temp = -np.ones_like(self.w, dtype=int)
+        _temp[self.cl_dof_Q2] = (0, 1, 2, 3)
+        self.cl_dof_fd = arrange_as_FD(self.Q_sp, _temp)
 
         # initialize the arrays for storing the energies
         self.energy = np.zeros((self.num_steps+1, 5))
@@ -346,11 +346,11 @@ class MCL_Runner(Runner):
                 self.colorbar.update_normal(tpc) # update the scale of the color bar without redrawing it
             self.ax.triplot(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], triangles=self.bulk_triangles, linewidth=0.5)
             # plot the velocity
-            # _u = self.u.view(np.ndarray)
-            # self.ax.quiver(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], _u[:_n:2], _u[1:_n:2])
+            _u = self.u.view(np.ndarray); _n = self.mesh.coord_map.size
+            self.ax.quiver(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], _u[:_n:2], _u[1:_n:2])
             # plot the conormal
-            # m3_ = m3.view(np.ndarray)
-            # ax.quiver(q_k[cl_dof_Q2[::2]], q_k[cl_dof_Q2[1::2]], m3_[::2], m3_[1::2])
+            m3_ = self.m3.view(np.ndarray)
+            self.ax.quiver(self.q_k[self.cl_dof_Q2[::2]], self.q_k[self.cl_dof_Q2[1::2]], m3_[::2], m3_[1::2], color="tab:pink")
             # plot reference sheet mesh
             self.ax.plot(self.id_k[self.cl_dof_Q1[::2]], -0.1*np.ones(2), 'ro')
             self.ax.plot(self.id_k[::2], self.id_k[1::2] - 0.1, 'b+') 
@@ -496,22 +496,22 @@ class MCL_Runner(Runner):
         # =================================================================
         # Step 3. Convert to FD form and find the upwind derivatives. 
         q_fd = arrange_as_FD(self.Q_sp, self.q_k) # (x, 2)
-        xx_fd = arrange_as_FD(self.Q_sp, self.id_k_lift)[:,0] # (x, 2)
+        xx_fd = arrange_as_FD(self.Q_sp, self.id_k_lift)[:,0] # (x,)
         dq_plus = np.zeros_like(q_fd)
         dq_minus = np.zeros_like(q_fd)
-        dq_plus[:-1:2] = (-3*q_fd[2::2] + 4*q_fd[1::2] - q_fd[:-1:2]) / (xx_fd[2::2] - xx_fd[:-1:2])
-        dq_minus[2::2] = (q_fd[2::2] - 4*q_fd[1::2] + 3*q_fd[:-1:2]) / (xx_fd[2::2] - xx_fd[:-1:2])
-        dq_plus[1::2] = (q_fd[2::2] - q_fd[:-1:2]) / (xx_fd[2::2] - xx_fd[:-1:2])
+        dq_plus[:-1:2] = (-3*q_fd[:-1:2] + 4*q_fd[1::2] - q_fd[2::2]) / (xx_fd[2::2] - xx_fd[:-1:2])[:,np.newaxis]
+        dq_minus[2::2] = (q_fd[:-1:2] - 4*q_fd[1::2] + 3*q_fd[2::2]) / (xx_fd[2::2] - xx_fd[:-1:2])[:,np.newaxis]
+        dq_plus[1::2] = (q_fd[2::2] - q_fd[:-1:2]) / (xx_fd[2::2] - xx_fd[:-1:2])[:,np.newaxis]
         dq_minus[1::2] = dq_plus[1::2]
 
-        dq_plus_cl = np.extract(self.cl_dof_fd > 0, dq_plus).reshape(-1, 2)
-        dq_minus_cl = np.extract(self.cl_dof_fd > 0, dq_minus).reshape(-1, 2)        
+        dq_plus_cl = np.extract(self.cl_dof_fd >= 0, dq_plus).reshape(-1, 2)
+        dq_minus_cl = np.extract(self.cl_dof_fd >= 0, dq_minus).reshape(-1, 2)        
 
         # =================================================================
         # Step 3. Solve for the reference CL velocity and update the reference mesh. 
 
-        slip_cl = (q_star.view(np.ndarray)[self.cl_dof_Q2] \
-            - self.y.view(np.ndarray)[self.cl_dof_Y]) / solp.dt # type: np.ndarray # (4,)
+        slip_cl = (self.y.view(np.ndarray)[self.cl_dof_Y] \
+            - q_star.view(np.ndarray)[self.cl_dof_Q2]) / solp.dt # type: np.ndarray # (4,)
         slip_cl = slip_cl.reshape(2, 2)
         m1_k_ = self.m1_k.view(np.ndarray).reshape(2, 2)
         dq_uw_cl = np.where((slip_cl[:,0] < 0)[:,np.newaxis], dq_minus_cl, dq_plus_cl) # (2,2)
@@ -519,14 +519,14 @@ class MCL_Runner(Runner):
 
         refcl = self.refcl_hist[self.step] # (4,)
         eta = np.where(
-            xx_fd[:,0] <= refcl[0], (xx_fd + 1.0) / (refcl[0] + 1.0) * eta_cl[0], 
-            np.where(xx_fd[:,0] > refcl[2], (1.0 - xx_fd) / (1.0 - refcl[2]) * eta_cl[1], 
+            xx_fd <= refcl[0], (xx_fd + 1.0) / (refcl[0] + 1.0) * eta_cl[0], 
+            np.where(xx_fd > refcl[2], (1.0 - xx_fd) / (1.0 - refcl[2]) * eta_cl[1], 
                     (eta_cl[0] * (refcl[2] - xx_fd) + eta_cl[1] * (xx_fd - refcl[0])) / (refcl[2] - refcl[0]))
         )
-        q_fd -= solp.dt * np.where((eta < 0)[:,np.newaxis], dq_minus, dq_plus)
+        q_fd = arrange_as_FD(self.Q_sp, q_star) + solp.dt * np.where((eta < 0)[:,np.newaxis], dq_minus, dq_plus) * eta[:,np.newaxis]
         
         eta = arrange_as_FE(self.Q_sp, np.vstack((eta, np.zeros_like(eta))).T)
-        self.s_mesh.coord_map += down_to_P1(self.Q_P1_sp, eta)
+        self.s_mesh.coord_map += down_to_P1(self.Q_P1_sp, eta) * solp.dt
         q = arrange_as_FE(self.Q_sp, q_fd)
         self.w = q - lift_to_P2(self.Q_sp, self.s_mesh.coord_map)
 
