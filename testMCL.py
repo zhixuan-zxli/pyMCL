@@ -178,7 +178,7 @@ def down_to_P1(P1_space: FunctionSpace, p2_func: Function) -> Function:
 def arrange_as_FD(P2_space: FunctionSpace, p2_func: Function) -> np.ndarray:
     assert P2_space.mesh.tdim == 1
     rdim = P2_space.elem.rdim
-    arr = np.zeros_like(p2_func).reshape(-1, rdim)
+    arr = np.zeros(p2_func.shape).reshape(-1, rdim)
     for d in range(rdim):
         arr[0:-1:rdim, d] = p2_func[P2_space.elem_dof[d]]
         arr[-1, d] = p2_func[P2_space.elem_dof[rdim+d, -1]]
@@ -332,7 +332,7 @@ class MCL_Runner(Runner):
         self.energy[self.step, 3] = self.phyp.gamma_2 * dx.assemble(da_2)
         ds = Measure(self.i_mesh, dim=1, order=3)
         self.energy[self.step, 4] = self.phyp.gamma_3 * dx.assemble(ds)
-        print("  energy={:.5f}".format(np.sum(self.energy[self.step])))
+        print("energy={:.5f}, ".format(np.sum(self.energy[self.step])), end="")
 
         t = self.step * self.solp.dt
         if self.args.vis:
@@ -346,8 +346,8 @@ class MCL_Runner(Runner):
                 self.colorbar.update_normal(tpc) # update the scale of the color bar without redrawing it
             self.ax.triplot(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], triangles=self.bulk_triangles, linewidth=0.5)
             # plot the velocity
-            _u = self.u.view(np.ndarray); _n = self.mesh.coord_map.size
-            self.ax.quiver(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], _u[:_n:2], _u[1:_n:2])
+            # _u = self.u.view(np.ndarray); _n = self.mesh.coord_map.size
+            # self.ax.quiver(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], _u[:_n:2], _u[1:_n:2])
             # plot the conormal
             m3_ = self.m3.view(np.ndarray)
             self.ax.quiver(self.q_k[self.cl_dof_Q2[::2]], self.q_k[self.cl_dof_Q2[1::2]], m3_[::2], m3_[1::2], color="tab:pink")
@@ -372,7 +372,7 @@ class MCL_Runner(Runner):
                      phycl_hist=self.phycl_hist[:self.step+1], \
                      refcl_hist=self.refcl_hist[:self.step+1], \
                      energy=self.energy[:self.step+1])
-            print(Fore.GREEN + "Checkpoint saved to " + filename + Style.RESET_ALL)
+            print(Fore.GREEN + "\nCheckpoint saved to " + filename + Style.RESET_ALL)
         
         return self.step >= self.num_steps
     
@@ -495,13 +495,14 @@ class MCL_Runner(Runner):
 
         # =================================================================
         # Step 3. Convert to FD form and find the upwind derivatives. 
+        dq_fd = arrange_as_FD(self.Q_sp, lift_to_P2(self.Q_sp, dq_k)) # the projected dq
         q_fd = arrange_as_FD(self.Q_sp, self.q_k) # (x, 2)
-        xx_fd = arrange_as_FD(self.Q_sp, self.id_k_lift)[:,0] # (x,)
+        id_fd = arrange_as_FD(self.Q_sp, self.id_k_lift)[:,0] # (x,)
         dq_plus = np.zeros_like(q_fd)
         dq_minus = np.zeros_like(q_fd)
-        dq_plus[:-1:2] = (-3*q_fd[:-1:2] + 4*q_fd[1::2] - q_fd[2::2]) / (xx_fd[2::2] - xx_fd[:-1:2])[:,np.newaxis]
-        dq_minus[2::2] = (q_fd[:-1:2] - 4*q_fd[1::2] + 3*q_fd[2::2]) / (xx_fd[2::2] - xx_fd[:-1:2])[:,np.newaxis]
-        dq_plus[1::2] = (q_fd[2::2] - q_fd[:-1:2]) / (xx_fd[2::2] - xx_fd[:-1:2])[:,np.newaxis]
+        dq_plus[:-1:2] = (-3*q_fd[:-1:2] + 4*q_fd[1::2] - q_fd[2::2]) / (id_fd[2::2] - id_fd[:-1:2])[:,np.newaxis]
+        dq_minus[2::2] = (q_fd[:-1:2] - 4*q_fd[1::2] + 3*q_fd[2::2]) / (id_fd[2::2] - id_fd[:-1:2])[:,np.newaxis]
+        dq_plus[1::2] = (q_fd[2::2] - q_fd[:-1:2]) / (id_fd[2::2] - id_fd[:-1:2])[:,np.newaxis]
         dq_minus[1::2] = dq_plus[1::2]
 
         dq_plus_cl = np.extract(self.cl_dof_fd >= 0, dq_plus).reshape(-1, 2)
@@ -510,6 +511,7 @@ class MCL_Runner(Runner):
         # =================================================================
         # Step 3. Solve for the reference CL velocity and update the reference mesh. 
 
+        # find the reference CL velocity
         slip_cl = (self.y.view(np.ndarray)[self.cl_dof_Y] \
             - q_star.view(np.ndarray)[self.cl_dof_Q2]) / solp.dt # type: np.ndarray # (4,)
         slip_cl = slip_cl.reshape(2, 2)
@@ -517,13 +519,16 @@ class MCL_Runner(Runner):
         dq_uw_cl = np.where((slip_cl[:,0] < 0)[:,np.newaxis], dq_minus_cl, dq_plus_cl) # (2,2)
         eta_cl = np.sum(slip_cl*m1_k_, axis=1) / np.sum(dq_uw_cl*m1_k_, axis=1) # (2,)
 
+        # find the advected sheet
         refcl = self.refcl_hist[self.step] # (4,)
         eta = np.where(
-            xx_fd <= refcl[0], (xx_fd + 1.0) / (refcl[0] + 1.0) * eta_cl[0], 
-            np.where(xx_fd > refcl[2], (1.0 - xx_fd) / (1.0 - refcl[2]) * eta_cl[1], 
-                    (eta_cl[0] * (refcl[2] - xx_fd) + eta_cl[1] * (xx_fd - refcl[0])) / (refcl[2] - refcl[0]))
+            id_fd <= refcl[0], (id_fd + 1.0) / (refcl[0] + 1.0) * eta_cl[0], 
+            np.where(id_fd > refcl[2], (1.0 - id_fd) / (1.0 - refcl[2]) * eta_cl[1], 
+                    (eta_cl[0] * (refcl[2] - id_fd) + eta_cl[1] * (id_fd - refcl[0])) / (refcl[2] - refcl[0]))
         )
-        q_fd = arrange_as_FD(self.Q_sp, q_star) + solp.dt * np.where((eta < 0)[:,np.newaxis], dq_minus, dq_plus) * eta[:,np.newaxis]
+        dq_fd /= np.linalg.norm(dq_fd, axis=1, keepdims=True)
+        adv = np.where((eta < 0)[:,np.newaxis], dq_minus, dq_plus) * eta[:,np.newaxis] # (x, 2)
+        q_fd = arrange_as_FD(self.Q_sp, q_star) + solp.dt * np.sum(dq_fd * adv, axis=1, keepdims=True) * dq_fd
         
         eta = arrange_as_FE(self.Q_sp, np.vstack((eta, np.zeros_like(eta))).T)
         self.s_mesh.coord_map += down_to_P1(self.Q_P1_sp, eta) * solp.dt
@@ -559,10 +564,11 @@ class MCL_Runner(Runner):
         bulk_disp[el_free_dof] = spsolve(A_EL[el_free_dof][:,el_free_dof], L_EL[el_free_dof])
         self.mesh.coord_map += bulk_disp
 
-        print(Fore.GREEN + "t = {:.5f}, ".format((self.step+1) * self.solp.dt) + Style.RESET_ALL, end="")
+        print(Fore.GREEN + "\nt = {:.5f}, ".format((self.step+1) * self.solp.dt) + Style.RESET_ALL, end="")
         print("i-disp = {:.2e}, s-disp = {:.2e}, ".format(
             np.linalg.norm(self.y-self.y_k, ord=np.inf), np.linalg.norm(q-self.q_k, ord=np.inf)), end="")
-        print("|m| = ({:.4f}, {:.4f})".format(np.sqrt(self.m3[0]**2+self.m3[1]**2), np.sqrt(self.m3[2]**2+self.m3[3]**2)))
+        print("eta = {:+.2e}, {:+.2e}, ".format(eta_cl[0], eta_cl[1]), end="")
+        print("|m| = ({:.4f}, {:.4f}), ".format(np.sqrt(self.m3[0]**2+self.m3[1]**2), np.sqrt(self.m3[2]**2+self.m3[3]**2)), end="")
 
     def finish(self) -> None:
         super().finish()
@@ -573,5 +579,5 @@ class MCL_Runner(Runner):
 # ===========================================================
 
 if __name__ == "__main__":
-    solp = SolverParameters(dt=1.0/1024/16, Te=1.0/4)
+    solp = SolverParameters(dt=1.0/256, Te=1.0)
     MCL_Runner(solp).run()
