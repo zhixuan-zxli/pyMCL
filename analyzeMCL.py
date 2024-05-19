@@ -3,11 +3,11 @@ from matplotlib import pyplot
 from fem import *
 
 mesh_name = "mesh/two-phase-a90.msh"
-cp_group = "result/MCL-B0.1-g5.0-cvg-s{}t{}/{:04d}.npz"
-base_step = 1024
-base_dt = 1.0/1024/16
-ref_level = ((1,1), (1,2), (1,3)) # (spatial, time) for each pair
-num_hier = 3
+cp_group = "result/MCL-B0.1-g5.0-rigid-lts-s{}t{}/{:04d}.npz"
+base_step = 32
+base_dt = 1.0/256
+ref_level = ((0,0), (0,1), (0,2)) # (spatial, time) for each pair
+num_hier = len(ref_level)
 
 @Functional
 def xdy_ydx(x: QuadData) -> np.ndarray:
@@ -27,19 +27,19 @@ def lift_to_P2(P2_space: FunctionSpace, p1_func: Function) -> Function:
         raise NotImplementedError
     return p2_func
 
-def interp_P1(fine_fs: FunctionSpace, coarse_fs: FunctionSpace, y: Function) -> Function:
-    # y: Function on the coarse space
-    rdim = fine_fs.elem.rdim
-    y_interp = Function(fine_fs)
-    fine_dof = fine_fs.elem_dof
-    coarse_dof = coarse_fs.elem_dof    
-    # According to the implementation of splitRefine, 
-    # the refined elements are ordered interlaced. 
-    for d in range(rdim):
-        y_interp[fine_dof[0*rdim+d, ::2]] = y[coarse_dof[0*rdim+d]]
-        y_interp[fine_dof[1*rdim+d, 1::2]] = y[coarse_dof[1*rdim+d]]
-        y_interp[fine_dof[1*rdim+d, ::2]] = 0.5 * (y[coarse_dof[0*rdim+d]] + y[coarse_dof[1*rdim+d]])
-    return y_interp
+# def interp_P1(fine_fs: FunctionSpace, coarse_fs: FunctionSpace, y: Function) -> Function:
+#     # y: Function on the coarse space
+#     rdim = fine_fs.elem.rdim
+#     y_interp = Function(fine_fs)
+#     fine_dof = fine_fs.elem_dof
+#     coarse_dof = coarse_fs.elem_dof    
+#     # According to the implementation of splitRefine, 
+#     # the refined elements are ordered interlaced. 
+#     for d in range(rdim):
+#         y_interp[fine_dof[0*rdim+d, ::2]] = y[coarse_dof[0*rdim+d]]
+#         y_interp[fine_dof[1*rdim+d, 1::2]] = y[coarse_dof[1*rdim+d]]
+#         y_interp[fine_dof[1*rdim+d, ::2]] = 0.5 * (y[coarse_dof[0*rdim+d]] + y[coarse_dof[1*rdim+d]])
+#     return y_interp
 
 def error_between_interface(y_coarse: Function, y_fine: Function) -> float:
     elem_dof = y_fine.fe.elem_dof
@@ -71,7 +71,7 @@ if __name__ == "__main__":
     error_table = {
         "y": [0.0] * (num_hier-1), 
         "vol": [0.0] * (num_hier-1),
-        "id": [0.0] * (num_hier-1),
+        # "id": [0.0] * (num_hier-1),
     }
     # print("\n * Showing t = {}".format(cp_base_num * base_dt))
     marker_styles = ("bo", "m+", "rx", "y*")
@@ -132,7 +132,7 @@ if __name__ == "__main__":
         id_k[:] = cp["id_k"]
         q_k += lift_to_P2(Q_sp, id_k)
         vol += xdy_ydx.assemble(Measure(s_mesh, dim=1, order=5, tags=(5,), coord_map=q_k)) # type: float
-        print("volume at level {} = {}".format(k, vol))
+        # print("volume at level {} = {}".format(k, vol))
 
         ax.plot(y_k[::2], y_k[1::2], marker_styles[k], label=str(k))
         ax.plot(q_k[::2], q_k[1::2], marker_styles[k], label=str(k))
@@ -141,7 +141,7 @@ if __name__ == "__main__":
             # error_table["y"][k-1] = np.linalg.norm(y_k - y_k_prev, ord=np.inf)
             error_table["y"][k-1] = error_between_interface(y_k_prev, y_k)
             error_table["vol"][k-1] = np.abs(vol - vol_prev)
-            error_table["id"][k-1] = np.linalg.norm(id_k - id_k_prev, ord=np.inf)
+            # error_table["id"][k-1] = np.linalg.norm(id_k - id_k_prev, ord=np.inf)
         # keep the results for the next level
         y_k_prev = y_k.view(np.ndarray).copy() # type: Function
         # Y_sp_prev = Y_sp # type: FunctionSpace
