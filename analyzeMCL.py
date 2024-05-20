@@ -2,11 +2,11 @@ import numpy as np
 from matplotlib import pyplot
 from fem import *
 
-mesh_name = "mesh/two-phase-a90.msh"
-cp_group = "result/MCL-B0.1-g5.0-rigid-lts-s{}t{}/{:04d}.npz"
-base_step = 32
+mesh_name = "mesh/two-phase-a120.msh"
+cp_group = "result/MCL-rigid-adv-s{}t{}/{:04d}.npz"
+base_step = 64
 base_dt = 1.0/256
-ref_level = ((0,0), (0,1), (0,2)) # (spatial, time) for each pair
+ref_level = ((1,1), (1,2), (1,3)) # (spatial, time) for each pair
 num_hier = len(ref_level)
 
 @Functional
@@ -119,6 +119,7 @@ if __name__ == "__main__":
             # pyplot.plot(t_span, phycl_hist[:,0], '-', label="phy left")
             # pyplot.plot(t_span, phycl_hist[:,2], '-', label="phy right")
             # pyplot.legend()
+            pass
 
         # extract the interface parametrization
         y_k = Function(Y_sp)
@@ -149,6 +150,7 @@ if __name__ == "__main__":
         # Q_P1_sp_prev = Q_P1_sp # type: FunctionSpace
         vol_prev = vol
 
+    print(f"base_step = {base_step}")
     if num_hier >= 2:
         printConvergenceTable(table_header, error_table)
     ax.legend()
