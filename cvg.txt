@@ -64,6 +64,52 @@ base_step = 16
 y                   5.53e-04  0.84    3.08e-04  
 vol                 7.64e-05  0.58    5.11e-05
 
+MCL-rigid-adv-s{}t{}
+two-phase-a120.msh
+cos_theta_Y = pi/3
+ref_level = ((2,2), (2,3), (2,4))
+base_step = 128
+                    0         rate    1         
+y                   8.40e-05  0.91    4.46e-05  
+vol                 8.19e-05  0.89    4.43e-05
+base_step = 64
+                    0         rate    1         
+y                   1.23e-04  0.93    6.45e-05  
+vol                 7.83e-05  0.88    4.25e-05 
+base_step = 32
+                    0         rate    1         
+y                   1.87e-04  0.91    9.99e-05  
+vol                 6.20e-05  0.85    3.44e-05
+base_step = 16
+                    0         rate    1         
+y                   2.75e-04  0.83    1.55e-04  
+vol                 3.42e-05  0.74    2.05e-05 
+
+MCL-rigid-adv-s{}t{}
+two-phase-a120.msh
+cos_theta_Y = pi/3
+ref_level = ((0,0), (1,2), (2,4))
+base_step = 256
+                    0         rate    1         
+y                   1.94e-04  1.43    7.23e-05  
+vol                 4.98e-04  1.70    1.54e-04 
+base_step = 128
+                    0         rate    1         
+y                   4.51e-04  1.70    1.39e-04  
+vol                 4.98e-04  1.70    1.54e-04
+base_step = 64
+                    0         rate    1         
+y                   9.76e-04  1.80    2.81e-04  
+vol                 4.81e-04  1.68    1.50e-04 
+base_step = 32
+                    0         rate    1         
+y                   2.05e-03  1.91    5.46e-04  
+vol                 3.94e-04  1.62    1.28e-04 
+base_step = 16
+                    0         rate    1         
+y                   4.38e-03  2.09    1.03e-03  
+vol                 2.36e-04  1.39    9.02e-05
+
 TPS-adv-s{}t{}
 cosY = pi/3
 base_dt = 1.0/256
