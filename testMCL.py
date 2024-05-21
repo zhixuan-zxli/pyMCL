@@ -7,6 +7,7 @@ from fem import *
 from scipy.sparse import bmat
 from scikits.umfpack import spsolve
 from matplotlib import pyplot
+from matplotlib.collections import LineCollection
 from colorama import Fore, Style
 
 @dataclass
@@ -17,8 +18,7 @@ class PhysicalParameters:
     mu_cl: float = 0.1
     gamma_1: float = 2.5
     gamma_3: float = 5.0
-    gamma_2: float = 2.5 + 5.0 * cos(2*np.pi/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
-    cos_theta_0: float = np.pi/2
+    gamma_2: float = 2.5 + 5.0 * cos(np.pi/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
     B: float = 1e-1
     Y: float = 1e2
 
@@ -28,7 +28,7 @@ def dx(x: QuadData) -> np.ndarray:
 
 @Functional
 def e_stretch(x: QuadData, w: QuadData) -> np.ndarray:
-    strain = w.grad[0,0] + 0.5 * w.grad[1,0]**2 # (Ne, Nq)
+    strain = w.grad[0,0] # + 0.5 * w.grad[1,0]**2 # (Ne, Nq)
     return 0.5 * strain[np.newaxis]**2 * x.dx
 
 @Functional
@@ -55,9 +55,10 @@ def c_phim(phi: QuadData, m: QuadData, x: QuadData) -> np.ndarray:
 @BilinearForm
 def c_phiq(phi: QuadData, w: QuadData, x: QuadData, w_k: QuadData) -> np.ndarray:
     # Here w, w_k are the displacements
-    c1 = (w.grad[0,0] + 0.5 * w_k.grad[1,0] * w.grad[1,0]) * phi.grad[0,0]
-    c2 = (w_k.grad[0,0] + 0.5 * w_k.grad[1,0]**2) * w.grad[1,0] * phi.grad[1,0]
-    return (c1+c2)[np.newaxis] * x.dx
+    # c1 = (w.grad[0,0] + 0.5 * w_k.grad[1,0] * w.grad[1,0]) * phi.grad[0,0]
+    # c2 = (w_k.grad[0,0] + 0.5 * w_k.grad[1,0]**2) * w.grad[1,0] * phi.grad[1,0]
+    # return (c1+c2)[np.newaxis] * x.dx
+    return (w.grad[0,0] * phi.grad[0,0])[np.newaxis] * x.dx # linearly elastic sheet
 
 @BilinearForm
 def c_phiq_surf(phi: QuadData, w: QuadData, x: QuadData, gamma: np.ndarray) -> np.ndarray:
@@ -249,10 +250,10 @@ class MCL_Runner(Runner):
         #
         u_noslip_dof = np.unique(self.U_sp.getFacetDof(tags=(7,)))
         p_fix_dof = np.array((0,))
-        # q_clamp_dof = np.unique(self.Q_sp.getFacetDof(tags=(10,)))
-        q_clamp_dof = np.unique(np.concatenate((self.Q_sp.getFacetDof(tags=(10,)).reshape(-1), np.arange(1, self.Q_sp.num_dof, 2)))) # for no-bending
-        # mom_fix_dof = np.unique(self.MOM_sp.getFacetDof(tags=(10,)))
-        mom_fix_dof = np.arange(self.MOM_sp.num_dof) # for no-bending
+        q_clamp_dof = np.unique(self.Q_sp.getFacetDof(tags=(10,)))
+        # q_clamp_dof = np.unique(np.concatenate((self.Q_sp.getFacetDof(tags=(10,)).reshape(-1), np.arange(1, self.Q_sp.num_dof, 2)))) # for no-bending
+        mom_fix_dof = np.unique(self.MOM_sp.getFacetDof(tags=(10,)))
+        # mom_fix_dof = np.arange(self.MOM_sp.num_dof) # for no-bending
         self.free_dof = group_dof(
             (self.U_sp, self.P1_sp, self.P0_sp, self.DG1_sp, self.Y_sp, self.K_sp, self.M3_sp, self.Q_sp, self.MOM_sp), 
             (u_noslip_dof, None, p_fix_dof, None, None, None, None, q_clamp_dof, mom_fix_dof)
@@ -355,8 +356,16 @@ class MCL_Runner(Runner):
             self.ax.plot(self.id_k[self.cl_dof_Q1[::2]], -0.1*np.ones(2), 'ro')
             self.ax.plot(self.id_k[::2], self.id_k[1::2] - 0.1, 'b+') 
             self.ax.plot([-1,1], [-0.1,-0.1], 'b-')
+            # plot the fluid stress
+            _x = self.id_k.view(np.ndarray)[self.Q_P1_sp.elem_dof[0::2]].T # (Ne, 2)
+            _y0 = self.tau.view(np.ndarray)[self.DG1_sp.elem_dof[0::2]].T # (Ne, 2)
+            _y0_max = max(np.linalg.norm(_y0, ord=np.inf), 1e-3)
+            _y1 = self.tau.view(np.ndarray)[self.DG1_sp.elem_dof[1::2]].T
+            _y1_max = max(np.linalg.norm(_y1, ord=np.inf), 1e-3)
+            self.ax.add_collection(LineCollection(segments=np.dstack((_x, _y0/_y0_max)), colors="tab:orange"))
+            self.ax.add_collection(LineCollection(segments=np.dstack((_x, _y1/_y1_max)), colors="tab:pink"))
             # plot the bending moment
-            # self.ax.plot(id_k_lift[::2], self.mom-0.1, 'kv')
+            self.ax.plot(self.id_k_lift[::2], self.mom-0.1, 'kv')
             self.ax.set_ylim(-0.15, 1.0)
             pyplot.title("t={:.5f}".format(t))
             pyplot.draw()
