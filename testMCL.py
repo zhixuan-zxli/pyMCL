@@ -237,7 +237,7 @@ class MCL_Runner(Runner):
         self.K_sp = FunctionSpace(self.i_mesh, LineP1)
         self.Q_sp = FunctionSpace(self.s_mesh, VectorElement(LineP2, 2)) # for sheet deformation
         self.Q_P1_sp = self.s_mesh.coord_fe # type: FunctionSpace
-        self.DG1_sp = FunctionSpace(self.s_mesh, VectorElement(LineDG1, 2)) # for the stress
+        self.TAU_sp = FunctionSpace(self.s_mesh, VectorElement(LineDG0, 2)) # for the stress
         self.MOM_sp = FunctionSpace(self.s_mesh, LineP2)
         self.M3_sp = FunctionSpace(self.cl_mesh, VectorElement(NodeElement, 2))
         assert self.M3_sp.dof_loc[0,0] < self.M3_sp.dof_loc[2,0]
@@ -249,13 +249,13 @@ class MCL_Runner(Runner):
         assert self.Q_P1_sp.dof_loc[self.cl_dof_Q1[0],0] < self.Q_P1_sp.dof_loc[self.cl_dof_Q1[2],0]
         #
         u_noslip_dof = np.unique(self.U_sp.getFacetDof(tags=(7,)))
-        p_fix_dof = np.array((0,))
+        p_fix_dof = np.array((0,), dtype=np.int32) # np.arange(self.P0_sp.num_dof, dtype=np.int32)
         q_clamp_dof = np.unique(self.Q_sp.getFacetDof(tags=(10,)))
         # q_clamp_dof = np.unique(np.concatenate((self.Q_sp.getFacetDof(tags=(10,)).reshape(-1), np.arange(1, self.Q_sp.num_dof, 2)))) # for no-bending
         mom_fix_dof = np.unique(self.MOM_sp.getFacetDof(tags=(10,)))
         # mom_fix_dof = np.arange(self.MOM_sp.num_dof) # for no-bending
         self.free_dof = group_dof(
-            (self.U_sp, self.P1_sp, self.P0_sp, self.DG1_sp, self.Y_sp, self.K_sp, self.M3_sp, self.Q_sp, self.MOM_sp), 
+            (self.U_sp, self.P1_sp, self.P0_sp, self.TAU_sp, self.Y_sp, self.K_sp, self.M3_sp, self.Q_sp, self.MOM_sp), 
             (u_noslip_dof, None, p_fix_dof, None, None, None, None, q_clamp_dof, mom_fix_dof)
         )
 
@@ -268,7 +268,7 @@ class MCL_Runner(Runner):
         self.kappa = Function(self.K_sp)
         self.w = Function(self.Q_sp)   # the displacement
         self.w_k = Function(self.Q_sp) # the displacement
-        self.tau = Function(self.DG1_sp)
+        self.tau = Function(self.TAU_sp)
         self.mom = Function(self.MOM_sp)
         self.m3 = Function(self.M3_sp)
         self.m1_k = Function(self.M3_sp) # the projected m1
@@ -358,12 +358,15 @@ class MCL_Runner(Runner):
             self.ax.plot([-1,1], [-0.1,-0.1], 'b-')
             # plot the fluid stress
             _x = self.id_k.view(np.ndarray)[self.Q_P1_sp.elem_dof[0::2]].T # (Ne, 2)
-            _y0 = self.tau.view(np.ndarray)[self.DG1_sp.elem_dof[0::2]].T # (Ne, 2)
-            _y0_max = max(np.linalg.norm(_y0, ord=np.inf), 1e-3)
-            _y1 = self.tau.view(np.ndarray)[self.DG1_sp.elem_dof[1::2]].T
-            _y1_max = max(np.linalg.norm(_y1, ord=np.inf), 1e-3)
-            self.ax.add_collection(LineCollection(segments=np.dstack((_x, _y0/_y0_max)), colors="tab:orange"))
-            self.ax.add_collection(LineCollection(segments=np.dstack((_x, _y1/_y1_max)), colors="tab:pink"))
+            _x = np.sum(_x, axis=1)/2 # (Ne, )
+            _y0 = self.tau.view(np.ndarray)[self.TAU_sp.elem_dof[0]] # (Ne, )
+            _y0_max = max(np.linalg.norm(_y0, ord=np.inf), 1)
+            _y1 = self.tau.view(np.ndarray)[self.TAU_sp.elem_dof[1]]
+            _y1_max = max(np.linalg.norm(_y1, ord=np.inf), 1)
+            self.ax.plot(_x, _y0/_y0_max, marker="_", color="tab:orange")
+            self.ax.plot(_x, _y1/_y1_max, marker="|", color="tab:pink")
+            # self.ax.add_collection(LineCollection(segments=np.dstack((_x, _y0/_y0_max)), colors="tab:orange"))
+            # self.ax.add_collection(LineCollection(segments=np.dstack((_x, _y1/_y1_max)), colors="tab:pink"))
             # plot the bending moment
             self.ax.plot(self.id_k_lift[::2], self.mom-0.1, 'kv')
             self.ax.set_ylim(-0.15, 1.0)
@@ -432,7 +435,7 @@ class MCL_Runner(Runner):
         k_basis = FunctionBasis(self.K_sp, ds)
         # sheet domain
         u_da_basis = FunctionBasis(self.U_sp, da_4u)
-        tau_basis = FunctionBasis(self.DG1_sp, da)
+        tau_basis = FunctionBasis(self.TAU_sp, da)
         q_da_basis = FunctionBasis(self.Q_sp, da)
         q_basis = FunctionBasis(self.Q_sp, dA)
         mom_basis = FunctionBasis(self.MOM_sp, dA)

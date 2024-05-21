@@ -3,10 +3,10 @@ from matplotlib import pyplot
 from fem import *
 
 mesh_name = "mesh/two-phase-a120.msh"
-cp_group = "result/MCL-rigid-adv-s{}t{}/{:04d}.npz"
-base_step = 64
+cp_group = "result/MCL-lin-p1p0-dg0-adv-s{}t{}/{:04d}.npz"
+base_step = 256
 base_dt = 1.0/256
-ref_level = ((1,1), (1,2), (1,3)) # (spatial, time) for each pair
+ref_level = ((2,2), (2,3), (2,4)) # (spatial, time) for each pair
 num_hier = len(ref_level)
 
 @Functional
@@ -27,19 +27,10 @@ def lift_to_P2(P2_space: FunctionSpace, p1_func: Function) -> Function:
         raise NotImplementedError
     return p2_func
 
-# def interp_P1(fine_fs: FunctionSpace, coarse_fs: FunctionSpace, y: Function) -> Function:
-#     # y: Function on the coarse space
-#     rdim = fine_fs.elem.rdim
-#     y_interp = Function(fine_fs)
-#     fine_dof = fine_fs.elem_dof
-#     coarse_dof = coarse_fs.elem_dof    
-#     # According to the implementation of splitRefine, 
-#     # the refined elements are ordered interlaced. 
-#     for d in range(rdim):
-#         y_interp[fine_dof[0*rdim+d, ::2]] = y[coarse_dof[0*rdim+d]]
-#         y_interp[fine_dof[1*rdim+d, 1::2]] = y[coarse_dof[1*rdim+d]]
-#         y_interp[fine_dof[1*rdim+d, ::2]] = 0.5 * (y[coarse_dof[0*rdim+d]] + y[coarse_dof[1*rdim+d]])
-#     return y_interp
+def down_to_P1(P1_space: FunctionSpace, p2_func: Function) -> Function:
+    p1_func = Function(P1_space)
+    p1_func[:] = p2_func[:P1_space.num_dof]
+    return p1_func
 
 def error_between_interface(y_coarse: Function, y_fine: Function) -> float:
     elem_dof = y_fine.fe.elem_dof
@@ -70,8 +61,8 @@ if __name__ == "__main__":
     table_header = [str(k) for k in range(num_hier-1)]
     error_table = {
         "y": [0.0] * (num_hier-1), 
+        "q": [0.0] * (num_hier-1),
         "vol": [0.0] * (num_hier-1),
-        # "id": [0.0] * (num_hier-1),
     }
     # print("\n * Showing t = {}".format(cp_base_num * base_dt))
     marker_styles = ("bo", "m+", "rx", "y*")
@@ -133,21 +124,20 @@ if __name__ == "__main__":
         id_k[:] = cp["id_k"]
         q_k += lift_to_P2(Q_sp, id_k)
         vol += xdy_ydx.assemble(Measure(s_mesh, dim=1, order=5, tags=(5,), coord_map=q_k)) # type: float
+        q_k_down = down_to_P1(Q_P1_sp, q_k)
         # print("volume at level {} = {}".format(k, vol))
 
         ax.plot(y_k[::2], y_k[1::2], marker_styles[k], label=str(k))
         ax.plot(q_k[::2], q_k[1::2], marker_styles[k], label=str(k))
 
         if k > 0:
-            # error_table["y"][k-1] = np.linalg.norm(y_k - y_k_prev, ord=np.inf)
             error_table["y"][k-1] = error_between_interface(y_k_prev, y_k)
+            error_table["q"][k-1] = error_between_interface(q_k_prev, q_k_down)
             error_table["vol"][k-1] = np.abs(vol - vol_prev)
             # error_table["id"][k-1] = np.linalg.norm(id_k - id_k_prev, ord=np.inf)
         # keep the results for the next level
-        y_k_prev = y_k.view(np.ndarray).copy() # type: Function
-        # Y_sp_prev = Y_sp # type: FunctionSpace
-        id_k_prev = id_k.view(np.ndarray).copy() # type: Function
-        # Q_P1_sp_prev = Q_P1_sp # type: FunctionSpace
+        y_k_prev = y_k.view(np.ndarray).copy() # type: np.ndarray
+        q_k_prev = q_k_down.view(np.ndarray).copy() # type: np.ndarray
         vol_prev = vol
 
     print(f"base_step = {base_step}")
