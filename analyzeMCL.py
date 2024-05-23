@@ -3,10 +3,10 @@ from matplotlib import pyplot
 from fem import *
 
 mesh_name = "mesh/two-phase-a120.msh"
-cp_group = "result/MCL-lin-p1p0-dg0-adv-s{}t{}/{:04d}.npz"
+cp_group = "result/MCL-adv-s{}t{}/{:04d}.npz"
 base_step = 256
 base_dt = 1.0/256
-ref_level = ((2,2), (2,3), (2,4)) # (spatial, time) for each pair
+ref_level = ((2,2), (2,3), (2,4), (2,5)) # (spatial, time) for each pair
 num_hier = len(ref_level)
 
 @Functional

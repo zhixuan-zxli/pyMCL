@@ -7,7 +7,6 @@ from fem import *
 from scipy.sparse import bmat
 from scikits.umfpack import spsolve
 from matplotlib import pyplot
-from matplotlib.collections import LineCollection
 from colorama import Fore, Style
 
 @dataclass
@@ -28,7 +27,7 @@ def dx(x: QuadData) -> np.ndarray:
 
 @Functional
 def e_stretch(x: QuadData, w: QuadData) -> np.ndarray:
-    strain = w.grad[0,0] # + 0.5 * w.grad[1,0]**2 # (Ne, Nq)
+    strain = w.grad[0,0] + 0.5 * w.grad[1,0]**2 # (Ne, Nq)
     return 0.5 * strain[np.newaxis]**2 * x.dx
 
 @Functional
@@ -55,10 +54,10 @@ def c_phim(phi: QuadData, m: QuadData, x: QuadData) -> np.ndarray:
 @BilinearForm
 def c_phiq(phi: QuadData, w: QuadData, x: QuadData, w_k: QuadData) -> np.ndarray:
     # Here w, w_k are the displacements
-    # c1 = (w.grad[0,0] + 0.5 * w_k.grad[1,0] * w.grad[1,0]) * phi.grad[0,0]
-    # c2 = (w_k.grad[0,0] + 0.5 * w_k.grad[1,0]**2) * w.grad[1,0] * phi.grad[1,0]
-    # return (c1+c2)[np.newaxis] * x.dx
-    return (w.grad[0,0] * phi.grad[0,0])[np.newaxis] * x.dx # linearly elastic sheet
+    c1 = (w.grad[0,0] + 0.5 * w_k.grad[1,0] * w.grad[1,0]) * phi.grad[0,0]
+    c2 = (w_k.grad[0,0] + 0.5 * w_k.grad[1,0]**2) * w.grad[1,0] * phi.grad[1,0]
+    return (c1+c2)[np.newaxis] * x.dx
+    # return (w.grad[0,0] * phi.grad[0,0])[np.newaxis] * x.dx # linearly elastic sheet
 
 @BilinearForm
 def c_phiq_surf(phi: QuadData, w: QuadData, x: QuadData, gamma: np.ndarray) -> np.ndarray:
@@ -357,18 +356,18 @@ class MCL_Runner(Runner):
             self.ax.plot(self.id_k[::2], self.id_k[1::2] - 0.1, 'b+') 
             self.ax.plot([-1,1], [-0.1,-0.1], 'b-')
             # plot the fluid stress
-            _x = self.id_k.view(np.ndarray)[self.Q_P1_sp.elem_dof[0::2]].T # (Ne, 2)
-            _x = np.sum(_x, axis=1)/2 # (Ne, )
-            _y0 = self.tau.view(np.ndarray)[self.TAU_sp.elem_dof[0]] # (Ne, )
-            _y0_max = max(np.linalg.norm(_y0, ord=np.inf), 1)
-            _y1 = self.tau.view(np.ndarray)[self.TAU_sp.elem_dof[1]]
-            _y1_max = max(np.linalg.norm(_y1, ord=np.inf), 1)
-            self.ax.plot(_x, _y0/_y0_max, marker="_", color="tab:orange")
-            self.ax.plot(_x, _y1/_y1_max, marker="|", color="tab:pink")
+            # _x = self.id_k.view(np.ndarray)[self.Q_P1_sp.elem_dof[0::2]].T # (Ne, 2)
+            # _x = np.sum(_x, axis=1)/2 # (Ne, )
+            # _y0 = self.tau.view(np.ndarray)[self.TAU_sp.elem_dof[0]] # (Ne, )
+            # _y0_max = max(np.linalg.norm(_y0, ord=np.inf), 1)
+            # _y1 = self.tau.view(np.ndarray)[self.TAU_sp.elem_dof[1]]
+            # _y1_max = max(np.linalg.norm(_y1, ord=np.inf), 1)
+            # self.ax.plot(_x, _y0/_y0_max, marker="_", color="tab:orange")
+            # self.ax.plot(_x, _y1/_y1_max, marker="|", color="tab:pink")
             # self.ax.add_collection(LineCollection(segments=np.dstack((_x, _y0/_y0_max)), colors="tab:orange"))
             # self.ax.add_collection(LineCollection(segments=np.dstack((_x, _y1/_y1_max)), colors="tab:pink"))
             # plot the bending moment
-            self.ax.plot(self.id_k_lift[::2], self.mom-0.1, 'kv')
+            # self.ax.plot(self.id_k_lift[::2], self.mom-0.1, 'kv')
             self.ax.set_ylim(-0.15, 1.0)
             pyplot.title("t={:.5f}".format(t))
             pyplot.draw()
