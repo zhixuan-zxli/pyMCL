@@ -88,6 +88,100 @@ def build_two_phase_mesh(bbox: np.ndarray, markers: np.ndarray, field_params: np
     gmsh.write("mesh/two-phase.msh")
     gmsh.finalize()
 
+def build_channel(bbox: np.ndarray, field_params: np.ndarray) -> None:
+    """
+    Build the two-phase mesh, given the interface markers. 
+    bbox    [in, 2 x 2]  [[x_lo, y_lo], [x_hi, y_hi]]
+    field_params  [in] (4,) (size_min, size_max, dist_min, dist_max) for the interface
+    """
+    gmsh.initialize()
+    gmsh.model.add("channel")
+    # write the points
+    pts_box = [
+        gmsh.model.geo.addPoint(bbox[0,0], bbox[0,1], 0), # lower left corner
+        gmsh.model.geo.addPoint(bbox[1,0], bbox[0,1], 0), # lower right corner
+        gmsh.model.geo.addPoint(bbox[1,0], bbox[1,1], 0), # upper right corner
+        gmsh.model.geo.addPoint(bbox[0,0], bbox[1,1], 0), # upper left corner
+    ]
+    pts_left_i = [
+        gmsh.model.geo.addPoint(bbox[0,0]*2/3 + bbox[1,0]/3, bbox[1,1], 0), 
+        gmsh.model.geo.addPoint(bbox[0,0]*2/3 + bbox[1,0]/3, bbox[0,1], 0)
+    ]
+    pts_right_i = [
+        gmsh.model.geo.addPoint(bbox[0,0]/3 + bbox[1,0]*2/3, bbox[0,1], 0), 
+        gmsh.model.geo.addPoint(bbox[0,0]/3 + bbox[1,0]*2/3, bbox[1,1], 0)
+    ]
+
+    # add the line segments
+    edges = [
+        gmsh.model.geo.addLine(pts_box[0], pts_left_i[1]),     # 0: dry left bottom
+        gmsh.model.geo.addLine(pts_left_i[1], pts_right_i[0]), # wet bottom
+        gmsh.model.geo.addLine(pts_right_i[0], pts_box[1]),    # dry right bottom
+        gmsh.model.geo.addLine(pts_box[1], pts_box[2]),        # right
+        gmsh.model.geo.addLine(pts_box[2], pts_right_i[1]),    # 4: dry right top
+        gmsh.model.geo.addLine(pts_right_i[1], pts_left_i[0]), # wet top
+        gmsh.model.geo.addLine(pts_left_i[0], pts_box[3]),     # dry left top
+        gmsh.model.geo.addLine(pts_box[3], pts_box[0]),        # left
+        gmsh.model.geo.addLine(pts_left_i[0], pts_left_i[1]),  # 8: left interface
+        gmsh.model.geo.addLine(pts_right_i[0], pts_right_i[1]) # right interface
+    ]
+    # add the line loop
+    loop_1 = gmsh.model.geo.addCurveLoop([edges[1], edges[9], edges[5], edges[8]])
+    fluid_1 = gmsh.model.geo.addPlaneSurface([loop_1])
+    loop_2_left = gmsh.model.geo.addCurveLoop([edges[0], -edges[8], edges[6], edges[7]])
+    loop_2_right = gmsh.model.geo.addCurveLoop([edges[2], edges[3], edges[4], -edges[9]])
+    fluid_2 = [
+        gmsh.model.geo.addPlaneSurface([loop_2_left]), 
+        gmsh.model.geo.addPlaneSurface([loop_2_right])
+    ]
+    gmsh.model.geo.synchronize()
+
+    # add the mesh size fields
+    gmsh.model.mesh.field.add("Distance", 1)
+    gmsh.model.mesh.field.setNumbers(1, "CurvesList", [edges[0], edges[1], edges[2], edges[8], edges[9]])
+    # gmsh.model.mesh.field.setNumber(1, "Sampling", 20)
+
+    gmsh.model.mesh.field.add("Threshold", 2)
+    gmsh.model.mesh.field.setNumber(2, "InField", 1)
+    gmsh.model.mesh.field.setNumber(2, "SizeMin", field_params[0])
+    gmsh.model.mesh.field.setNumber(2, "SizeMax", field_params[1])
+    gmsh.model.mesh.field.setNumber(2, "DistMin", field_params[2])
+    gmsh.model.mesh.field.setNumber(2, "DistMax", field_params[3])
+
+    # gmsh.model.mesh.field.add("Min", 5)
+    # gmsh.model.mesh.field.setNumbers(5, "FieldsList", [2, 4])
+
+    gmsh.model.mesh.field.setAsBackgroundMesh(2)
+
+    gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
+    gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
+    gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
+
+    gmsh.option.setNumber("Mesh.Algorithm", 6) # 5 = Delaunay, 6 = Frontal-Delaunay
+    gmsh.option.setNumber("Mesh.Binary", 1)
+
+    # add physical group
+    gmsh.model.setPhysicalName(2, gmsh.model.addPhysicalGroup(2, [fluid_1]), "fluid_1")
+    gmsh.model.setPhysicalName(2, gmsh.model.addPhysicalGroup(2, fluid_2), "fluid_2")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [edges[8]]), "i_left")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [edges[9]]), "i_right")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [edges[0], edges[2]]), "dry")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [edges[1]]), "wet")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [edges[3]]), "right")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, edges[4:7]), "top")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [edges[7]]), "left")
+    gmsh.model.setPhysicalName(0, gmsh.model.addPhysicalGroup(0, [pts_left_i[1], pts_right_i[0]]), "cl")
+    gmsh.model.setPhysicalName(0, gmsh.model.addPhysicalGroup(0, [pts_left_i[0], pts_right_i[1]]), "cl_top")
+    gmsh.model.setPhysicalName(0, gmsh.model.addPhysicalGroup(0, [pts_box[0], pts_box[1]]), "clamp")
+    # # add periodicity
+    translation = [1, 0, 0, bbox[1,0] - bbox[0,0], 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    gmsh.model.mesh.setPeriodic(1, [edges[3]], [edges[7]], translation)
+
+    # generate and save the mesh
+    gmsh.model.mesh.generate(dim=2)
+    gmsh.write("mesh/channel.msh")
+    gmsh.finalize()
+
 def build_unit_square(h: float) -> None:
     gmsh.initialize()
     gmsh.model.add("unit_square")
@@ -124,8 +218,10 @@ def build_unit_square(h: float) -> None:
     gmsh.finalize()
 
 if __name__ == "__main__":
-    mesh_name = argv[1] if len(argv) >= 2 else "unit_square"
-    if mesh_name == "two-phase":
+    if len(argv) < 2:
+        print("python3 generate_mesh.py mesh_name")
+        quit()
+    if argv[1] == "two-phase":
         bbox = np.array([[-1,0], [1,1]], dtype=np.float64)
         theta_0 = np.pi/3 # change this
         print("Theta_0 = {}".format(theta_0*180/np.pi))
@@ -138,5 +234,8 @@ if __name__ == "__main__":
         markers = np.vstack((R * np.cos(theta), R * (np.sin(theta) - np.cos(theta_0))))
         markers[1,0] = 0.0; markers[1,-1] = 0.0 # attach on the substrate
         build_two_phase_mesh(bbox, markers.T, np.array(((h_min, h_max, 0.0, 0.5), (0.01, 0.2, 0.03, 0.2))))
-    elif mesh_name == "unit_square":
+    elif argv[1] == "channel":
+        bbox=np.array(((-1.5, 0.0), (1.5, 0.75)))
+        build_channel(bbox, (0.06, 0.25, 0.0, 0.5))
+    elif argv[1] == "unit_square":
         build_unit_square(0.1)
