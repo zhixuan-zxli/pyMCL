@@ -2,13 +2,12 @@ from sys import argv
 import numpy as np
 import gmsh
 
-def build_two_phase_mesh(bbox:np.ndarray, markers:np.ndarray, h_size, dist_max = 1) -> None:
+def build_two_phase_mesh(bbox: np.ndarray, markers: np.ndarray, field_params: np.ndarray) -> None:
     """
     Build the two-phase mesh, given the interface markers. 
     bbox    [in, 2 x 2]  [[x_lo, y_lo], [x_hi, y_hi]]
     markers [in, Np x 2] with the orientation where the outward normal is pointing to fluid 2. 
-    h_size  [in, 2] [h_min, h_max]
-    dist_max [in, 1] distance from interface where h_max is attained
+    field_params  [in] (2,3) [0], [1] for (size_min, size_max, dist_min, dist_max) for the f-f interface and the contact line, respecitvely. 
     """
     gmsh.initialize()
     gmsh.model.add("two-phase")
@@ -42,10 +41,23 @@ def build_two_phase_mesh(bbox:np.ndarray, markers:np.ndarray, h_size, dist_max =
 
     gmsh.model.mesh.field.add("Threshold", 2)
     gmsh.model.mesh.field.setNumber(2, "InField", 1)
-    gmsh.model.mesh.field.setNumber(2, "SizeMin", h_size[0])
-    gmsh.model.mesh.field.setNumber(2, "SizeMax", h_size[1])
-    gmsh.model.mesh.field.setNumber(2, "DistMin", 0.0)
-    gmsh.model.mesh.field.setNumber(2, "DistMax", dist_max)
+    gmsh.model.mesh.field.setNumber(2, "SizeMin", field_params[0,0])
+    gmsh.model.mesh.field.setNumber(2, "SizeMax", field_params[0,1])
+    gmsh.model.mesh.field.setNumber(2, "DistMin", field_params[0,2])
+    gmsh.model.mesh.field.setNumber(2, "DistMax", field_params[0,3])
+
+    # gmsh.model.mesh.field.add("Distance", 3)
+    # gmsh.model.mesh.field.setNumbers(3, "PointsList", [pts_marker[0], pts_marker[-1]])
+
+    # gmsh.model.mesh.field.add("Threshold", 4)
+    # gmsh.model.mesh.field.setNumber(4, "InField", 3)
+    # gmsh.model.mesh.field.setNumber(4, "SizeMin", field_params[1,0])
+    # gmsh.model.mesh.field.setNumber(4, "SizeMax", field_params[1,1])
+    # gmsh.model.mesh.field.setNumber(4, "DistMin", field_params[1,2])
+    # gmsh.model.mesh.field.setNumber(4, "DistMax", field_params[1,3])
+
+    # gmsh.model.mesh.field.add("Min", 5)
+    # gmsh.model.mesh.field.setNumbers(5, "FieldsList", [2, 4])
 
     gmsh.model.mesh.field.setAsBackgroundMesh(2)
 
@@ -53,6 +65,7 @@ def build_two_phase_mesh(bbox:np.ndarray, markers:np.ndarray, h_size, dist_max =
     gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
     gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
 
+    gmsh.option.setNumber("Mesh.Algorithm", 6) # 5 = Delaunay, 6 = Frontal-Delaunay
     gmsh.option.setNumber("Mesh.Binary", 1)
 
     # add physical group
@@ -66,9 +79,9 @@ def build_two_phase_mesh(bbox:np.ndarray, markers:np.ndarray, h_size, dist_max =
     gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [e_left]), "left")
     gmsh.model.setPhysicalName(0, gmsh.model.addPhysicalGroup(0, [pts_marker[0], pts_marker[-1]]), "cl")
     gmsh.model.setPhysicalName(0, gmsh.model.addPhysicalGroup(0, [pts_ll, pts_lr]), "clamp")
-    # add periodicity
-    translation = [1, 0, 0, bbox[1,0] - bbox[0,0], 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
-    gmsh.model.mesh.setPeriodic(1, [e_right], [e_left], translation)
+    # # add periodicity
+    # translation = [1, 0, 0, bbox[1,0] - bbox[0,0], 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    # gmsh.model.mesh.setPeriodic(1, [e_right], [e_left], translation)
 
     # generate and save the mesh
     gmsh.model.mesh.generate(dim=2)
@@ -114,9 +127,16 @@ if __name__ == "__main__":
     mesh_name = argv[1] if len(argv) >= 2 else "unit_square"
     if mesh_name == "two-phase":
         bbox = np.array([[-1,0], [1,1]], dtype=np.float64)
-        # markers = np.array([[0.5,0], [0.5, 0.25], [-0.5, 0.25], [-0.5,0]])
-        theta = np.arange(41) / 40.0 * np.pi
-        markers = np.vstack((0.5*np.cos(theta), 0.5*np.sin(theta)))
-        build_two_phase_mesh(bbox, markers.T, [0.04, 0.1], 0.5)
+        theta_0 = np.pi/3 # change this
+        print("Theta_0 = {}".format(theta_0*180/np.pi))
+        vol_0 = np.pi/8 # the volume of the droplet
+        h_min, h_max = 0.06, 0.2
+        R = np.sqrt(vol_0 / (theta_0 - 0.5 * np.sin(2*theta_0)))
+        arcl = 2*R*theta_0
+        num_segs = np.ceil(arcl / h_min)
+        theta = np.arange(num_segs+1) / num_segs * (2*theta_0) + np.pi/2 - theta_0 # the theta span
+        markers = np.vstack((R * np.cos(theta), R * (np.sin(theta) - np.cos(theta_0))))
+        markers[1,0] = 0.0; markers[1,-1] = 0.0 # attach on the substrate
+        build_two_phase_mesh(bbox, markers.T, np.array(((h_min, h_max, 0.0, 0.5), (0.01, 0.2, 0.03, 0.2))))
     elif mesh_name == "unit_square":
         build_unit_square(0.1)

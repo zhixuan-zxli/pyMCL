@@ -64,7 +64,8 @@ class LineDG0(LineElement):
     
     @staticmethod
     def _eval(basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]: 
-        raise NotImplementedError
+        assert basis_id == 0
+        return np.ones((1, qpts.shape[1])), np.zeros((1, 1, qpts.shape[1]))
     
 
 class LineP1(LineElement):

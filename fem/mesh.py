@@ -84,23 +84,30 @@ class Mesh:
         all_facets, _ = self._sort_with_orienation(all_facets)
         uq_facets, idx = np.unique(all_facets, return_index=True, axis=0)
         tagged_facets, orientation = self._sort_with_orienation(self.cell[self.tdim-1])
-        sub_idx = binsearchkw(uq_facets.astype(np.int32), tagged_facets)
-        assert np.all(sub_idx != -1)
-        # the first side 
+        tagged_idx = binsearchkw(uq_facets.astype(np.int32), tagged_facets) # type: np.ndarray
+        assert np.all(tagged_idx != -1)
+        # preserve the order of the tagged facets
         Nf = uq_facets.shape[0]
+        untagged_flag = np.ones((Nf, ), dtype=np.bool_)
+        untagged_flag[tagged_idx] = False
+        reorder = np.empty((Nf, ), dtype=np.int32)
+        reorder[:tagged_idx.size] = tagged_idx
+        reorder[tagged_idx.size:] = np.nonzero(untagged_flag)[0]
+        uq_facets = uq_facets[reorder]
+        if self.tdim >= 2:
+            uq_facets[:tagged_idx.size][orientation, :2] = uq_facets[:tagged_idx.size][orientation, 1::-1]
+        # the first side 
         self.facet_ref = np.zeros((2, 2, Nf), dtype=np.int32)
-        self.facet_ref[0,0], self.facet_ref[0,1] = np.divmod(idx, num_facet)
+        self.facet_ref[0,0], self.facet_ref[0,1] = np.divmod(idx[reorder], num_facet)
         # the other side
         _, idx = np.unique(all_facets[::-1], return_index=True, axis=0)
         idx = all_facets.shape[0] - idx - 1
-        self.facet_ref[1,0], self.facet_ref[1,1] = np.divmod(idx, num_facet)
+        self.facet_ref[1,0], self.facet_ref[1,1] = np.divmod(idx[reorder], num_facet)
         # save all the facets
         self.cell[self.tdim-1] = uq_facets
-        if self.tdim >= 2:
-            self.cell[self.tdim-1][sub_idx[orientation], :2] = self.cell[self.tdim-1][sub_idx[orientation], 1::-1]
         old_tags = self.cell_tag[self.tdim-1]
         self.cell_tag[self.tdim-1] = INTERIOR_FACET_TAG * np.ones((Nf, ), dtype=np.int32)
-        self.cell_tag[self.tdim-1][sub_idx] = old_tags
+        self.cell_tag[self.tdim-1][:tagged_idx.size] = old_tags
         # fix the facet orientation
         tags = self.cell_tag[self.tdim][self.facet_ref[:,0]] # (2, num_facet)
         flipped = tags[0] > tags[1]

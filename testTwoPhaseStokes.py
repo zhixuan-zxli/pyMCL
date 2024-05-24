@@ -1,9 +1,10 @@
 from sys import argv
+from os import path, mkdir
 import numpy as np
 from math import cos
 from fem import *
 from scipy.sparse import bmat
-from scipy.sparse.linalg import spsolve
+from scikits.umfpack import spsolve
 from matplotlib import pyplot
 
 # physical groups from GMSH
@@ -94,12 +95,15 @@ class PhysicalParameters:
     cosY: float = cos(np.pi*2.0/3)
 
 class SolverParemeters:
-    dt: float = 1.0/1024
-    Te: float = 1.0/4
+    dt: float = 1.0/256
+    Te: float = 1.0
     startStep: int = 0
-    stride: int = 1
+    stride: int = 32
     numChekpoint: int = 0
     vis: bool = True
+    output_dir: str = "result/TPS-s1t2"
+    spaceref: int = 1
+    timeref: int = 2
 
 
 if __name__ == "__main__":
@@ -108,8 +112,17 @@ if __name__ == "__main__":
     solp = SolverParemeters()
     solp.vis = len(argv) >= 2 and bool(argv[1])
 
+    try:
+        mkdir(solp.output_dir)
+    except FileExistsError:
+        print("Output dir exists. ")
+
     mesh = Mesh()
-    mesh.load("mesh/two-phase.msh")
+    mesh.load("mesh/two-phase-a90.msh")
+    for _ in range(solp.spaceref):
+        mesh = splitRefine(mesh)
+    solp.dt /= 2**solp.timeref
+    solp.stride *= 2**solp.timeref
     setMeshMapping(mesh)
     def periodic_constraint(x: np.ndarray) -> np.ndarray:
         flag = np.abs(x[:,0] - 1.0) < 1e-12
@@ -168,22 +181,35 @@ if __name__ == "__main__":
         assert np.all(triangles % 2 == 0)
         triangles = triangles // 2
 
+    colorbar = None
     m = solp.startStep
     while True:
         t = m * solp.dt
-        if t >= solp.Te:
-            break
-        print("Solving t = {0:.4f}, ".format(t), end="")
-        m += 1
 
         # visualization
         if solp.vis:
             ax.clear()
-            pyplot.tripcolor(mesh.coord_map[::2], mesh.coord_map[1::2], mesh.cell_tag[2], triangles=triangles)
+            press = p0.view(np.ndarray)[mixed_fs[2].elem_dof][0] + np.sum(p1.view(np.ndarray)[mixed_fs[1].elem_dof], axis=0) / 3 # (Nt, )
+            tpc = ax.tripcolor(mesh.coord_map[::2], mesh.coord_map[1::2], press, triangles=triangles)
+            if colorbar is None:
+                colorbar = pyplot.colorbar(tpc)
+            else:
+                colorbar.update_normal(tpc)
+            # pyplot.tripcolor(mesh.coord_map[::2], mesh.coord_map[1::2], mesh.cell_tag[2], triangles=triangles)
             pyplot.triplot(mesh.coord_map[::2], mesh.coord_map[1::2], triangles=triangles)
             ax.axis("equal")
             pyplot.draw()
             pyplot.pause(1e-3)
+
+        if m % solp.stride == 0:
+            filename = path.join(solp.output_dir, "{:04d}.npz".format(m))
+            np.savez(filename, y_k=x_m)
+            print("\n* Checkpoint saved to " + filename)
+
+        if t >= solp.Te:
+            break
+        print("Solving t = {0:.5f}, ".format(t), end="")
+        m += 1
             
         # initialize the measure and basis
         dx = Measure(mesh, 2, order=3)

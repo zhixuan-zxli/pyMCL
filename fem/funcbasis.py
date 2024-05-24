@@ -1,4 +1,4 @@
-from typing import Union
+from warnings import warn
 import numpy as np
 from .function import FunctionSpace, QuadData
 from .measure import Measure
@@ -25,7 +25,6 @@ class FunctionBasis:
         Nq = self.mea.quad_w.size
         tdim, rdim = self.fs.elem.tdim, self.fs.elem.rdim
         num_local_dof = self.fs.elem.num_local_dof
-        assert mea.mesh is self.fs.mesh
         self.data = []
         #
         if mea.dim == tdim:
@@ -52,4 +51,3 @@ class FunctionBasis:
             raise RuntimeError("Incorrect measure dimension. ")
         # transform the data into a tuple
         self.data = tuple(self.data)
-

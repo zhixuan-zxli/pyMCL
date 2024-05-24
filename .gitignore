@@ -1,11 +1,8 @@
 __pycache__/
 build/
+result/
 .vscode/
 *.so
-*.ini
-*.h5
-*.xdmf
 *.geo
 *.msh
-*.xml
 *.npz
