@@ -81,11 +81,6 @@ class Function(np.ndarray):
         out_arr.fe = self.fe
         return out_arr
     
-    def update(self) -> None:
-        # Update self to account for periodic BC. 
-        if self.fe.periodic:
-            raise NotImplementedError
-    
     def _interpolate(self, mea: Measure) -> QuadData:
         assert self.fe.mesh is mea.mesh
         tdim, rdim = self.fe.elem.tdim, self.fe.elem.rdim
