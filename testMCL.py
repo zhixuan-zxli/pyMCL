@@ -71,17 +71,6 @@ def c_phiq_surf(phi: QuadData, w: QuadData, x: QuadData, gamma: np.ndarray) -> n
 # Forms for the dynamics of the sheet
 
 @BilinearForm
-def b_pi_adv(pi: QuadData, q_k: QuadData, x: QuadData, eta_k: QuadData) -> np.ndarray:
-    # q_k: the deformation interpolated at the current sheet mesh
-    # eta_k: the mesh velocity, (2, Nf, Nq)
-    # x: the surface measure over the reference sheet in the last time step
-    return np.sum(q_k.grad[:,0] * eta_k[0][np.newaxis] * pi, axis=0, keepdims=True) * x.dx
-
-@LinearForm
-def l_pi_L2(pi: QuadData, x: QuadData, q_k: QuadData) -> np.ndarray:
-    return np.sum(pi * q_k, axis=0, keepdims=True) * x.dx
-
-@BilinearForm
 def b_pitau(pi: QuadData, tau: QuadData, x: QuadData, mu_i: np.ndarray) -> np.ndarray:
     # tau: (2, Ne, Nq)
     # mu_i: the slip coefficient
