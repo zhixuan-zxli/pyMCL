@@ -2,7 +2,7 @@ import numpy as np
 from matplotlib import pyplot
 from fem import *
 
-mesh_name = "mesh/two-phase-a120.msh"
+mesh_name = "mesh/drop-a120.msh"
 cp_group = "result/MCL-adv-s{}t{}/{:04d}.npz"
 base_step = 256
 base_dt = 1.0/256

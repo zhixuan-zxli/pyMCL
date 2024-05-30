@@ -187,7 +187,7 @@ def arrange_as_FE(P2_space: FunctionSpace, arr: np.ndarray) -> Function:
 
 # ===========================================================
 
-class MCL_Runner(Runner):
+class Drop_Runner(Runner):
 
     def prepare(self) -> None:
         super().prepare()
@@ -580,4 +580,4 @@ class MCL_Runner(Runner):
 
 if __name__ == "__main__":
     solp = SolverParameters(dt=1.0/256, Te=1.0)
-    MCL_Runner(solp).run()
+    Drop_Runner(solp).run()
