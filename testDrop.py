@@ -12,14 +12,15 @@ from colorama import Fore, Style
 @dataclass
 class PhysicalParameters:
     eta_2: float = 0.1
-    mu_1: float = 0.1
-    mu_2: float = 0.1
-    mu_cl: float = 0.1
+    mu_1: float = 1e3
+    mu_2: float = 1e3
+    mu_cl: float = 1e3
     gamma_1: float = 2.5
-    gamma_3: float = 5.0
-    gamma_2: float = 2.5 + 5.0 * cos(np.pi/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
-    B: float = 1e-1
+    gamma_3: float = 10.0
+    gamma_2: float = 2.5 + 10.0 * cos(np.pi/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
+    B: float = 1e-2
     Y: float = 1e2
+    pre: float = 0.2 # pre-stretched tension
 
 @Functional
 def dx(x: QuadData) -> np.ndarray:
@@ -231,6 +232,11 @@ class Drop_Runner(Runner):
         assert self.M3_sp.dof_loc[0,0] < self.M3_sp.dof_loc[2,0]
 
         # extract the useful DOFs
+        self.BMM_int_dof = np.unique(self.mesh.coord_fe.getFacetDof(tags=(3,)))
+        self.BMM_sh_dof = np.unique(self.mesh.coord_fe.getFacetDof(tags=(4,5)))
+        self.BMM_fix_dof = np.unique(self.mesh.coord_fe.getFacetDof(tags=(3,4,5,6,7,8)))
+        self.el_free_dof = group_dof((self.mesh.coord_fe,), (self.BMM_fix_dof,))
+        #
         self.cl_dof_Y = np.unique(self.Y_sp.getFacetDof(tags=(9,)))
         self.cl_dof_Q2 = np.unique(self.Q_sp.getFacetDof(tags=(9,)))
         self.cl_dof_Q1 = np.unique(self.Q_P1_sp.getFacetDof(tags=(9,)))
@@ -247,6 +253,7 @@ class Drop_Runner(Runner):
             (u_noslip_dof, None, p_fix_dof, None, None, None, None, q_clamp_dof, mom_fix_dof)
         )
 
+        # =================================================================
         # declare the solution functions
         self.u = Function(self.U_sp)
         self.p1 = Function(self.P1_sp)
@@ -254,7 +261,7 @@ class Drop_Runner(Runner):
         self.y = Function(self.Y_sp)
         self.y_k = Function(self.Y_sp)
         self.kappa = Function(self.K_sp)
-        self.w = Function(self.Q_sp)   # the displacement
+        # self.w = Function(self.Q_sp)   # the displacement
         self.w_k = Function(self.Q_sp) # the displacement
         self.tau = Function(self.TAU_sp)
         self.mom = Function(self.MOM_sp)
@@ -262,6 +269,13 @@ class Drop_Runner(Runner):
         self.m1_k = Function(self.M3_sp) # the projected m1
         self.id_k = Function(self.s_mesh.coord_fe)
 
+        # initialize the pre-strechted condition
+        self.w = lift_to_P2(self.Q_sp, self.s_mesh.coord_map) * self.phyp.pre / (1. + self.phyp.pre) # the initial condition for w
+        self.w_bc = Function(self.Q_sp) # the boundary condition for w
+        self.w_bc[q_clamp_dof] = self.w[q_clamp_dof]
+        self.s_mesh.coord_map[:] *= 1. / (1. + self.phyp.pre)
+        # so that the displacement is the identity of the original mesh map
+        
         # mark the CL node for finite difference arrangement
         _temp = -np.ones_like(self.w, dtype=int)
         _temp[self.cl_dof_Q2] = (0, 1, 2, 3)
@@ -480,13 +494,18 @@ class Drop_Runner(Runner):
         L = group_fn(self.u, self.p1, self.p0, self.tau, self.y, \
                      self.kappa, self.m3, self.w, self.mom)
 
-        # the essential boundary conditions are all homogeneous, 
-        # so no need to homogeneize the right-hand-side.
+        # homogeneize the right-hand-side
+        self.tau[:] = 0.
+        self.kappa[:] = 0.
+        self.m3[:] = 0.
+        sol_full = group_fn(self.u, self.p1, self.p0, self.tau, self.y, \
+                        self.kappa, self.m3, self.w_bc, self.mom)
+        L = L - A @ sol_full
 
         # solve the coupled system
         free_dof = self.free_dof
         sol_free = spsolve(A[free_dof][:,free_dof], L[free_dof])
-        sol_full = np.zeros_like(L)
+        # sol_full = np.zeros_like(L)
         sol_full[free_dof] = sol_free
         split_fn(sol_full, \
                  self.u, self.p1, self.p0, self.tau, self.y, \
@@ -509,7 +528,7 @@ class Drop_Runner(Runner):
         dq_minus_cl = np.extract(self.cl_dof_fd >= 0, dq_minus).reshape(-1, 2)        
 
         # =================================================================
-        # Step 3. Solve for the reference CL velocity and update the reference mesh. 
+        # Step 4. Solve for the reference CL velocity and update the reference mesh. 
 
         # find the reference CL velocity
         slip_cl = (self.y.view(np.ndarray)[self.cl_dof_Y] \
@@ -522,8 +541,8 @@ class Drop_Runner(Runner):
         # find the advected sheet
         refcl = self.refcl_hist[self.step] # (4,)
         eta = np.where(
-            id_fd <= refcl[0], (id_fd + 1.0) / (refcl[0] + 1.0) * eta_cl[0], 
-            np.where(id_fd > refcl[2], (1.0 - id_fd) / (1.0 - refcl[2]) * eta_cl[1], 
+            id_fd <= refcl[0], (id_fd - id_fd[0]) / (refcl[0] - id_fd[0]) * eta_cl[0], 
+            np.where(id_fd > refcl[2], (id_fd[-1] - id_fd) / (id_fd[-1] - refcl[2]) * eta_cl[1], 
                     (eta_cl[0] * (refcl[2] - id_fd) + eta_cl[1] * (id_fd - refcl[0])) / (refcl[2] - refcl[0]))
         )
         dq_fd /= np.linalg.norm(dq_fd, axis=1, keepdims=True)
@@ -551,16 +570,13 @@ class Drop_Runner(Runner):
         BMM_basis = FunctionBasis(self.mesh.coord_fe, dx) # for bulk mesh mapping
         A_EL = a_el.assemble(BMM_basis, BMM_basis, dx)
         # attach the displacement of the interface and the sheet
-        BMM_int_dof = np.unique(self.mesh.coord_fe.getFacetDof(tags=(3,)))
-        BMM_s_dof = np.unique(self.mesh.coord_fe.getFacetDof(tags=(4,5)))
-        BMM_fix_dof = np.concatenate(self.mesh.coord_fe.getFacetDof(tags=(3,4,5,6,7,8)))
         bulk_disp = Function(self.mesh.coord_fe)
-        bulk_disp[BMM_int_dof] = self.y - self.y_k
-        bulk_disp[BMM_s_dof] = down_to_P1(self.Q_P1_sp, q - self.q_k)
+        bulk_disp[self.BMM_int_dof] = self.y - self.y_k
+        bulk_disp[self.BMM_sh_dof] = down_to_P1(self.Q_P1_sp, q - self.q_k)
         L_EL = Function(self.mesh.coord_fe)
         L_EL[:] = -A_EL @ bulk_disp # homogeneize the boundary conditions
 
-        el_free_dof = group_dof((self.mesh.coord_fe,), (BMM_fix_dof,))
+        el_free_dof = self.el_free_dof
         bulk_disp[el_free_dof] = spsolve(A_EL[el_free_dof][:,el_free_dof], L_EL[el_free_dof])
         self.mesh.coord_map += bulk_disp
 
@@ -579,5 +595,5 @@ class Drop_Runner(Runner):
 # ===========================================================
 
 if __name__ == "__main__":
-    solp = SolverParameters(dt=1.0/256, Te=1.0)
+    solp = SolverParameters(dt=1.0/256, Te=4.0)
     Drop_Runner(solp).run()
