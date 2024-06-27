@@ -46,26 +46,26 @@ def build_drop_mesh(bbox: np.ndarray, markers: np.ndarray, field_params: np.ndar
     gmsh.model.mesh.field.setNumber(2, "DistMin", field_params[0,2])
     gmsh.model.mesh.field.setNumber(2, "DistMax", field_params[0,3])
 
-    # gmsh.model.mesh.field.add("Distance", 3)
-    # gmsh.model.mesh.field.setNumbers(3, "PointsList", [pts_marker[0], pts_marker[-1]])
+    gmsh.model.mesh.field.add("Distance", 3)
+    gmsh.model.mesh.field.setNumbers(3, "PointsList", [pts_marker[0], pts_marker[-1]])
 
-    # gmsh.model.mesh.field.add("Threshold", 4)
-    # gmsh.model.mesh.field.setNumber(4, "InField", 3)
-    # gmsh.model.mesh.field.setNumber(4, "SizeMin", field_params[1,0])
-    # gmsh.model.mesh.field.setNumber(4, "SizeMax", field_params[1,1])
-    # gmsh.model.mesh.field.setNumber(4, "DistMin", field_params[1,2])
-    # gmsh.model.mesh.field.setNumber(4, "DistMax", field_params[1,3])
+    gmsh.model.mesh.field.add("Threshold", 4)
+    gmsh.model.mesh.field.setNumber(4, "InField", 3)
+    gmsh.model.mesh.field.setNumber(4, "SizeMin", field_params[1,0])
+    gmsh.model.mesh.field.setNumber(4, "SizeMax", field_params[1,1])
+    gmsh.model.mesh.field.setNumber(4, "DistMin", field_params[1,2])
+    gmsh.model.mesh.field.setNumber(4, "DistMax", field_params[1,3])
 
-    # gmsh.model.mesh.field.add("Min", 5)
-    # gmsh.model.mesh.field.setNumbers(5, "FieldsList", [2, 4])
+    gmsh.model.mesh.field.add("Min", 5)
+    gmsh.model.mesh.field.setNumbers(5, "FieldsList", [2, 4])
 
-    gmsh.model.mesh.field.setAsBackgroundMesh(2)
+    gmsh.model.mesh.field.setAsBackgroundMesh(5)
 
     gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
     gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
     gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
 
-    gmsh.option.setNumber("Mesh.Algorithm", 6) # 5 = Delaunay, 6 = Frontal-Delaunay
+    gmsh.option.setNumber("Mesh.Algorithm", 5) # 5 = Delaunay, 6 = Frontal-Delaunay
     gmsh.option.setNumber("Mesh.Binary", 1)
 
     # add physical group
@@ -209,17 +209,17 @@ if __name__ == "__main__":
         quit()
     if argv[1] == "drop":
         bbox = np.array([[-1,0], [1,1]], dtype=np.float64)
-        theta_0 = np.pi/3 # change this
+        theta_0 = np.pi*2/3 # change this
         print("Theta_0 = {}".format(theta_0*180/np.pi))
         vol_0 = np.pi/8 # the volume of the droplet
-        h_min, h_max = 0.06, 0.2
+        h_min, h_max = 0.03, 0.2
         R = np.sqrt(vol_0 / (theta_0 - 0.5 * np.sin(2*theta_0)))
         arcl = 2*R*theta_0
         num_segs = np.ceil(arcl / h_min)
         theta = np.arange(num_segs+1) / num_segs * (2*theta_0) + np.pi/2 - theta_0 # the theta span
         markers = np.vstack((R * np.cos(theta), R * (np.sin(theta) - np.cos(theta_0))))
         markers[1,0] = 0.0; markers[1,-1] = 0.0 # attach on the substrate
-        build_drop_mesh(bbox, markers.T, np.array(((h_min, h_max, 0.0, 0.5), (0.01, 0.2, 0.03, 0.2))))
+        build_drop_mesh(bbox, markers.T, np.array(((h_min, h_max, 0.0, 0.5), (1e-4, 0.2, 1e-3, 0.2))))
     elif argv[1] == "two-phase":
         bbox=np.array(((-1.0, 0.0), (1.0, 0.75)))
         build_two_phase(bbox, (0.06, 0.25, 0.0, 0.5))
