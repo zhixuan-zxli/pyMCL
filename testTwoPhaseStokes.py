@@ -87,23 +87,23 @@ def a_el(Z, Y, x) -> np.ndarray:
 
 
 class PhysicalParameters:
-    eta_1: float = 10.0
-    beta_1: float = 0.1
-    beta_s: float = 0.1
-    l_s: float = 0.1
-    Ca: float = 0.01
-    cosY: float = cos(np.pi*2.0/3)
+    eta_1: float = 1.0
+    eta_2: float = 0.1
+    beta_1: float = 1e3
+    beta_s: float = 1.
+    Ca: float = 0.1
+    cosY: float = cos(np.pi/3)
 
 class SolverParemeters:
-    dt: float = 1.0/256
+    dt: float = 1.0/1024
     Te: float = 1.0
     startStep: int = 0
-    stride: int = 32
+    stride: int = 128
     numChekpoint: int = 0
     vis: bool = True
-    output_dir: str = "result/TPS-s1t2"
-    spaceref: int = 1
-    timeref: int = 2
+    output_dir: str = "result/TPS"
+    spaceref: int = 0
+    timeref: int = 0
 
 
 if __name__ == "__main__":
@@ -118,7 +118,7 @@ if __name__ == "__main__":
         print("Output dir exists. ")
 
     mesh = Mesh()
-    mesh.load("mesh/two-phase-a90.msh")
+    mesh.load("mesh/drop-a120-fine-1e-3.msh")
     for _ in range(solp.spaceref):
         mesh = splitRefine(mesh)
     solp.dt /= 2**solp.timeref
@@ -157,10 +157,10 @@ if __name__ == "__main__":
     Y_free_dof = group_dof((Y_fs,), (Y_fix_dof,))
     
     # get the piecewise constant viscosity and slip coefficient
-    eta = np.where(mesh.cell_tag[2] == 1, phys.eta_1, 1.0)
+    eta = np.where(mesh.cell_tag[2] == 1, phys.eta_1, phys.eta_2)
     bot_flag = (mesh.cell_tag[1] == 5) | (mesh.cell_tag[1] == 4)
     bot_tag = mesh.cell_tag[1][bot_flag]
-    beta = np.where(bot_tag == 5, phys.beta_1, 1.0)
+    beta = np.where(bot_tag == 5, phys.beta_1, phys.beta_1)
 
     # initialize the unknowns
     u = Function(mixed_fs[0])
@@ -196,7 +196,10 @@ if __name__ == "__main__":
             else:
                 colorbar.update_normal(tpc)
             # pyplot.tripcolor(mesh.coord_map[::2], mesh.coord_map[1::2], mesh.cell_tag[2], triangles=triangles)
-            pyplot.triplot(mesh.coord_map[::2], mesh.coord_map[1::2], triangles=triangles)
+            # plot the velocity
+            _u = u.view(np.ndarray); _n = mesh.coord_map.size
+            ax.quiver(mesh.coord_map[::2], mesh.coord_map[1::2], _u[:_n:2], _u[1:_n:2])
+            ax.triplot(mesh.coord_map[::2], mesh.coord_map[1::2], triangles=triangles)
             ax.axis("equal")
             pyplot.draw()
             pyplot.pause(1e-3)
@@ -243,7 +246,7 @@ if __name__ == "__main__":
         A_psiu = a_psiu.assemble(k_basis, u_i_basis, ds_i)
         S_gx = a_slip_gx.assemble(x_cl_basis, x_cl_basis, dp)
 
-        A = bmat(((A_wu + 1.0/phys.l_s*S_wu, -B_wp1, -B_wp0, None, -1.0/phys.Ca*A_wk), 
+        A = bmat(((A_wu + S_wu, -B_wp1, -B_wp0, None, -1.0/phys.Ca*A_wk), 
                 (B_wp1.T, None, None, None, None), 
                 (B_wp0.T, None, None, None, None), 
                 (None, None, None, A_gx + phys.beta_s*phys.Ca/solp.dt*S_gx, A_gk), 
