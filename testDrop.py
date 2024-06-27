@@ -12,12 +12,12 @@ from colorama import Fore, Style
 @dataclass
 class PhysicalParameters:
     eta_2: float = 0.1
-    mu_1: float = 1e3
-    mu_2: float = 1e3
-    mu_cl: float = 1e3
-    gamma_1: float = 2.5
+    mu_1: float = 1e4
+    mu_2: float = 1e4
+    mu_cl: float = 1.
+    gamma_1: float = 0.
     gamma_3: float = 10.0
-    gamma_2: float = 2.5 + 10.0 * cos(np.pi/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
+    gamma_2: float = 0. + 10.0 * cos(np.pi/2) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
     B: float = 1e-2
     Y: float = 1e2
     pre: float = 0.2 # pre-stretched tension
@@ -340,17 +340,16 @@ class Drop_Runner(Runner):
         t = self.step * self.solp.dt
         if self.args.vis:
             self.ax.clear()
-            # self.ax.tripcolor(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], self.triangle_color, triangles=self.bulk_triangles)
-            press = self.p0.view(np.ndarray)[self.P0_sp.elem_dof][0] + np.sum(self.p1.view(np.ndarray)[self.P1_sp.elem_dof], axis=0) / 3 # (Nt, )
-            tpc = self.ax.tripcolor(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], press, triangles=self.bulk_triangles)
-            if not hasattr(self, "colorbar"):
-                self.colorbar = pyplot.colorbar(tpc)
-            else:
-                self.colorbar.update_normal(tpc) # update the scale of the color bar without redrawing it
+            # press = self.p0.view(np.ndarray)[self.P0_sp.elem_dof][0] + np.sum(self.p1.view(np.ndarray)[self.P1_sp.elem_dof], axis=0) / 3 # (Nt, )
+            # tpc = self.ax.tripcolor(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], press, triangles=self.bulk_triangles)
             self.ax.triplot(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], triangles=self.bulk_triangles, linewidth=0.5)
             # plot the velocity
-            # _u = self.u.view(np.ndarray); _n = self.mesh.coord_map.size
-            # self.ax.quiver(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], _u[:_n:2], _u[1:_n:2])
+            _u = self.u.view(np.ndarray); _n = self.mesh.coord_map.size; _mag = np.sqrt(np.sum((_u[:_n]**2).reshape(-1, 2), axis=1))
+            qv = self.ax.quiver(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], _u[:_n:2], _u[1:_n:2], _mag, cmap=pyplot.get_cmap("Spectral"))
+            if not hasattr(self, "colorbar"):
+                self.colorbar = pyplot.colorbar(qv)
+            else:
+                self.colorbar.update_normal(qv) # update the scale of the color bar without redrawing it
             # plot the conormal
             m3_ = self.m3.view(np.ndarray)
             self.ax.quiver(self.q_k[self.cl_dof_Q2[::2]], self.q_k[self.cl_dof_Q2[1::2]], m3_[::2], m3_[1::2], color="tab:pink")
@@ -595,5 +594,5 @@ class Drop_Runner(Runner):
 # ===========================================================
 
 if __name__ == "__main__":
-    solp = SolverParameters(dt=1.0/256, Te=4.0)
+    solp = SolverParameters(dt=1.0/8192/4, Te=1.0)
     Drop_Runner(solp).run()
