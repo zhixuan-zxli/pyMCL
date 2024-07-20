@@ -15,17 +15,25 @@ def plotNormalVec(V: float, alpha: float, eta: np.ndarray) -> None:
     v += chi / a * np.array(((0., np.cos(alpha)*alpha_dot), )) # (x, 2)
     normal = np.hstack((np.sin(alpha) * np.sinh(eta), 1. + np.cos(alpha) * np.cosh(eta))) / a # (x, 2)
     vn = np.sum(v * normal, axis=1) # (x, )
-    pyplot.plot(eta, vn, 'o', label=lab_str)
+    # pyplot.plot(eta, vn, 'o', label=lab_str)
     pyplot.plot(eta, R_dot * (1. - alpha / np.sin(alpha) * (np.cosh(eta) * np.cos(alpha) + 1.) / a), '-', label=lab_str)
     #
-    pass
+    psi_1 = 2/np.sin(alpha) * np.arctan(((1-np.cos(alpha))/np.sin(alpha)) * np.tanh(eta/2))
+    psi_2 = alpha/np.sin(alpha) * np.sinh(eta) / (np.cos(alpha) + np.cosh(eta))
+    psi = R_dot * (psi_1 - psi_2)
+    pyplot.plot(eta, psi, '--', label=lab_str)
+    # pyplot.plot(eta, R_dot * psi_1, '--')
+    # pyplot.plot(eta, R_dot * psi_2, '--')
+    eta_mid = (eta[0:-2] + eta[2:])/2
+    dpsi = (psi[2:] - psi[0:-2]) / (eta[2:] - eta[0:-2])
+    pyplot.plot(eta_mid, dpsi * (np.cosh(eta_mid) + np.cos(alpha)), 'o')
 
 if __name__ == "__main__":
     eta_mesh = np.concatenate((np.linspace(-8., -4., 17)[:-1], np.linspace(-4., 4., 65)[:-1], np.linspace(4., 8., 17)))
     eta_mesh = eta_mesh.reshape(-1, 1)
     pyplot.figure()
     plotNormalVec(np.pi/8, np.pi/2, eta_mesh)
-    plotNormalVec(np.pi/8, np.pi/3, eta_mesh)
+    # plotNormalVec(np.pi/8, np.pi/3, eta_mesh)
     # plotNormalVec(np.pi/8, np.pi*2/3, eta_mesh)
     pyplot.legend()
     pyplot.show()
