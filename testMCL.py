@@ -38,9 +38,9 @@ class MCL_Runner(Runner):
         super().prepare()
 
         self.phyp = PhysicalParameters_MCL(
-            eta_2=0.1, mu_1=0.1, mu_2=0.1, mu_cl=0.1, 
+            eta_2=0.1, mu_1=1e-4, mu_2=1e-4, mu_cl=0.5, 
             gamma_1=0.0, gamma_3=1.0, gamma_2 = 0.0 + 1.0 * cos(np.pi/2), 
-            B=1e-2, Y=1e3, U_adv=-2.0
+            B=1e-3, Y=1e3, U_adv=-1.0
         )
         with open(self._get_output_name("PhysicalParameters"), "wb") as f:
             pickle.dump(self.phyp, f)
@@ -439,5 +439,5 @@ class MCL_Runner(Runner):
 # ===========================================================
 
 if __name__ == "__main__":
-    solp = SolverParameters(dt=1.0/256, Te=4.0)
+    solp = SolverParameters(dt=1.0/1024, Te=4.0)
     MCL_Runner(solp).run()
