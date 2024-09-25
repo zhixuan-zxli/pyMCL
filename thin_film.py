@@ -1,66 +1,43 @@
 import numpy as np
-from scipy import optimize as opt
 from scipy import sparse as sp
 from scikits.umfpack import spsolve
 from matplotlib import pyplot
 
-xi_range = None
-
-# the mesh mapping
-def varphi(xi: np.ndarray, mesh_params: tuple[float]) -> tuple[np.ndarray]:
-    # x (?,) query points in [-1, 1]
-    # params = (a,b)
-    # return: (varphi, J, J', J'')
-    global xi_range
-    a, b = mesh_params
-
-    f = lambda x: x * (x**2+b)
-    df = lambda x: 3*x**2 + b
-    ddf = lambda x: 6*x
-    dddf = lambda x: 6.0
-    f_range = (-1.0, 3.0)
-    if xi_range is None:
-        xi_range = [opt.root_scalar(lambda x: f(x) - a, method="toms748", bracket=(-10.0, 10.0), fprime=df).root for a in f_range]
-
-    y = xi_range[0] * (1-xi) + xi_range[1] * xi
-    return (
-        (f(y) - f_range[0]) / (f_range[1] - f_range[0]) * (a*4), 
-        df(y) * (xi_range[1] - xi_range[0]) / (f_range[1] - f_range[0]) * (a*4), 
-        ddf(y) * (xi_range[1] - xi_range[0]) ** 2 / (f_range[1] - f_range[0]) * (a*4), 
-        dddf(y) * (xi_range[1] - xi_range[0]) ** 3 / (f_range[1] - f_range[0]) * (a*4)
-    )
+def u(x: np.ndarray) -> np.ndarray:
+    return np.cos(np.pi*x)
+def ddu(x: np.ndarray) -> np.ndarray:
+    return -np.pi**2 * np.cos(np.pi*x)
 
 # test Poisson equation
-def testPoisson(xi_c: np.ndarray, xi_b: np.ndarray, dxi: float, mesh_params):
-    def exact_sol(x: np.ndarray) -> np.ndarray:
-        return np.cos(np.pi*x)
-    def rhs(x: np.ndarray) -> np.ndarray:
-        return np.pi**2 * np.cos(np.pi*x)
-    n = xi_c.size # number of cells
-    x, J, Jp, _ = varphi(xi_c, mesh_params) # (n, ), (n, )
-    # set up the Laplacian
-    val_diag = np.zeros((n+2, ))
-    val_diag[1:-1] = 2.0 / (dxi * J)**2
+def testPoisson(xi_b: np.ndarray):
+    n = xi_b.size - 1 # number of cells
+    # add ghost points
+    h = xi_b[1] - xi_b[0], xi_b[-1] - xi_b[-2]
+    xi_g = np.concatenate(((xi_b[0] - h[0], ), xi_b, (xi_b[-1] + h[1],)))
+    # get the cell centers
+    xi_c = (xi_g[:-1] + xi_g[1:]) / 2
+    # # set up the Laplacian
     val_up = np.zeros((n+1, ))
-    val_up[1:] = (Jp/(2.0*dxi*J) - 1.0/dxi**2) / J**2
+    val_up[1:] = -2/((xi_c[2:] - xi_c[:-2]) * (xi_c[2:] - xi_c[1:-1]))
     val_lo = np.zeros((n+1, ))
-    val_lo[:-1] = (-Jp/(2.0*dxi*J) - 1.0/dxi**2) / J**2
-    # set up the ghost points for Dirichlet condition
+    val_lo[:-1] = -2/((xi_c[2:] - xi_c[:-2]) * (xi_c[1:-1] - xi_c[:-2]))
+    val_diag = np.zeros((n+2, ))
+    val_diag[1:-1] = -val_up[1:] - val_lo[:-1]
+    # set up the Dirichlet condition
     val_diag[0] = 1.0/2; val_up[0] = 1.0/2
     val_diag[-1] = 1.0/2; val_lo[-1] = 1.0/2
     # assemble the matrix
     A = sp.diags((val_diag, val_up, val_lo), (0, 1, -1), (n+2, n+2), "csr")
     # prepare the rhs
     b = np.zeros((n+2, ))
-    b[1:-1] = rhs(x)
-    x_b, _, _, _ = varphi(xi_b, mesh_params)
-    b[0] = exact_sol(x_b[0]); b[-1] = exact_sol(x_b[-1])
+    b[1:-1] = -ddu(xi_c[1:-1])
+    b[0] = u(xi_b[0]); b[-1] = u(xi_b[-1])
     # solve the linear system
     uu = spsolve(A, b)
     # plot the solution
-    pyplot.plot(x, uu[1:-1], 'o', label="numeric")
-    pyplot.plot(x, exact_sol(x), '-', label="reference")
-    err = uu[1:-1] - exact_sol(x)
+    pyplot.plot(xi_c[1:-1], uu[1:-1], 'o', label="numeric")
+    pyplot.plot(xi_c[1:-1], u(xi_c[1:-1]), '-', label="reference")
+    err = uu[1:-1] - u(xi_c[1:-1])
     print("n = {}, inf-norm error = {:.2e}".format(n, np.linalg.norm(err, ord=np.inf)))
 
 # test biharmonic equation
@@ -107,15 +84,15 @@ def testPoisson(xi_c: np.ndarray, xi_b: np.ndarray, dxi: float, mesh_params):
 
 
 if __name__ == "__main__":
-    N = 32 # number of cells for the wet part
-    dxi = 0.5 / N
-    a, b = 0.25, 1e-2
-    all_xi = np.linspace(0.0, 1.0, 4*N+1)
-    xi_c = all_xi[1::2] # the volume center
-    xi_b = all_xi[0::2] # the volume boundary
+    xi_b = np.linspace(0.0, 1.0, 33)
+    # xi_b = np.concatenate((
+    #     np.linspace(0.0, 0.25, 33), 
+    #     np.linspace(0.25, 0.5, 17)[1:], 
+    #     np.linspace(0.5, 1.0, 9)[1:]
+    # ))
     #
     pyplot.figure()
-    testPoisson(xi_c, xi_b, dxi, (a, b))
+    testPoisson(xi_b)
     # testBiharmonic(xi_c, xi_b, delta_xi, (A,b))
     pyplot.legend()
     pyplot.show()
