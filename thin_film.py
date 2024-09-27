@@ -51,7 +51,7 @@ def testFiniteDifference(xi_b: np.ndarray):
     Ca = 1.0
     slip = 1e-4 # the slip length
     theta_Y = 0.5
-    beta = 5.0
+    beta = 10.0
     a = 1.0 # the CL position
     adot = 0.0
     # adot = 0.0
@@ -184,7 +184,22 @@ def testFiniteDifference(xi_b: np.ndarray):
         # err = uu[2:-2] - u(xi_c[2:-2])
         # print("Biharmonic, n = {}, inf-norm error = {:.2e}".format(n, np.linalg.norm(err, ord=np.inf)))
 
-
+def plotExampleSheetProfile() -> None:
+    gamma = (1.0, 2.0)
+    theta = -0.1 # related to the jump of the third derivative
+    B = 1e-4
+    D = theta * np.sqrt(B) / (gamma[1] * (np.sqrt(gamma[1]) - np.sqrt(gamma[0])) * (1 + np.sqrt(B/gamma[1])) / (1 - np.sqrt(B/gamma[0])))
+    E = D * (gamma[1] + np.sqrt(gamma[1]*B)) / (gamma[0] - np.sqrt(gamma[0]*B))
+    C2 = (-D*np.sqrt(gamma[1]/B) - E*np.sqrt(gamma[0]/B)) / 2
+    C0 = D - E - C2
+    #
+    x = np.linspace(0.0, 2.0, 129)
+    g = np.where(x <= 1.0, C0 + C2*x**2 + E*np.exp(np.sqrt(gamma[0]/B)*(x-1)), 
+                 D * np.exp(-np.sqrt(gamma[1]/B)*(x-1)))
+    pyplot.figure()
+    pyplot.plot(x, g, '-')
+    pyplot.axis("equal")
+    
 
 if __name__ == "__main__":
     # xi_b = np.linspace(0.0, 1.0, 65)
@@ -198,5 +213,6 @@ if __name__ == "__main__":
         np.linspace(63/64, 1.0, 129)[1:],
     ))
     #
-    testFiniteDifference(xi_b)
+    # testFiniteDifference(xi_b)
+    plotExampleSheetProfile()
     pyplot.show()
