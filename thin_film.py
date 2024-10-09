@@ -9,36 +9,37 @@ from runner import *
 
 @dataclass
 class PhysicalParameters:
-    gamma: tuple[float] = (5.0, 5.0, 1.0) # the (effective) surface tension for the wet, dry and the interface
+    gamma: tuple[float] = (1.0, 1.0, 5.0) # the (effective) surface tension for the wet, dry and the interface
     # Ca: float = gamma[-1]
     slip: float = 1e-4   # the slip length
-    theta_Y: float = 0.2
-    mu_cl: float = 5.0
+    theta_Y: float = 1.0
+    mu_cl: float = 1.0
     bm: float = 1e-2     # the bending modulus
 
 
 if __name__ == "__main__":
 
-    solp = SolverParameters(dt = 1/(1024*16), Te=1.0)
+    solp = SolverParameters(dt = 1/(1024*4*4), Te=16.0)
     phyp = PhysicalParameters()
     
     # 1. set up the grid. 
-    # m = 64
-    # xi_b_f = np.concatenate((
-    #     np.linspace(0.0, 0.5, m+1), 
-    #     np.linspace(1/2, 3/4, m+1)[1:], 
-    #     np.linspace(3/4, 7/8, m+1)[1:],
-    #     np.linspace(7/8, 15/16, m+1)[1:],
-    #     np.linspace(15/16, 31/32, m+1)[1:],
-    #     np.linspace(31/32, 63/64, m+1)[1:],
-    #     np.linspace(63/64, 1.0, 2*m+1)[1:],
-    # ))
-    xi_b_f = np.linspace(0.0, 1.0, 1025)
+    m = 32
+    xi_b_f = np.concatenate((
+        np.linspace(0.0, 0.5, m+1), 
+        np.linspace(1/2, 3/4, m+1)[1:], 
+        np.linspace(3/4, 7/8, m+1)[1:],
+        np.linspace(7/8, 15/16, m+1)[1:],
+        np.linspace(15/16, 31/32, m+1)[1:],
+        np.linspace(31/32, 63/64, m+1)[1:],
+        np.linspace(63/64, 1.0, 2*m+1)[1:],
+    ))
+    # xi_b_f = np.linspace(0.0, 1.0, 257)
     xi_b = np.concatenate((xi_b_f, 2.0 - xi_b_f[-2::-1])) # cell boundaries
     n_fluid = xi_b_f.size - 1 # number of cells for the fluid (excluding ghosts)
     n_total = xi_b.size - 1   # number of cells total (excluding ghosts)
     
     dxi = xi_b[1:] - xi_b[:-1] # mesh step size on the reference domain
+    min_dxi = np.min(dxi)
     xi_g = np.concatenate(((xi_b[0] - 2*dxi[0], xi_b[0] - dxi[0]), xi_b, (xi_b[-1] + dxi[-1], xi_b[-1] + 2*dxi[-1]))) # add ghost points
     xi_c = (xi_g[:-1] + xi_g[1:]) / 2 # get the cell centers (with ghosts)
     xi_c_fluid = xi_c[:n_fluid+3]     # the fluid cells, with ghosts
@@ -130,9 +131,12 @@ if __name__ == "__main__":
     pyplot.ion()
     ax = pyplot.subplot()
 
+    t = 0.0
     a = 1.0
-    numSteps = ceil(solp.Te / solp.dt)
-    for m in range(numSteps):
+    step = 0
+    # numSteps = ceil(solp.Te / solp.dt)
+    # for m in range(numSteps):
+    while t < solp.Te:
         # 1. assemble the fourth-order thin film operator for h
         # interpolate to cell boundaries
         h_mid = (h[2:-2] + h[3:-1]) / 2                  # (n_fluid-1, )
@@ -167,6 +171,7 @@ if __name__ == "__main__":
         assert tan_beta >= 0.
         theta_d = np.arctan(tan_alpha) + np.arctan(tan_beta)
         adot = phyp.mu_cl * 0.5 * (theta_d**2 - phyp.theta_Y**2)
+        a_next = a + adot * solp.dt
 
         # calculate the advection term using upwind
         adv = np.zeros((n_fluid+3, ))
@@ -174,7 +179,7 @@ if __name__ == "__main__":
             adv[2:-1] = ((h[3:] - h[2:-1]) - (g[3:3+n_fluid] - g[2:2+n_fluid])) / (xi_c_fluid[3:] - xi_c_fluid[2:-1]) # (n_fluid, )
         else:
             adv[2:-1] = ((h[2:-1] - h[1:-2]) - (g[2:2+n_fluid] - g[1:1+n_fluid])) / (xi_c_fluid[2:-1] - xi_c_fluid[1:-2]) # (n_fluid, )
-        adv[2:-1] *= xi_c_fluid[2:-1] * adot / a
+        adv[2:-1] *= xi_c_fluid[2:-1] * adot / a_next
 
         # assemble the linear system
         # A = sp.bmat((
@@ -190,7 +195,7 @@ if __name__ == "__main__":
         # g_next = x[n_fluid+3:]
         h_g = np.zeros_like(h)
         h_g[2:-1] = h[2:-1] - g[2:n_fluid+2]
-        h_next = spsolve(Ihh + (solp.dt * phyp.gamma[2]/a**4)*C + G4hh, solp.dt * adv + h_g)
+        h_next = spsolve(Ihh + (solp.dt * phyp.gamma[2]/a_next**4)*C + G4hh, solp.dt * adv + h_g)
         g_next = np.zeros_like(g)
         a += adot * solp.dt
 
@@ -199,18 +204,26 @@ if __name__ == "__main__":
         vol = np.sum((h_next[2:-1] - g_next[2:2+n_fluid]) * a * (xi_b_f[1:] - xi_b_f[:-1]))
         delta_h = np.linalg.norm(h[2:-1] - h_next[2:-1], ord=np.inf) / solp.dt
         delta_g = np.linalg.norm(g[2:-1] - g_next[2:-1], ord=np.inf) / solp.dt
-        print("t = {:.6f}, step = {}/{}, diff = {:.2e}, {:.2e}, vol = {:.4e}, a = {:.5f}, adot = {:.2e}".format(
-            (m+1)*solp.dt, m, numSteps, delta_h, delta_g, vol, a, adot))
+        print("t = {:.6f}, dt = {:.3e}, diff = {:.2e}, {:.2e}, vol = {:.4e}, a = {:.5f}, adot = {:.2e}".format(
+            t, solp.dt, delta_h, delta_g, vol, a, adot))
 
         h[:] = h_next
         g[:] = g_next
+        a = a_next
 
         #
         ax.clear()
         ax.plot(a * xi_c_fluid[2:], h[2:], '-')
         ax.plot(a * xi_c[2:-2], g[2:-1], '--')
-        ax.set_xlim(0.0, 2.0); ax.set_ylim(-0.1, 1.9); # ax.axis("equal")
+        ax.set_xlim(0.0, 3.0); ax.set_ylim(-0.1, 2.9); # ax.axis("equal")
         pyplot.draw(); pyplot.pause(1e-4)
+
+        # adaptively change the dt
+        t += solp.dt
+        step += 1
+        if step % 32 == 0 and solp.dt < min_dxi / adot / 16 and solp.dt < min_dxi * 4:
+            solp.dt *= 2
+
 
     pyplot.ioff()
     pyplot.show()
