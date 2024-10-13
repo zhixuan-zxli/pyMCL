@@ -6,7 +6,7 @@ from runner import *
 
 @dataclass
 class PhysicalParameters:
-    gamma: tuple[float] = (10.0, 50.0, 1.0) # the (effective) surface tension for the wet, dry and the interface
+    gamma: tuple[float] = (5.0, 10.0, 1.0) # the (effective) surface tension for the wet, dry and the interface
     # Ca: float = gamma[-1]
     slip: float = 1e-4   # the slip length
     theta_Y: float = 1.0
@@ -148,7 +148,7 @@ class ThinFilmRunner(Runner):
         self.ax.plot(self.a * self.xi_c_f[2:], self.h[2:], '-')
         self.ax.plot(self.a * xi_c[2:-2], self.g[2:-1], '--')
         cvt = ((self.g[3:] - self.g[2:-1]) / (xi_c[3:-1] - xi_c[2:-2]) - (self.g[2:-1] - self.g[1:-2]) / (xi_c[2:-2] - xi_c[1:-3])) / (xi_c[3:-1] - xi_c[1:-3]) * 2.0
-        self.ax.plot(self.a * xi_c[2:-2], cvt / self.a**2, '.')
+        self.ax.plot(self.a * xi_c[2:-2], cvt / self.a**2, ':')
         self.ax.set_xlim(0.0, 3.0); self.ax.set_ylim(-1.5, 1.5); # ax.axis("equal")
         pyplot.draw(); pyplot.pause(1e-4)
         
@@ -205,19 +205,37 @@ class ThinFilmRunner(Runner):
         else:
             adv[2:-1] = ((h[2:-1] - h[1:-2]) - (g[2:2+n_fluid] - g[1:1+n_fluid])) / (xi_c_f[2:-1] - xi_c_f[1:-2]) # (n_fluid, )
         adv[2:-1] *= xi_c_f[2:-1] * adot / a_next
+        
+        # incorporate the jump
+        jump_3 = np.zeros((n_total+3, ))
+        jump_3[2:] = self.phyp.gamma[2] * theta_d * (np.maximum(xi_c[2:-1] - 1.0, 0.0) * a_next)**3 / 6 
+        jump_3[n_fluid+4:] = 0.0
+        jump_4 = np.zeros((n_total+3, )) # the effective entries are [n_fluid:n_fluid+4]
+        jump_4[2:] = (np.maximum(xi_c[2:-1] - 1.0, 0.0))**4 / 12.0
+        jump_4 = self.LL @ jump_4 # the a_next**4 are cancelled out
+        jump_4[:n_fluid] = 0.0; jump_4[n_fluid+4:] = 0.0
+
+        # construct the matrix accounting for the fourth-order jump
+        val = np.zeros((3, 4))
+        row_idx = np.zeros_like(val, dtype=np.int_)
+        col_idx = np.zeros_like(val, dtype=np.int_)
+        L4h_row = self.L4h[n_fluid+1]
+        for j in range(3):
+            val[j] = jump_4[n_fluid:n_fluid+4] * L4h_row[0, n_fluid-1+j]
+            row_idx[j] = np.arange(n_fluid, n_fluid+4)
+            col_idx[j,:] = n_fluid-1+j
+        J4 = sp.csr_matrix((val.reshape(-1), (row_idx.reshape(-1), col_idx.reshape(-1))), shape=(n_total+3, n_fluid+3))
+        # J4 = 0.0
 
         # assemble the linear system
         A = sp.bmat((
             (self.Ihh + (solp.dt*self.phyp.gamma[2]/a_next**4)*C + self.G4hh, -self.Ihg - self.G4hg), 
-            (self.phyp.gamma[2]*self.L4h/a_next**2, self.phyp.bm*self.LL/a_next**4 + self.gammaL/a_next**2 + self.G)
+            (self.phyp.gamma[2]*(self.L4h/a_next**2 - J4), self.phyp.bm*self.LL/a_next**4 + self.gammaL/a_next**2 + self.G)
             ), format="csr")
         # prepare the RHS
         h_g = np.zeros_like(h)
         h_g[2:-1] = h[2:-1] - g[2:n_fluid+2]
-        # incorporate the jump
-        dummy_jump = np.zeros((n_total+3, ))
-        dummy_jump[2:] = np.minimum(-self.phyp.gamma[2] * theta_d / 6 * ((xi_c[2:-1] - 1.0) * a_next)**3, 0.0)
-        b = np.concatenate((solp.dt * adv + h_g, self.LL @ dummy_jump / a_next**4))
+        b = np.concatenate((solp.dt * adv + h_g, self.LL @ jump_3 / a_next**4))
         x = spsolve(A, b)
         h_next = x[:n_fluid+3]
         g_next = x[n_fluid+3:]
