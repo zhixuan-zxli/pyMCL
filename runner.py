@@ -47,7 +47,10 @@ class Runner:
             print("Successfully resumed from step = " + self.args.resume)
         else:
             self.step = 0
-            mkdir(self.args.output_dir)
+            try:
+                mkdir(self.args.output_dir)
+            except FileExistsError:
+                pass
             print("Start from step = 0")
         # save the parameters to disk
         self.solp.spaceref = self.args.spaceref
