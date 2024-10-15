@@ -1,7 +1,5 @@
 from math import log2
 
-# todo: save, load of functions
-
 def printConvergenceTable(mesh_table, error_table) -> None:
     """ 
     Print the convergence table. 
