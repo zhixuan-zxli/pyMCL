@@ -75,13 +75,13 @@ class Runner:
         raise NotImplementedError
 
     def run(self) -> None:
-        self.prepare()
+        # self.prepare()
         while True:
             if self.pre_step():
                 break
             self.main_step()
             self.step += 1
-        self.finish()
+        # self.finish()
 
     # =================================================================
     def _get_output_name(self, postfix: str) -> str:

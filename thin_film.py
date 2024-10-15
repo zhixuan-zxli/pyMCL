@@ -6,13 +6,21 @@ from runner import *
 
 @dataclass
 class PhysicalParameters:
-    gamma: tuple[float] = (5.0, 5.5, 1.0) # the (effective) surface tension for the wet, dry and the interface
-    slip: float = 1e-3   # the slip length
+    gamma: tuple[float] = (5.0, 6.0, 1.0) # the (effective) surface tension for the wet, dry and the interface
+    slip: float = 1e-2   # the slip length
     theta_Y: float = 1.0
     mu_cl: float = 1.0
-    bm: float = 1e-3     # the bending modulus
+    bm: float = 1e-2     # the bending modulus
 
 class ThinFilmRunner(Runner):
+
+    def __init__(self, solp, grid):
+        super().__init__(solp)
+
+        if isinstance(grid, int):
+            self.xi_b_f = np.linspace(0.0, 1.0, grid + 1)
+        else:
+            self.xi_b_f = grid
 
     def prepare(self) -> None:
         super().prepare()
@@ -21,23 +29,11 @@ class ThinFilmRunner(Runner):
         with open(self._get_output_name("PhysicalParameters"), "wb") as f:
             pickle.dump(self.phyp, f)
         
-        # set up the grid. 
-        # m = 32
-        # xi_b_f = np.concatenate((
-        #     np.linspace(0.0, 0.5, m+1), 
-        #     np.linspace(1/2, 3/4, m+1)[1:], 
-        #     np.linspace(3/4, 7/8, m+1)[1:],
-        #     np.linspace(7/8, 15/16, m+1)[1:],
-        #     np.linspace(15/16, 31/32, m+1)[1:],
-        #     np.linspace(31/32, 63/64, m+1)[1:],
-        #     np.linspace(63/64, 1.0, 2*m+1)[1:],
-        # ))
-        xi_b_f = np.linspace(0.0, 1.0, 1025)
+        xi_b_f = self.xi_b_f
         xi_b = np.concatenate((xi_b_f, 2.0 - xi_b_f[-2::-1])) # cell boundaries
         n_fluid = xi_b_f.size - 1 # number of cells for the fluid (excluding ghosts)
         n_total = xi_b.size - 1   # number of cells total (excluding ghosts)
-        self.xi_b_f, self.xi_b, self.n_fluid, self.n_total = xi_b_f, xi_b, n_fluid, n_total
-        
+        self.xi_b, self.n_fluid, self.n_total = xi_b, n_fluid, n_total
         dxi = xi_b[1:] - xi_b[:-1] # mesh step size on the reference domain
         xi_g = np.concatenate(((xi_b[0] - 2*dxi[0], xi_b[0] - dxi[0]), xi_b, (xi_b[-1] + dxi[-1], xi_b[-1] + 2*dxi[-1]))) # add ghost points
         xi_c = (xi_g[:-1] + xi_g[1:]) / 2 # get the cell centers (with 2 ghosts)
@@ -131,11 +127,10 @@ class ThinFilmRunner(Runner):
         self.t = 0.0
         self.a = 1.0
         self.a_hist = np.zeros((2, self.num_steps + 1))
-        self.a_hist[0,0] = 0.0; self.a_hist[1,0] = self.a
         self.cp = 0 # number of checkpoints reached
         
         self.h = 1 - np.exp(4.0*(xi_c_f-1))
-        # self.h *= 1.0 + 0.2 * np.cos(20*xi_c_f)
+        self.h *= 2.0
         self.h[-1] = -self.h[-2]
         self.g = np.zeros((n_total+3, ))
 
@@ -263,18 +258,38 @@ class ThinFilmRunner(Runner):
 
         # adaptively change the dt
         self.t += self.solp.dt
-        # self.step += 1 # done in Runner.run()
-        if self.step > 0 and self.step % 128 == 0 and solp.dt < self.min_dxi / adot / 16 and solp.dt < self.min_dxi:
+        if self.solp.adapt_t and self.step > 0 and self.step % 128 == 0 \
+            and solp.dt < self.min_dxi / adot / 16 and solp.dt < self.min_dxi:
             solp.dt *= 2
 
 
 if __name__ == "__main__":
+    
+    # set up the grid. 
+    # m = 32
+    # xi_b_f = np.concatenate((
+    #     np.linspace(0.0, 0.5, m+1), 
+    #     np.linspace(1/2, 3/4, m+1)[1:], 
+    #     np.linspace(3/4, 7/8, m+1)[1:],
+    #     np.linspace(7/8, 15/16, m+1)[1:],
+    #     np.linspace(15/16, 31/32, m+1)[1:],
+    #     np.linspace(31/32, 63/64, m+1)[1:],
+    #     np.linspace(63/64, 1.0, 2*m+1)[1:],
+    # ))
 
-    solp = SolverParameters(dt = 1/(1024*32), Te=16.0)
-    solp.dt_cp = 1.0/4
- 
-    runner = ThinFilmRunner(solp)
+    solp = SolverParameters(dt = 1/(1024*4), Te=1.0)
+    solp.dt_cp = 1.0/32
+    solp.adapt_t = False
+
+    runner = ThinFilmRunner(solp, 256)
+    runner.prepare()
+    # set the real initial condition here ...
+    initial_data = np.load("result/tf-sample-256.npz") # this data is for grid = 4096; downsize when necessary
+    runner.h = initial_data["h"]
+    runner.g = initial_data["g"]
+    runner.a = initial_data["a"]
     runner.run()
+    runner.finish()
 
     if runner.args.vis:
         pyplot.ioff()
