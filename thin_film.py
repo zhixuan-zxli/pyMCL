@@ -169,11 +169,12 @@ class ThinFilmRunner(Runner):
         dxi_at_cl = self.dxi_at_cl
 
         # 1. assemble the fourth-order thin film operator for h
-        # interpolate to cell boundaries
+        # interpolate to cell boundaries # todo : refine face values
         h_mid = (h[2:-2] + h[3:-1]) / 2                  # (n_fluid-1, )
         g_mid = (g[2:2+n_fluid-1] + g[3:2+n_fluid]) / 2  # (n_fluid-1, )
         # calculate the flux coefficients at the cell boundaries
-        fc = h_mid*(h_mid**2-g_mid**2) / 2 - (h_mid**3 - g_mid**3) / 6  - (g_mid/2 + self.phyp.slip) * (h_mid - g_mid)**2
+        # fc = h_mid*(h_mid**2-g_mid**2) / 2 - (h_mid**3 - g_mid**3) / 6  - (g_mid/2 + self.phyp.slip) * (h_mid - g_mid)**2
+        fc = (h_mid - g_mid) * ((h_mid - g_mid)**2/12 + (h_mid**2 + g_mid**2)/4 + self.phyp.slip * (h_mid - g_mid))
         fc = np.concatenate(((0.0,), fc, (0.0, )))  # (n_fluid+1, ), zero flux at both boundaries
         # build the FD scheme
         ctab = np.zeros((n_fluid, 5))
@@ -236,7 +237,7 @@ class ThinFilmRunner(Runner):
         # assemble the linear system
         A = sp.bmat((
             (self.Ihh + (solp.dt*self.phyp.gamma[2]/a_next**4)*C + self.G4hh, -self.Ihg - self.G4hg), 
-            (self.phyp.gamma[2]*(self.L4h/a_next**2 - J4), self.phyp.bm*self.LL/a_next**4 + self.gammaL/a_next**2 + self.G)
+            (self.phyp.gamma[2]*(self.L4h - J4)/a_next**2, self.phyp.bm*self.LL/a_next**4 + self.gammaL/a_next**2 + self.G)
             ), format="csr")
         # prepare the RHS
         h_g = np.zeros_like(h)
