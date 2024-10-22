@@ -1,3 +1,4 @@
+from typing import Union
 import numpy as np
 from scipy import sparse as sp
 from scikits.umfpack import spsolve
@@ -14,26 +15,25 @@ class PhysicalParameters:
 
 class ThinFilmRunner(Runner):
 
-    def __init__(self, solp, grid):
+    def __init__(self, solp):
         super().__init__(solp)
 
-        if isinstance(grid, int):
-            self.xi_b_f = np.linspace(0.0, 1.0, grid + 1)
-        else:
-            self.xi_b_f = grid
-
-    def prepare(self) -> None:
+    def prepare(self, base_grid: Union[int, np.ndarray]) -> None:
         super().prepare()
 
         self.phyp = PhysicalParameters()
         with open(self._get_output_name("PhysicalParameters"), "wb") as f:
             pickle.dump(self.phyp, f)
+            
+        if isinstance(base_grid, int):
+            xi_b_f = np.linspace(0.0, 1.0, base_grid * 2**solp.spaceref + 1)
+        else:
+            xi_b_f = base_grid
         
-        xi_b_f = self.xi_b_f
         xi_b = np.concatenate((xi_b_f, 2.0 - xi_b_f[-2::-1])) # cell boundaries
         n_fluid = xi_b_f.size - 1 # number of cells for the fluid (excluding ghosts)
         n_total = xi_b.size - 1   # number of cells total (excluding ghosts)
-        self.xi_b, self.n_fluid, self.n_total = xi_b, n_fluid, n_total
+        self.xi_b, self.xi_b_f, self.n_fluid, self.n_total = xi_b, xi_b_f, n_fluid, n_total
         dxi = xi_b[1:] - xi_b[:-1] # mesh step size on the reference domain
         xi_g = np.concatenate(((xi_b[0] - 2*dxi[0], xi_b[0] - dxi[0]), xi_b, (xi_b[-1] + dxi[-1], xi_b[-1] + 2*dxi[-1]))) # add ghost points
         xi_c = (xi_g[:-1] + xi_g[1:]) / 2 # get the cell centers (with 2 ghosts)
@@ -249,8 +249,7 @@ class ThinFilmRunner(Runner):
         # some other info: 
         delta_h = np.linalg.norm(h_next[2:-1] - h[2:-1], ord=np.inf) / solp.dt
         delta_g = np.linalg.norm(g_next[2:-1] - g[2:-1], ord=np.inf) / solp.dt
-        print("diff = {:.2e}, {:.2e}, a_next = {:.5f}, adot = {:.2e}".format(
-            delta_h, delta_g, a_next, adot))
+        print("diff = {:.2e}, {:.2e}, a_next = {:.5f}, adot = {:.2e}".format(delta_h, delta_g, a_next, adot))
 
         self.h[:] = h_next
         self.g[:] = g_next
@@ -262,6 +261,14 @@ class ThinFilmRunner(Runner):
             and solp.dt < self.min_dxi / adot / 16 and solp.dt < self.min_dxi:
             solp.dt *= 2
 
+def downsample(u: np.ndarray) -> np.ndarray:
+    usize = u.size
+    u_down = np.zeros(((usize-3)//2 + 3, ))
+    u_down[2:-1] = (u[2:-2:2] + u[3:-1:2]) / 2
+    # symmetry condition at the left
+    u_down[0] = u_down[3]
+    u_down[1] = u_down[2]
+    return u_down
 
 if __name__ == "__main__":
     
@@ -277,17 +284,27 @@ if __name__ == "__main__":
     #     np.linspace(63/64, 1.0, 2*m+1)[1:],
     # ))
 
-    solp = SolverParameters(dt = 1/(1024*4), Te=1.0)
+    solp = SolverParameters(dt = 1/(1024*1), Te=1.0)
     solp.dt_cp = 1.0/32
     solp.adapt_t = False
 
-    runner = ThinFilmRunner(solp, 256)
-    runner.prepare()
-    # set the real initial condition here ...
-    initial_data = np.load("result/tf-sample-256.npz") # this data is for grid = 4096; downsize when necessary
-    runner.h = initial_data["h"]
-    runner.g = initial_data["g"]
+    runner = ThinFilmRunner(solp)
+    runner.prepare(base_grid=128)
+    # read from file the initial conditions
+    initial_data = np.load("result/tf-sample-1024.npz") 
+    h, g = initial_data["h"], initial_data["g"]
+    assert runner.h.size <= h.size
+    while runner.h.size < h.size:
+        h = downsample(h)
+        g = downsample(g)
+    # set the boundary conditions at the right end
+    g[-1] = 0.0; g[-2] = 0.0
+    n_fluid = runner.n_fluid
+    h[n_fluid+2] = g[n_fluid+1] + g[n_fluid+2] - h[n_fluid+1]
+    runner.h = h
+    runner.g = g
     runner.a = initial_data["a"]
+    #
     runner.run()
     runner.finish()
 
