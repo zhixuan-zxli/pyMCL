@@ -1,6 +1,7 @@
 import numpy as np
 from fem.post import printConvergenceTable
 from thin_film import downsample
+from matplotlib import pyplot
 
 def getTimeConvergence() -> None:
     filenames = "result/tf-1e-2-uni-256-T{}/0032.npz"
@@ -36,6 +37,26 @@ def getSpaceConvergence() -> None:
         error_table["a"].append(np.abs(a_diff).item())
     printConvergenceTable(table_headers, error_table)
 
+def plotContactLine() -> None:
+    # dt = 1/(1024*4*8)
+    datanames = ["tf-1e-4-adap-gm2", "tf-1e-4-adap-gm4", "tf-1e-4-adap-gm8"]
+    data = []
+    for name in datanames:
+        data.append(np.load("result/" + name + "/0032.npz"))
+    # plot the contact line location
+    _, ax1 = pyplot.subplots()
+    _, ax2 = pyplot.subplots()
+    for name, npz in zip(datanames, data):
+        a_hist = npz["a_hist"]
+        ax1.plot(a_hist[0], a_hist[1], '-', label=name)
+        speed = (a_hist[1,1:] - a_hist[1,:-1]) / (a_hist[0,1:] - a_hist[0,:-1])
+        ax2.plot(a_hist[0,1:-1], speed[1:], '-', label=name)
+    ax1.legend()
+    ax2.legend()
+    pyplot.show()
+    
+
 if __name__ == "__main__":
     # getTimeConvergence()
-    getSpaceConvergence()
+    # getSpaceConvergence()
+    plotContactLine()

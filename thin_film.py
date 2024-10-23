@@ -7,11 +7,11 @@ from runner import *
 
 @dataclass
 class PhysicalParameters:
-    gamma: tuple[float] = (5.0, 6.0, 1.0) # the (effective) surface tension for the wet, dry and the interface
-    slip: float = 1e-2   # the slip length
+    gamma: tuple[float] = (8.0, 8.9, 1.0) # the (effective) surface tension for the wet, dry and the interface
+    slip: float = 1e-4   # the slip length
     theta_Y: float = 1.0
     mu_cl: float = 1.0
-    bm: float = 1e-2     # the bending modulus
+    bm: float = 2 * 1e-3     # the bending modulus
 
 class ThinFilmRunner(Runner):
 
@@ -154,7 +154,7 @@ class ThinFilmRunner(Runner):
             self.ax.plot(self.a * xi_c[2:-2], self.g[2:-1], '-')
             cvt = ((self.g[3:] - self.g[2:-1]) / (xi_c[3:-1] - xi_c[2:-2]) - (self.g[2:-1] - self.g[1:-2]) / (xi_c[2:-2] - xi_c[1:-3])) / (xi_c[3:-1] - xi_c[1:-3]) * 2.0
             self.ax.plot(self.a * xi_c[2:-2], cvt / self.a**2, ':')
-            self.ax.set_xlim(0.0, 3.0); self.ax.set_ylim(-1.5, 1.5); # ax.axis("equal")
+            self.ax.set_xlim(0.0, 3.0); self.ax.set_ylim(-1.0, 2.0); # ax.axis("equal")
             pyplot.draw(); pyplot.pause(1e-4)
         
         return self.t >= self.solp.Te
@@ -277,23 +277,23 @@ def downsample(u: np.ndarray) -> np.ndarray:
 if __name__ == "__main__":
     
     # set up the grid. 
-    # m = 32
-    # xi_b_f = np.concatenate((
-    #     np.linspace(0.0, 0.5, m+1), 
-    #     np.linspace(1/2, 3/4, m+1)[1:], 
-    #     np.linspace(3/4, 7/8, m+1)[1:],
-    #     np.linspace(7/8, 15/16, m+1)[1:],
-    #     np.linspace(15/16, 31/32, m+1)[1:],
-    #     np.linspace(31/32, 63/64, m+1)[1:],
-    #     np.linspace(63/64, 1.0, 2*m+1)[1:],
-    # ))
+    m = 32
+    xi_b_f = np.concatenate((
+        np.linspace(0.0, 0.5, m+1), 
+        np.linspace(1/2, 3/4, m+1)[1:], 
+        np.linspace(3/4, 7/8, m+1)[1:],
+        np.linspace(7/8, 15/16, m+1)[1:],
+        np.linspace(15/16, 31/32, m+1)[1:],
+        np.linspace(31/32, 63/64, m+1)[1:],
+        np.linspace(63/64, 1.0, 2*m+1)[1:],
+    ))
 
-    solp = SolverParameters(dt = 1/(1024*1), Te=1.0)
+    solp = SolverParameters(dt = 1/(1024*4*8), Te=1.0)
     solp.dt_cp = 1.0/32
     solp.adapt_t = False
 
     runner = ThinFilmRunner(solp)
-    runner.prepare(base_grid=128)
+    runner.prepare(base_grid=xi_b_f)
     # read from file the initial conditions
     # initial_data = np.load("result/tf-sample-1024.npz") 
     # h, g = initial_data["h"], initial_data["g"]
