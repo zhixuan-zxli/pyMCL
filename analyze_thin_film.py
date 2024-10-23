@@ -19,14 +19,15 @@ def getTimeConvergence() -> None:
     printConvergenceTable(table_headers, error_table)
 
 def getSpaceConvergence() -> None:
+    num_hier = 3
     base_grid = 128
-    filenames = "result/tf-1e-2-uni-{}-S{}/0032.npz"
+    filenames = "result/tf-1e-2-uni-{}/0032.npz"
     data = []
-    table_headers = ["1/{}".format(base_grid*2**i) for i in range(3)]
+    table_headers = ["1/{}".format(base_grid*2**i) for i in range(num_hier-1)]
     error_table = {"h": [], "g": [], "a": []}
-    for i in range(4):
-        data.append(np.load(filenames.format(base_grid*2**i, i)))
-    for i in range(3):
+    for i in range(num_hier):
+        data.append(np.load(filenames.format(base_grid*2**i)))
+    for i in range(num_hier-1):
         h_diff = downsample(data[i+1]["h"]) - data[i]["h"]
         error_table["h"].append(np.linalg.norm(h_diff[2:-1], ord=np.inf))
         g_diff = downsample(data[i+1]["g"]) - data[i]["g"]

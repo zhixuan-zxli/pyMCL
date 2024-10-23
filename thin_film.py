@@ -151,7 +151,7 @@ class ThinFilmRunner(Runner):
         if self.args.vis:
             self.ax.clear()
             self.ax.plot(self.a * self.xi_c_f[2:], self.h[2:], '-')
-            self.ax.plot(self.a * xi_c[2:-2], self.g[2:-1], '--')
+            self.ax.plot(self.a * xi_c[2:-2], self.g[2:-1], '-')
             cvt = ((self.g[3:] - self.g[2:-1]) / (xi_c[3:-1] - xi_c[2:-2]) - (self.g[2:-1] - self.g[1:-2]) / (xi_c[2:-2] - xi_c[1:-3])) / (xi_c[3:-1] - xi_c[1:-3]) * 2.0
             self.ax.plot(self.a * xi_c[2:-2], cvt / self.a**2, ':')
             self.ax.set_xlim(0.0, 3.0); self.ax.set_ylim(-1.5, 1.5); # ax.axis("equal")
@@ -170,8 +170,9 @@ class ThinFilmRunner(Runner):
 
         # 1. assemble the fourth-order thin film operator for h
         # interpolate to cell boundaries # todo : refine face values
-        h_mid = (h[2:-2] + h[3:-1]) / 2                  # (n_fluid-1, )
-        g_mid = (g[2:2+n_fluid-1] + g[3:2+n_fluid]) / 2  # (n_fluid-1, )
+        eta = (xi_b_f[1:-1] - xi_c_f[2:-2]) / (xi_c_f[3:-1] - xi_c_f[2:-2])
+        h_mid = (1-eta) * h[2:-2] + eta * h[3:-1]                  # (n_fluid-1, )
+        g_mid = (1-eta) * g[2:2+n_fluid-1] + eta * g[3:2+n_fluid]  # (n_fluid-1, )
         # calculate the flux coefficients at the cell boundaries
         # fc = h_mid*(h_mid**2-g_mid**2) / 2 - (h_mid**3 - g_mid**3) / 6  - (g_mid/2 + self.phyp.slip) * (h_mid - g_mid)**2
         fc = (h_mid - g_mid) * ((h_mid - g_mid)**2/12 + (h_mid**2 + g_mid**2)/4 + self.phyp.slip * (h_mid - g_mid))
@@ -218,7 +219,7 @@ class ThinFilmRunner(Runner):
         jump_3[2:] = self.phyp.gamma[2] * theta_d * (np.maximum(xi_c[2:-1] - 1.0, 0.0) * a_next)**3 / 6 
         jump_3[n_fluid+4:] = 0.0
         jump_4 = np.zeros((n_total+3, )) # the effective entries are [n_fluid:n_fluid+4]
-        jump_4[2:] = (np.maximum(xi_c[2:-1] - 1.0, 0.0))**4 / 12.0
+        jump_4[2:] = (np.maximum(xi_c[2:-1] - 1.0, 0.0))**4 / 24
         jump_4 = self.LL @ jump_4 # the a_next**4 are cancelled out
         jump_4[:n_fluid] = 0.0; jump_4[n_fluid+4:] = 0.0
 
@@ -292,19 +293,19 @@ if __name__ == "__main__":
     runner = ThinFilmRunner(solp)
     runner.prepare(base_grid=128)
     # read from file the initial conditions
-    initial_data = np.load("result/tf-sample-1024.npz") 
-    h, g = initial_data["h"], initial_data["g"]
-    assert runner.h.size <= h.size
-    while runner.h.size < h.size:
-        h = downsample(h)
-        g = downsample(g)
-    # set the boundary conditions at the right end
-    g[-1] = 0.0; g[-2] = 0.0
-    n_fluid = runner.n_fluid
-    h[n_fluid+2] = g[n_fluid+1] + g[n_fluid+2] - h[n_fluid+1]
-    runner.h = h
-    runner.g = g
-    runner.a = initial_data["a"]
+    # initial_data = np.load("result/tf-sample-1024.npz") 
+    # h, g = initial_data["h"], initial_data["g"]
+    # assert runner.h.size <= h.size
+    # while runner.h.size < h.size:
+    #     h = downsample(h)
+    #     g = downsample(g)
+    # # set the boundary conditions at the right end
+    # g[-1] = 0.0; g[-2] = 0.0
+    # n_fluid = runner.n_fluid
+    # h[n_fluid+2] = g[n_fluid+1] + g[n_fluid+2] - h[n_fluid+1]
+    # runner.h = h
+    # runner.g = g
+    # runner.a = initial_data["a"]
     #
     runner.run()
     runner.finish()
