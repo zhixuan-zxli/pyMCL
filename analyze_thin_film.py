@@ -19,7 +19,7 @@ def getTimeConvergence() -> None:
     printConvergenceTable(table_headers, error_table)
 
 def getSpaceConvergence() -> None:
-    num_hier = 3
+    num_hier = 4
     base_grid = 128
     filenames = "result/tf-1e-2-uni-{}/0032.npz"
     data = []

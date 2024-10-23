@@ -208,10 +208,12 @@ class ThinFilmRunner(Runner):
 
         # calculate the advection term using upwind
         adv = np.zeros((n_fluid+3, ))
-        if adot >= 0.0:
-            adv[2:-1] = ((h[3:] - h[2:-1]) - (g[3:3+n_fluid] - g[2:2+n_fluid])) / (xi_c_f[3:] - xi_c_f[2:-1]) # (n_fluid, )
-        else:
-            adv[2:-1] = ((h[2:-1] - h[1:-2]) - (g[2:2+n_fluid] - g[1:1+n_fluid])) / (xi_c_f[2:-1] - xi_c_f[1:-2]) # (n_fluid, )
+        # if adot >= 0.0:
+        #     adv[2:-1] = ((h[3:] - h[2:-1]) - (g[3:3+n_fluid] - g[2:2+n_fluid])) / (xi_c_f[3:] - xi_c_f[2:-1]) # (n_fluid, )
+        # else:
+        #     adv[2:-1] = ((h[2:-1] - h[1:-2]) - (g[2:2+n_fluid] - g[1:1+n_fluid])) / (xi_c_f[2:-1] - xi_c_f[1:-2]) # (n_fluid, )
+        # center in space
+        adv[2:-1] = ((h[3:] - h[1:-2]) - (g[3:3+n_fluid] - g[1:1+n_fluid])) / (xi_c_f[3:] - xi_c_f[1:-2]) # (n_fluid, )
         adv[2:-1] *= xi_c_f[2:-1] * adot / a_next
         
         # incorporate the jump
