@@ -7,11 +7,11 @@ from runner import *
 
 @dataclass
 class PhysicalParameters:
-    gamma: tuple[float] = (8.0, 8.9, 1.0) # the (effective) surface tension for the wet, dry and the interface
+    gamma: tuple[float] = (4.0, 4.9, 1.0) # the (effective) surface tension for the wet, dry and the interface
     slip: float = 1e-4   # the slip length
     theta_Y: float = 1.0
     mu_cl: float = 1.0
-    bm: float = 2 * 1e-3     # the bending modulus
+    bm: float = 1 * 1e-3     # the bending modulus
 
 class ThinFilmRunner(Runner):
 
@@ -66,12 +66,12 @@ class ThinFilmRunner(Runner):
         val_diag[2:-1] = -2.0 * dd_table[2][1:1+n_fluid, 1]
         val_up1[2:] = -2.0 * dd_table[2][1:1+n_fluid, 2]
         val_lo1[1:-2] = -2.0 * dd_table[2][1:1+n_fluid, 0]
-        self.L4h = sp.diags((val_diag, val_up1, val_lo1), (0, 1, -1), (n_total+3, n_fluid+3), "csr")
+        self.L4h = sp.diags((val_diag, val_up1, val_lo1), (0, 1, -1), (n_total+3, n_fluid+3), "csc")
 
         # build the ghost matrix for the liquid
         val_lo1, val_up1 = val_up1, val_lo1; val_lo1[:] = 0.0; val_up1[:] = 0.0; val_diag[:] = 0.0
         val_diag[-1] = 0.5; val_lo1[-1] = 0.5
-        self.G4hg = sp.diags((val_diag, val_lo1), (0, -1), (n_fluid+3, n_total+3), "csr")
+        self.G4hg = sp.diags((val_diag, val_lo1), (0, -1), (n_fluid+3, n_total+3), "csc")
 
         val_lo1 = np.zeros((n_fluid+2, ))
         val_up2 = np.zeros((n_fluid+1, ))
@@ -79,12 +79,12 @@ class ThinFilmRunner(Runner):
         val_up1[0] = -1.0; val_up2[0] = 1.0 # symmetry at x=0
         val_lo1[0] = -1.0; val_up2[1] = 1.0 # symmetry at x=0
         val_lo1[-1] = 0.5; val_diag[-1] = 0.5 # Dirichlet at the CL
-        self.G4hh = sp.diags((val_diag, val_up1, val_up2, val_lo1), (0, 1, 2, -1), (n_fluid+3, n_fluid+3), "csr")
+        self.G4hh = sp.diags((val_diag, val_up1, val_up2, val_lo1), (0, 1, 2, -1), (n_fluid+3, n_fluid+3), "csc")
 
         # Some identity matrices
         val_diag[:] = 0.0; val_diag[2:2+n_fluid] = 1.0
-        self.Ihh = sp.diags((val_diag, ), (0, ), (n_fluid+3, n_fluid+3), "csr") # (n_fluid+3, n_fluid+3)
-        self.Ihg = sp.diags((val_diag, ), (0, ), (n_fluid+3, n_total+3), "csr") # (n_fluid+3, n_total+3)
+        self.Ihh = sp.diags((val_diag, ), (0, ), (n_fluid+3, n_fluid+3), "csc") # (n_fluid+3, n_fluid+3)
+        self.Ihg = sp.diags((val_diag, ), (0, ), (n_fluid+3, n_total+3), "csc") # (n_fluid+3, n_total+3)
         
         # build the negative Laplacian operator for the sheet
         # the rightmost cell is simply not needed; the last interior cell and the ghost next to it are set to zero. 
@@ -97,7 +97,7 @@ class ThinFilmRunner(Runner):
         pc_gamma = np.zeros((n_total+3, ))
         pc_gamma[2:2+n_fluid] = self.phyp.gamma[0]         # wet surface tension
         pc_gamma[2+n_fluid:2+n_total] = self.phyp.gamma[1] # dry surface tension
-        self.gammaL = sp.diags((val_diag * pc_gamma, val_up1 * pc_gamma[:-1], val_lo1 * pc_gamma[1:]), (0, 1, -1), (n_total+3, n_total+3), "csr")
+        self.gammaL = sp.diags((val_diag * pc_gamma, val_up1 * pc_gamma[:-1], val_lo1 * pc_gamma[1:]), (0, 1, -1), (n_total+3, n_total+3), "csc")
 
         # build the biharmonic operator for the sheet
         val_up2 = np.zeros((n_total+1, ))
@@ -108,15 +108,16 @@ class ThinFilmRunner(Runner):
         val_lo1[1:-2] = 24.0 * dd_table[4][:-1,1]
         val_lo2[:-2] = 24.0 * dd_table[4][:-1,0]
         val_diag[2:-2] = 24.0 * dd_table[4][:-1,2]
-        self.LL = sp.diags((val_diag, val_up1, val_up2, val_lo1, val_lo2), (0, 1, 2, -1, -2), (n_total+3, n_total+3), "csr")
+        self.LL = sp.diags((val_diag, val_up1, val_up2, val_lo1, val_lo2), (0, 1, 2, -1, -2), (n_total+3, n_total+3), "csc")
 
         # build the ghost matrix for the sheet
         val_up1[:] = 0.0; val_up2[:] = 0.0; val_diag[:] = 0.0; val_lo1[:] = 0.0; val_lo2[:] = 0.0
         val_up1[0] = -1.0; val_up2[0] = 1.0 # symmetry at x=0
         val_lo1[0] = -1.0; val_up2[1] = 1.0 # symmetry at x=0
+        # val_lo1[-2] = 0.0; 
         val_diag[-2] = 1.0 # symmetry at x=2 and fixed displacement
         val_diag[-1] = 1.0 # symmetry at x=2 and fixed displacement
-        self.G = sp.diags((val_diag, val_up1, val_up2, val_lo1, val_lo2), (0, 1, 2, -1, -2), (n_total+3, n_total+3), "csr")
+        self.G = sp.diags((val_diag, val_up1, val_up2, val_lo1, val_lo2), (0, 1, 2, -1, -2), (n_total+3, n_total+3), "csc")
         del val_up1, val_up2, val_lo1, val_lo2, val_diag
 
         if self.args.vis:
@@ -154,7 +155,7 @@ class ThinFilmRunner(Runner):
             self.ax.plot(self.a * xi_c[2:-2], self.g[2:-1], '-')
             cvt = ((self.g[3:] - self.g[2:-1]) / (xi_c[3:-1] - xi_c[2:-2]) - (self.g[2:-1] - self.g[1:-2]) / (xi_c[2:-2] - xi_c[1:-3])) / (xi_c[3:-1] - xi_c[1:-3]) * 2.0
             self.ax.plot(self.a * xi_c[2:-2], cvt / self.a**2, ':')
-            self.ax.set_xlim(0.0, 3.0); self.ax.set_ylim(-1.0, 2.0); # ax.axis("equal")
+            self.ax.set_xlim(0.0, 3.0); self.ax.set_ylim(-3.0, 3.0); # ax.axis("equal")
             pyplot.draw(); pyplot.pause(1e-4)
         
         return self.t >= self.solp.Te
@@ -195,15 +196,15 @@ class ThinFilmRunner(Runner):
         v_up2[2:] = ctab[:-1,4]
         v_lo2 = np.zeros((n_fluid+1, ))
         v_lo2[:-1] = ctab[:,0]
-        C = sp.diags((v_diag, v_up1, v_up2, v_lo1, v_lo2), (0, 1, 2, -1, -2), (n_fluid+3, n_fluid+3), "csr")
+        C = sp.diags((v_diag, v_up1, v_up2, v_lo1, v_lo2), (0, 1, 2, -1, -2), (n_fluid+3, n_fluid+3), "csc")
 
         # calculate the CL speed
-        tan_alpha = (h[-2] - h[-1]) / (self.a * dxi_at_cl)
+        dh = (h[-1] - h[-2]) / (self.a * dxi_at_cl)
         # assert tan_alpha >= 0.
-        tan_beta = (g[n_fluid+2] - g[n_fluid+1]) / (self.a * dxi_at_cl)
+        dg = (g[n_fluid+2] - g[n_fluid+1]) / (self.a * dxi_at_cl)
         # assert tan_beta >= 0.
-        theta_d = np.arctan(tan_alpha) + np.arctan(tan_beta)
-        adot = self.phyp.mu_cl * 0.5 * (theta_d**2 - self.phyp.theta_Y**2)
+        gamma = self.phyp.gamma
+        adot = -self.phyp.mu_cl * (gamma[2]*(1.0 - 0.5*dh**2 + dh*dg) + (gamma[0]-gamma[1])*(1.0 + 0.5*dg**2))
         a_next = self.a + adot * solp.dt
 
         # calculate the advection term using upwind
@@ -218,34 +219,19 @@ class ThinFilmRunner(Runner):
         
         # incorporate the jump
         jump_3 = np.zeros((n_total+3, ))
-        jump_3[2:] = self.phyp.gamma[2] * theta_d * (np.maximum(xi_c[2:-1] - 1.0, 0.0) * a_next)**3 / 6 
+        jump_3[2:] = -(gamma[2] * dh + (gamma[0]-gamma[1]) * dg) * (np.maximum(xi_c[2:-1] - 1.0, 0.0))**3 / 6 
+        jump_3 = self.LL @ jump_3 / a_next
         jump_3[n_fluid+4:] = 0.0
-        jump_4 = np.zeros((n_total+3, )) # the effective entries are [n_fluid:n_fluid+4]
-        jump_4[2:] = (np.maximum(xi_c[2:-1] - 1.0, 0.0))**4 / 24
-        jump_4 = self.LL @ jump_4 # the a_next**4 are cancelled out
-        jump_4[:n_fluid] = 0.0; jump_4[n_fluid+4:] = 0.0
-
-        # construct the matrix accounting for the fourth-order jump
-        val = np.zeros((3, 4))
-        row_idx = np.zeros_like(val, dtype=np.int_)
-        col_idx = np.zeros_like(val, dtype=np.int_)
-        L4h_row = self.L4h[n_fluid+1]
-        for j in range(3):
-            val[j] = jump_4[n_fluid:n_fluid+4] * L4h_row[0, n_fluid-1+j]
-            row_idx[j] = np.arange(n_fluid, n_fluid+4)
-            col_idx[j,:] = n_fluid-1+j
-        J4 = sp.csr_matrix((val.reshape(-1), (row_idx.reshape(-1), col_idx.reshape(-1))), shape=(n_total+3, n_fluid+3))
-        # J4 = 0.0
 
         # assemble the linear system
         A = sp.bmat((
             (self.Ihh + (solp.dt*self.phyp.gamma[2]/a_next**4)*C + self.G4hh, -self.Ihg - self.G4hg), 
-            (self.phyp.gamma[2]*(self.L4h - J4)/a_next**2, self.phyp.bm*self.LL/a_next**4 + self.gammaL/a_next**2 + self.G)
-            ), format="csr")
+            (self.phyp.gamma[2]*self.L4h/a_next**2, self.phyp.bm*self.LL/a_next**4 + self.gammaL/a_next**2 + self.G)
+            ), format="csc")
         # prepare the RHS
         h_g = np.zeros_like(h)
         h_g[2:-1] = h[2:-1] - g[2:n_fluid+2]
-        b = np.concatenate((solp.dt * adv + h_g, self.LL @ jump_3 / a_next**4))
+        b = np.concatenate((solp.dt * adv + h_g, jump_3))
         x = spsolve(A, b)
         h_next = x[:n_fluid+3]
         g_next = x[n_fluid+3:]
@@ -277,23 +263,24 @@ def downsample(u: np.ndarray) -> np.ndarray:
 if __name__ == "__main__":
     
     # set up the grid. 
-    m = 32
-    xi_b_f = np.concatenate((
-        np.linspace(0.0, 0.5, m+1), 
-        np.linspace(1/2, 3/4, m+1)[1:], 
-        np.linspace(3/4, 7/8, m+1)[1:],
-        np.linspace(7/8, 15/16, m+1)[1:],
-        np.linspace(15/16, 31/32, m+1)[1:],
-        np.linspace(31/32, 63/64, m+1)[1:],
-        np.linspace(63/64, 1.0, 2*m+1)[1:],
-    ))
+    # m = 32
+    # xi_b_f = np.concatenate((
+    #     np.linspace(0.0, 0.5, m+1), 
+    #     np.linspace(1/2, 3/4, m+1)[1:], 
+    #     np.linspace(3/4, 7/8, m+1)[1:],
+    #     np.linspace(7/8, 15/16, m+1)[1:],
+    #     np.linspace(15/16, 31/32, m+1)[1:],
+    #     np.linspace(31/32, 63/64, m+1)[1:],
+    #     np.linspace(63/64, 1.0, 2*m+1)[1:],
+    # ))
 
-    solp = SolverParameters(dt = 1/(1024*4*8), Te=1.0)
+    solp = SolverParameters(dt = 1/(1024*128), Te=1.0)
     solp.dt_cp = 1.0/32
     solp.adapt_t = False
 
     runner = ThinFilmRunner(solp)
-    runner.prepare(base_grid=xi_b_f)
+    # runner.prepare(base_grid=xi_b_f)
+    runner.prepare(base_grid=1024)
     # read from file the initial conditions
     # initial_data = np.load("result/tf-sample-1024.npz") 
     # h, g = initial_data["h"], initial_data["g"]
