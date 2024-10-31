@@ -50,7 +50,7 @@ class Runner:
             try:
                 mkdir(self.args.output_dir)
             except FileExistsError:
-                pass
+                print(Fore.RED + "Output directory exists; will override. " + Style.RESET_ALL)
             print("Start from step = 0")
         # save the parameters to disk
         self.solp.spaceref = self.args.spaceref
