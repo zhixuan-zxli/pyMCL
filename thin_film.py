@@ -117,28 +117,40 @@ class ThinFilmRunner(Runner):
         val_dia[-1] = 1.0; val_lo1[-1] = 1.0 # Dirichlet at farfield
         self.G = sp.diags((val_dia, val_up1, val_lo1), (0, 1, -1), (n_total+2, n_total+2), "csc")
         del val_up1, val_up2, val_lo1, val_lo2, val_dia
+        
+        # 3. set initial values
+        self.a_hist = np.zeros((2, self.num_steps + 1))
+        if self.args.resume:
+            a_hist_tr = self.resume_file["a_hist"]
+            self.step = a_hist_tr.shape[1]
+            self.a_hist[:,:self.step] = a_hist_tr
+            self.t = a_hist_tr[0,-1]
+            self.a = a_hist_tr[1,-1]
+            self.cp = int(self.args.resume)
+
+            self.h = self.resume_file["h"].copy()
+            self.g = self.resume_file["g"].copy()
+            self.kappa = self.resume_file["kappa"].copy()
+            del self.resume_file
+        else:
+            self.t = 0.0
+            self.a = 1.0
+            self.cp = 0 # number of checkpoints reached
+            
+            self.h = 1 - np.exp(4.0*(xi_c_f-1))
+            self.h[-1] = -self.h[-2]
+            self.g = np.zeros((n_total+2, ))
+            self.kappa = np.zeros((n_total+2, ))
 
         if self.args.vis:
             pyplot.ion()
             self.ax = pyplot.subplot()
 
-        # 3. set initial values
-        self.t = 0.0
-        self.a = 1.0
-        self.a_hist = np.zeros((2, self.num_steps + 1))
-        self.cp = 0 # number of checkpoints reached
-        
-        self.h = 1 - np.exp(4.0*(xi_c_f-1))
-        # self.h *= 2.0
-        self.h[-1] = -self.h[-2]
-        self.g = np.zeros((n_total+2, ))
-        self.kappa = np.zeros((n_total+2, ))
-
     def pre_step(self) -> None:
         # some info
         xi_c, xi_b_f = self.xi_c, self.xi_b_f
         n_fluid = xi_b_f.size - 1
-        fluid_h = self.h[2:-1] >= self.g[1:1+n_fluid]
+        fluid_h = self.h[2:-1] - self.g[1:1+n_fluid]
         assert np.all(fluid_h >= 0.0)
         vol = np.sum(fluid_h * self.a * (xi_b_f[1:] - xi_b_f[:-1]))
         print("t = {:.6f}, dt = {:.3e}, vol = {:.3e}, ".format(self.t, self.solp.dt, vol), end="")
@@ -152,7 +164,7 @@ class ThinFilmRunner(Runner):
         if self.args.vis:
             self.ax.clear()
             self.ax.plot(self.a * self.xi_c_f[2:], self.h[2:], '-')   # fluid
-            # todo: curvature of the fluid
+            self.ax.plot(self.a * self.xi_c_f[2:-1], (-self.L4h @ self.h)[2:2+n_fluid], ':') # fluid interface curvature
             self.ax.plot(self.a * xi_c[2:-2], self.g[1:-1], '-')      # sheet
             self.ax.plot(self.a * xi_c[2:-2], self.kappa[1:-1], '--') # curvature of the sheet
             self.ax.set_xlim(0.0, 3.0); self.ax.set_ylim(-1.0, 2.0)
