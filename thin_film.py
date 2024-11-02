@@ -124,6 +124,17 @@ class ThinFilmRunner(Runner):
         val_dia[-1] = 1.0; val_lo1[-1] = 1.0 # Dirichlet at farfield
         self.G = sp.diags((val_dia, val_up1, val_lo1), (0, 1, -1), (n_total+2, n_total+2), "csc")
         del val_up1, val_up2, val_lo1, val_lo2, val_dia
+
+        # build the correction for the jump condition
+        jv = np.zeros((n_total+2, ))
+        jv[1:-1] = np.maximum(xi_c[2:-2] - 1.0, 0.0) 
+        # Ljv = (self.L @ jv) / a_star
+        Ljv = (self.L @ jv)
+        Ljv = Ljv[n_fluid:n_fluid+2] # the effective entries are [n_fluid:n_fluid+2]
+        # col_vec = np.array((-1.0 / (a_star * dxi_at_cl), 1.0 / (a_star * dxi_at_cl)))
+        col_vec = np.array((-1.0 / self.dxi_at_cl, 1.0 / self.dxi_at_cl))
+        self.Lj4h = self.spr_from_outer(np.arange(n_fluid, n_fluid+2), Ljv, np.arange(n_fluid+1, n_fluid+3), col_vec, (n_total+2, n_fluid+3))
+        self.Lj4g = self.spr_from_outer(np.arange(n_fluid, n_fluid+2), Ljv, np.arange(n_fluid, n_fluid+2), col_vec, (n_total+2, n_total+2))
         
         # 3. set initial values
         self.a_hist = np.zeros((2, self.num_steps + 1))
@@ -185,7 +196,7 @@ class ThinFilmRunner(Runner):
            
         h, g = self.h, self.g
         dd_table = self.dd_table
-        xi_b_f, xi_c_f, xi_c = self.xi_b_f, self.xi_c_f, self.xi_c
+        xi_b_f, xi_c_f = self.xi_b_f, self.xi_c_f
         n_total = self.xi_b.size - 1
         n_fluid = xi_b_f.size - 1
         dxi_at_cl = self.dxi_at_cl
@@ -230,23 +241,13 @@ class ThinFilmRunner(Runner):
         adv[2:-1] = ((h[3:] - h[1:-2]) - (g[2:2+n_fluid] - g[:n_fluid])) / (xi_c_f[3:] - xi_c_f[1:-2]) # (n_fluid, )
         adv[2:-1] *= xi_c_f[2:-1] * adot / a_star
         
-        # incorporate the jump
-        # todo: put this in prepare()
         gamma = self.phyp.gamma
-        jv = np.zeros((n_total+2, ))
-        jv[1:-1] = np.maximum(xi_c[2:-2] - 1.0, 0.0) 
-        Ljv = (self.L @ jv) / a_star
-        Ljv[n_fluid+2:] = 0.0 # the effective entries are [n_fluid:n_fluid+2]
-        col_vec = np.array((-1.0 / (a_star * dxi_at_cl), 1.0 / (a_star * dxi_at_cl)))
-        Lj4h = self.spr_from_outer(np.arange(n_fluid, n_fluid+2), Ljv[n_fluid:n_fluid+2], np.arange(n_fluid+1, n_fluid+3), col_vec, (n_total+2, n_fluid+3))
-        Lj4g = self.spr_from_outer(np.arange(n_fluid, n_fluid+2), Ljv[n_fluid:n_fluid+2], np.arange(n_fluid, n_fluid+2), col_vec, (n_total+2, n_total+2))
-
         # assemble the linear system
         #    h   g    kappa
         A = sp.bmat((
             (self.Ihh + (solp.dt*gamma[2]/a_star**4)*C + self.G4hh, -self.Ihg - self.G4hg, None), # h
             (None, self.L/a_star**2 + self.G, self.Igk), # g
-            (-gamma[2]*self.L4h/a_star**2 + gamma[2]*Lj4h, (gamma[0]-gamma[1])*Lj4g, self.phyp.bm*self.L/a_star**2 + self.gamma_dia + self.G),  # kappa
+            (gamma[2]*(-self.L4h + self.Lj4h)/a_star**2, (gamma[0]-gamma[1])*self.Lj4g/a_star**2, self.phyp.bm*self.L/a_star**2 + self.gamma_dia + self.G),  # kappa
             ), format="csc")
         # prepare the RHS
         h_g = np.zeros_like(h)

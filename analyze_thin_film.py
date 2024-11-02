@@ -6,12 +6,12 @@ from colorama import Fore, Style
 
 def getTimeConvergence() -> None:
     num_hier = 4
-    filenames = "result/tf-s-2-g4-512-s2t{}/0032.npz"
+    filenames = "result/tf-s-2-g4-s1t{}/0032.npz"
     data = []
-    table_headers = ["T{}".format(i+3) for i in range(num_hier-1)]
+    table_headers = ["T{}".format(i+2) for i in range(num_hier-1)]
     error_table = { "h inf": [], "g inf": [], "a": [] }
     for i in range(num_hier):
-        data.append(np.load(filenames.format(i+3)))
+        data.append(np.load(filenames.format(i+2)))
     for i in range(num_hier-1):
         h_diff = data[i+1]["h"] - data[i]["h"]
         error_table["h inf"].append(np.linalg.norm(h_diff[2:-1], ord=np.inf))
@@ -25,12 +25,12 @@ def getTimeConvergence() -> None:
 def getSpaceConvergence() -> None:
     num_hier = 4
     base_grid = 128
-    filenames = "result/tf-s-2-g4-{}-s{}t{}/0032.npz"
+    filenames = "result/tf-s-2-g4-s{}t{}/0032.npz"
     data = []
     table_headers = ["1/{}".format(base_grid*2**i) for i in range(num_hier-1)]
     error_table = {"h": [], "g": [], "a": []}
     for i in range(num_hier):
-        data.append(np.load(filenames.format(base_grid*2**i, i, 2*i)))
+        data.append(np.load(filenames.format(i, 2*i)))
     for i in range(num_hier-1):
         h_diff = downsample(data[i+1]["h"], 2) - data[i]["h"]
         error_table["h"].append(np.linalg.norm(h_diff[2:-1], ord=np.inf))
