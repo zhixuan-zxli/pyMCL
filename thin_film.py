@@ -138,6 +138,7 @@ class ThinFilmRunner(Runner):
             self.cp = 0 # number of checkpoints reached
             
             self.h = 1 - np.exp(4.0*(xi_c_f-1))
+            self.h *= 1.5
             self.h[-1] = -self.h[-2]
             self.g = np.zeros((n_total+2, ))
             self.kappa = np.zeros((n_total+2, ))
@@ -157,6 +158,7 @@ class ThinFilmRunner(Runner):
         # save intermediate result
         self.a_hist[0, self.step] = self.t; self.a_hist[1, self.step] = self.a
         if self.t >= self.cp * self.solp.dt_cp:
+            print(Fore.GREEN + "\n* Checkpoint {} ".format(self.cp) + Style.RESET_ALL)
             filename = self._get_output_name("{:04}.npz".format(self.cp))
             np.savez(filename, h=self.h, g=self.g, kappa=self.kappa, a_hist=self.a_hist[:, :self.step+1])
             self.cp += 1
@@ -266,13 +268,16 @@ class ThinFilmRunner(Runner):
             and solp.dt < self.min_dxi / adot / 16 and solp.dt < self.min_dxi:
             solp.dt *= 2
 
-def downsample(u: np.ndarray) -> np.ndarray:
+def downsample(u: np.ndarray, ng_left: int) -> np.ndarray:
+    """
+    ng_left [int] number of ghosts on the left
+    """
     usize = u.size
-    u_down = np.zeros(((usize-3)//2 + 3, ))
-    u_down[2:-1] = (u[2:-2:2] + u[3:-1:2]) / 2
+    u_down = np.zeros(((usize-ng_left-1)//2 + ng_left+1, ))
+    u_down[ng_left:-1] = (u[ng_left:-2:2] + u[ng_left+1:-1:2]) / 2
     # symmetry condition at the left
-    u_down[0] = u_down[3]
-    u_down[1] = u_down[2]
+    for i in range(ng_left):
+        u_down[i] = u_down[2*ng_left-i-1]
     return u_down
 
 if __name__ == "__main__":
@@ -289,27 +294,31 @@ if __name__ == "__main__":
     #     np.linspace(63/64, 1.0, 2*m+1)[1:],
     # ))
 
-    solp = SolverParameters(dt = 1/(1024*32), Te=1.0)
+    solp = SolverParameters(dt = 1/(1024*8), Te=1.0)
     solp.dt_cp = 1.0/32
     solp.adapt_t = False
 
     runner = ThinFilmRunner(solp)
     # runner.prepare(base_grid=xi_b_f)
-    runner.prepare(base_grid=1024)
+    runner.prepare(base_grid=256)
     # read from file the initial conditions
-    # initial_data = np.load("result/tf-sample-1024.npz") 
-    # h, g = initial_data["h"], initial_data["g"]
-    # assert runner.h.size <= h.size
-    # while runner.h.size < h.size:
-    #     h = downsample(h)
-    #     g = downsample(g)
-    # # set the boundary conditions at the right end
-    # g[-1] = 0.0; g[-2] = 0.0
-    # n_fluid = runner.n_fluid
-    # h[n_fluid+2] = g[n_fluid+1] + g[n_fluid+2] - h[n_fluid+1]
-    # runner.h = h
-    # runner.g = g
-    # runner.a = initial_data["a"]
+    if True:
+        initial_data = np.load("result/tf-s-2-g4-2048-sample.npz") 
+        h, g, kappa = initial_data["h"], initial_data["g"], initial_data["kappa"]
+        assert runner.h.size <= h.size
+        while runner.h.size < h.size:
+            h = downsample(h, 2)
+            g = downsample(g, 1)
+            kappa = downsample(kappa, 1)
+        # set the boundary conditions at the right end
+        g[-1] = -g[-2]; kappa[-1] = -kappa[-2]
+        n_fluid = h.size - 3
+        h[n_fluid+2] = g[n_fluid] + g[n_fluid+1] - h[n_fluid+1]
+        runner.h = h
+        runner.g = g
+        runner.kappa = kappa
+        runner.a = initial_data["a_hist"][1,-1]
+        del initial_data
     #
     runner.run()
     runner.finish()
