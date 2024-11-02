@@ -294,13 +294,13 @@ if __name__ == "__main__":
     #     np.linspace(63/64, 1.0, 2*m+1)[1:],
     # ))
 
-    solp = SolverParameters(dt = 1/(1024*8), Te=1.0)
+    solp = SolverParameters(dt = 1/(1024*2), Te=1.0)
     solp.dt_cp = 1.0/32
     solp.adapt_t = False
 
     runner = ThinFilmRunner(solp)
     # runner.prepare(base_grid=xi_b_f)
-    runner.prepare(base_grid=256)
+    runner.prepare(base_grid=128)
     # read from file the initial conditions
     if True:
         initial_data = np.load("result/tf-s-2-g4-2048-sample.npz") 

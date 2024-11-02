@@ -2,15 +2,16 @@ import numpy as np
 from fem.post import printConvergenceTable
 from thin_film import downsample
 from matplotlib import pyplot
+from colorama import Fore, Style
 
 def getTimeConvergence() -> None:
     num_hier = 4
-    filenames = "result/tf-s-2-g4-512-s1t{}/0032.npz"
+    filenames = "result/tf-s-2-g4-512-s2t{}/0032.npz"
     data = []
-    table_headers = ["T{}".format(i) for i in range(num_hier-1)]
+    table_headers = ["T{}".format(i+3) for i in range(num_hier-1)]
     error_table = { "h inf": [], "g inf": [], "a": [] }
     for i in range(num_hier):
-        data.append(np.load(filenames.format(i+1)))
+        data.append(np.load(filenames.format(i+3)))
     for i in range(num_hier-1):
         h_diff = data[i+1]["h"] - data[i]["h"]
         error_table["h inf"].append(np.linalg.norm(h_diff[2:-1], ord=np.inf))
@@ -18,24 +19,26 @@ def getTimeConvergence() -> None:
         error_table["g inf"].append(np.linalg.norm(g_diff[1:-1], ord=np.inf))
         a_diff = data[i+1]["a_hist"][1,-1] - data[i]["a_hist"][1,-1]
         error_table["a"].append(np.abs(a_diff).item())
+    print(Fore.GREEN + "\nTime convergence: " + Style.RESET_ALL)
     printConvergenceTable(table_headers, error_table)
 
 def getSpaceConvergence() -> None:
     num_hier = 4
     base_grid = 128
-    filenames = "result/tf-1e-2-uni-{}/0032.npz"
+    filenames = "result/tf-s-2-g4-{}-s{}t{}/0032.npz"
     data = []
     table_headers = ["1/{}".format(base_grid*2**i) for i in range(num_hier-1)]
     error_table = {"h": [], "g": [], "a": []}
     for i in range(num_hier):
-        data.append(np.load(filenames.format(base_grid*2**i)))
+        data.append(np.load(filenames.format(base_grid*2**i, i, 2*i)))
     for i in range(num_hier-1):
-        h_diff = downsample(data[i+1]["h"]) - data[i]["h"]
+        h_diff = downsample(data[i+1]["h"], 2) - data[i]["h"]
         error_table["h"].append(np.linalg.norm(h_diff[2:-1], ord=np.inf))
-        g_diff = downsample(data[i+1]["g"]) - data[i]["g"]
+        g_diff = downsample(data[i+1]["g"], 1) - data[i]["g"]
         error_table["g"].append(np.linalg.norm(g_diff[2:-1], ord=np.inf))
-        a_diff = data[i+1]["a"] - data[i]["a"]
+        a_diff = data[i+1]["a_hist"][1,-1] - data[i]["a_hist"][1,-1]
         error_table["a"].append(np.abs(a_diff).item())
+    print(Fore.GREEN + "\nSpace convergence: " + Style.RESET_ALL)
     printConvergenceTable(table_headers, error_table)
 
 def plotContactLine() -> None:
@@ -59,5 +62,5 @@ def plotContactLine() -> None:
 
 if __name__ == "__main__":
     getTimeConvergence()
-    # getSpaceConvergence()
+    getSpaceConvergence()
     # plotContactLine()
