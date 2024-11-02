@@ -18,6 +18,13 @@ class ThinFilmRunner(Runner):
     def __init__(self, solp):
         super().__init__(solp)
 
+    def spr_from_outer(self, row_idx: np.ndarray, vec1: np.ndarray, col_idx: np.ndarray, vec2: np.ndarray, mshape: tuple[int]) -> sp.csc_matrix:
+        nrow, ncol = row_idx.size, col_idx.size
+        row_x = np.tile(row_idx, ncol)
+        col_x = np.repeat(col_idx, nrow)
+        vals = (vec1[np.newaxis] * vec2[:, np.newaxis]).flatten()
+        return sp.csc_matrix((vals, (row_x, col_x)), shape=mshape)
+
     def prepare(self, base_grid: Union[int, np.ndarray]) -> None:
         """
         base_grid [int]  number of cells for the fluid, before refinement; 
@@ -211,42 +218,41 @@ class ThinFilmRunner(Runner):
         v_lo2[:-1] = ctab[:,0]
         C = sp.diags((v_dia, v_up1, v_up2, v_lo1, v_lo2), (0, 1, 2, -1, -2), (n_fluid+3, n_fluid+3), "csc")
 
-        # calculate the CL speed
+        # estimate the CL 
         dh = (h[-1] - h[-2]) / (self.a * dxi_at_cl)
         dg = (g[n_fluid+1] - g[n_fluid]) / (self.a * dxi_at_cl)
         adot = self.phyp.mu_cl/2 * ((dh-dg)**2 - self.phyp.theta_Y**2)
-        a_next = self.a + adot * solp.dt
+        a_star = self.a + adot * solp.dt
 
         # calculate the advection term using upwind
         adv = np.zeros((n_fluid+3, ))
-        # if adot >= 0.0:
-        #     adv[2:-1] = ((h[3:] - h[2:-1]) - (g[3:3+n_fluid] - g[2:2+n_fluid])) / (xi_c_f[3:] - xi_c_f[2:-1]) # (n_fluid, )
-        # else:
-        #     adv[2:-1] = ((h[2:-1] - h[1:-2]) - (g[2:2+n_fluid] - g[1:1+n_fluid])) / (xi_c_f[2:-1] - xi_c_f[1:-2]) # (n_fluid, )
         # center in space
         adv[2:-1] = ((h[3:] - h[1:-2]) - (g[2:2+n_fluid] - g[:n_fluid])) / (xi_c_f[3:] - xi_c_f[1:-2]) # (n_fluid, )
-        adv[2:-1] *= xi_c_f[2:-1] * adot / a_next
+        adv[2:-1] *= xi_c_f[2:-1] * adot / a_star
         
         # incorporate the jump
+        # todo: put this in prepare()
         gamma = self.phyp.gamma
-        jump = -(gamma[2] * dh + (gamma[0]-gamma[1]) * dg)
         jv = np.zeros((n_total+2, ))
         jv[1:-1] = np.maximum(xi_c[2:-2] - 1.0, 0.0) 
-        Ljv = (self.L @ jv) / a_next
-        Ljv[n_fluid+2:] = 0.0
+        Ljv = (self.L @ jv) / a_star
+        Ljv[n_fluid+2:] = 0.0 # the effective entries are [n_fluid:n_fluid+2]
+        col_vec = np.array((-1.0 / (a_star * dxi_at_cl), 1.0 / (a_star * dxi_at_cl)))
+        Lj4h = self.spr_from_outer(np.arange(n_fluid, n_fluid+2), Ljv[n_fluid:n_fluid+2], np.arange(n_fluid+1, n_fluid+3), col_vec, (n_total+2, n_fluid+3))
+        Lj4g = self.spr_from_outer(np.arange(n_fluid, n_fluid+2), Ljv[n_fluid:n_fluid+2], np.arange(n_fluid, n_fluid+2), col_vec, (n_total+2, n_total+2))
 
         # assemble the linear system
         #    h   g    kappa
         A = sp.bmat((
-            (self.Ihh + (solp.dt*gamma[2]/a_next**4)*C + self.G4hh, -self.Ihg - self.G4hg, None), # h
-            (None, self.L/a_next**2 + self.G, self.Igk), # g
-            (-gamma[2]*self.L4h/a_next**2, None, self.phyp.bm*self.L/a_next**2 + self.gamma_dia + self.G),  # kappa
+            (self.Ihh + (solp.dt*gamma[2]/a_star**4)*C + self.G4hh, -self.Ihg - self.G4hg, None), # h
+            (None, self.L/a_star**2 + self.G, self.Igk), # g
+            (-gamma[2]*self.L4h/a_star**2 + gamma[2]*Lj4h, (gamma[0]-gamma[1])*Lj4g, self.phyp.bm*self.L/a_star**2 + self.gamma_dia + self.G),  # kappa
             ), format="csc")
         # prepare the RHS
         h_g = np.zeros_like(h)
         h_g[2:-1] = h[2:-1] - g[1:n_fluid+1]
         g0 = np.zeros_like(g)
-        b = np.concatenate((solp.dt * adv + h_g, g0, jump * Ljv))
+        b = np.concatenate((solp.dt * adv + h_g, g0, g0))
         x = spsolve(A, b)
         h_next = x[:n_fluid+3]
         g_next = x[n_fluid+3:n_fluid+n_total+5]
@@ -255,12 +261,18 @@ class ThinFilmRunner(Runner):
         # some other info: 
         delta_h = np.linalg.norm(h_next[2:-1] - h[2:-1], ord=np.inf) / solp.dt
         delta_g = np.linalg.norm(g_next[1:-1] - g[1:-1], ord=np.inf) / solp.dt
-        print("diff = {:.2e}, {:.2e}, a_next = {:.5f}, adot = {:.2e}".format(delta_h, delta_g, a_next, adot))
 
         self.h[:] = h_next
         self.g[:] = g_next
         self.kappa[:] = kappa_next
-        self.a = a_next
+        
+        # correct the CL 
+        dh = (h[-1] - h[-2]) / (a_star * dxi_at_cl)
+        dg = (g[n_fluid+1] - g[n_fluid]) / (a_star * dxi_at_cl)
+        adot = self.phyp.mu_cl/2 * ((dh-dg)**2 - self.phyp.theta_Y**2)
+        self.a += adot * solp.dt
+        print("diff={:.2e}, {:.2e}, a_next={:.5f}, adot={:.2e}, dh={:.2e}, dg={:.2e}".format(
+            delta_h, delta_g, a_star, adot, dh, dg))
 
         # adaptively change the dt
         self.t += self.solp.dt
@@ -293,6 +305,7 @@ if __name__ == "__main__":
     #     np.linspace(31/32, 63/64, m+1)[1:],
     #     np.linspace(63/64, 1.0, 2*m+1)[1:],
     # ))
+    # finest h = 1/4096
 
     solp = SolverParameters(dt = 1/(1024*2), Te=1.0)
     solp.dt_cp = 1.0/32
@@ -302,7 +315,7 @@ if __name__ == "__main__":
     # runner.prepare(base_grid=xi_b_f)
     runner.prepare(base_grid=128)
     # read from file the initial conditions
-    if True:
+    if False:
         initial_data = np.load("result/tf-s-2-g4-2048-sample.npz") 
         h, g, kappa = initial_data["h"], initial_data["g"], initial_data["kappa"]
         assert runner.h.size <= h.size
