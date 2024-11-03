@@ -7,11 +7,11 @@ from runner import *
 
 @dataclass
 class PhysicalParameters:
-    gamma: tuple[float] = (4.0, 4.9, 1.0) # the (effective) surface tension for the wet, dry and the interface
-    slip: float = 1e-2   # the slip length
+    gamma: tuple[float] = (8.0, 8.9, 1.0) # the (effective) surface tension for the wet, dry and the interface
+    slip: float = 1e-4   # the slip length
     theta_Y: float = 1.0
     mu_cl: float = 1.0
-    bm: float = 1 * 1e-2     # the bending modulus
+    bm: float = 2 * 1e-3     # the bending modulus
 
 class ThinFilmRunner(Runner):
 
@@ -140,8 +140,8 @@ class ThinFilmRunner(Runner):
         self.a_hist = np.zeros((2, self.num_steps + 1))
         if self.args.resume:
             a_hist_tr = self.resume_file["a_hist"]
-            self.step = a_hist_tr.shape[1]
-            self.a_hist[:,:self.step] = a_hist_tr
+            self.step = a_hist_tr.shape[1] - 1
+            self.a_hist[:,:self.step] = a_hist_tr[:,:-1]
             self.t = a_hist_tr[0,-1]
             self.a = a_hist_tr[1,-1]
             self.cp = int(self.args.resume)
@@ -296,44 +296,25 @@ def downsample(u: np.ndarray, ng_left: int) -> np.ndarray:
 if __name__ == "__main__":
     
     # set up the grid. 
-    # m = 32
-    # xi_b_f = np.concatenate((
-    #     np.linspace(0.0, 0.5, m+1), 
-    #     np.linspace(1/2, 3/4, m+1)[1:], 
-    #     np.linspace(3/4, 7/8, m+1)[1:],
-    #     np.linspace(7/8, 15/16, m+1)[1:],
-    #     np.linspace(15/16, 31/32, m+1)[1:],
-    #     np.linspace(31/32, 63/64, m+1)[1:],
-    #     np.linspace(63/64, 1.0, 2*m+1)[1:],
-    # ))
+    m = 32
+    xi_b_f = np.concatenate((
+        np.linspace(0.0, 0.5, m+1), 
+        np.linspace(1/2, 3/4, m+1)[1:], 
+        np.linspace(3/4, 7/8, m+1)[1:],
+        np.linspace(7/8, 15/16, m+1)[1:],
+        np.linspace(15/16, 31/32, m+1)[1:],
+        np.linspace(31/32, 63/64, m+1)[1:],
+        np.linspace(63/64, 1.0, 2*m+1)[1:],
+    ))
     # finest h = 1/4096
 
-    solp = SolverParameters(dt = 1/(1024*2), Te=1.0)
-    solp.dt_cp = 1.0/32
+    solp = SolverParameters(dt = 1/(1024*64), Te=4.0)
+    solp.dt_cp = 1.0/8
     solp.adapt_t = False
 
     runner = ThinFilmRunner(solp)
-    # runner.prepare(base_grid=xi_b_f)
-    runner.prepare(base_grid=128)
-    # read from file the initial conditions
-    if False:
-        initial_data = np.load("result/tf-s-2-g4-2048-sample.npz") 
-        h, g, kappa = initial_data["h"], initial_data["g"], initial_data["kappa"]
-        assert runner.h.size <= h.size
-        while runner.h.size < h.size:
-            h = downsample(h, 2)
-            g = downsample(g, 1)
-            kappa = downsample(kappa, 1)
-        # set the boundary conditions at the right end
-        g[-1] = -g[-2]; kappa[-1] = -kappa[-2]
-        n_fluid = h.size - 3
-        h[n_fluid+2] = g[n_fluid] + g[n_fluid+1] - h[n_fluid+1]
-        runner.h = h
-        runner.g = g
-        runner.kappa = kappa
-        runner.a = initial_data["a_hist"][1,-1]
-        del initial_data
-    #
+    runner.prepare(base_grid=xi_b_f)
+    # runner.prepare(base_grid=128)
     runner.run()
     runner.finish()
 

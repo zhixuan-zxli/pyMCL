@@ -43,7 +43,7 @@ def getSpaceConvergence() -> None:
 
 def plotContactLine() -> None:
     # dt = 1/(1024*4*8)
-    datanames = ["tf-1e-4-adap-gm2", "tf-1e-4-adap-gm4", "tf-1e-4-adap-gm8"]
+    datanames = ["tf-s-4-g2-adap", "tf-s-4-g4-adap", "tf-s-4-g8-adap"]
     data = []
     for name in datanames:
         data.append(np.load("result/" + name + "/0032.npz"))
@@ -61,6 +61,6 @@ def plotContactLine() -> None:
     
 
 if __name__ == "__main__":
-    getTimeConvergence()
-    getSpaceConvergence()
-    # plotContactLine()
+    # getTimeConvergence()
+    # getSpaceConvergence()
+    plotContactLine()
