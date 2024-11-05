@@ -7,11 +7,11 @@ from runner import *
 
 @dataclass
 class PhysicalParameters:
-    gamma: tuple[float] = (2.0, 2.9, 1.0) # the (effective) surface tension for the wet, dry and the interface
+    gamma: tuple[float] = (4.0, 4.9, 1.0) # the (effective) surface tension for the wet, dry and the interface
     slip: float = 1e-4   # the slip length
-    theta_Y: float = 1.0
+    theta_Y: float = 0.4
     mu_cl: float = 1.0
-    bm: float = 0.5 * 1e-3     # the bending modulus
+    bm: float = 1 * 1e-3     # the bending modulus
 
 class ThinFilmRunner(Runner):
 
@@ -178,7 +178,7 @@ class ThinFilmRunner(Runner):
         if self.t >= self.cp * self.solp.dt_cp:
             print(Fore.GREEN + "\n* Checkpoint {} ".format(self.cp) + Style.RESET_ALL)
             filename = self._get_output_name("{:04}.npz".format(self.cp))
-            np.savez(filename, h=self.h, g=self.g, kappa=self.kappa, a_hist=self.a_hist[:, :self.step+1])
+            np.savez(filename, xi_c=self.xi_c, h=self.h, g=self.g, kappa=self.kappa, a_hist=self.a_hist[:, :self.step+1])
             self.cp += 1
         # visualization
         if self.args.vis:

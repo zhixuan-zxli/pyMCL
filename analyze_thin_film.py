@@ -58,9 +58,37 @@ def plotContactLine() -> None:
     ax1.legend()
     ax2.legend()
     pyplot.show()
+
+def plotSystemTrajectory() -> None:
+    filename = "tf-s-4-g4-adap-Y0.4"
+    checkpoints = [2, 8, 16, 32]
+    npzdata = []
+    for cp in checkpoints:
+        name = "result/" + filename + "/{:04}.npz".format(cp)
+        npzdata.append(np.load(name))
+    #
+    fig, ax = pyplot.subplots()
+    alpha_list = np.linspace(0.2, 1.0, len(checkpoints))
+    for data, alpha in zip(npzdata, alpha_list):
+        # alpha = 1.0
+        xi_c = data["xi_c"]
+        a_hist = data["a_hist"]
+        h = data["h"]
+        g = data["g"]
+        t = a_hist[0, -1]
+        a = a_hist[1, -1]
+        gline = ax.plot(a * xi_c[2:-2], g[1:-1], "-", label=f"t={t}", alpha=alpha)
+        n_fluid = h.size - 3
+        ax.plot(a * xi_c[2:2+n_fluid], h[2:-1], "-", color=gline[0].get_color(), alpha=alpha)
+    ax.legend()
+    pyplot.show()
+    fig.savefig("thin films.png", dpi=300)
+
+
     
 
 if __name__ == "__main__":
     # getTimeConvergence()
     # getSpaceConvergence()
-    plotContactLine()
+    # plotContactLine()
+    plotSystemTrajectory()
