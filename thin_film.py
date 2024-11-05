@@ -7,11 +7,11 @@ from runner import *
 
 @dataclass
 class PhysicalParameters:
-    gamma: tuple[float] = (8.0, 8.9, 1.0) # the (effective) surface tension for the wet, dry and the interface
+    gamma: tuple[float] = (2.0, 2.9, 1.0) # the (effective) surface tension for the wet, dry and the interface
     slip: float = 1e-4   # the slip length
     theta_Y: float = 1.0
     mu_cl: float = 1.0
-    bm: float = 2 * 1e-3     # the bending modulus
+    bm: float = 0.5 * 1e-3     # the bending modulus
 
 class ThinFilmRunner(Runner):
 
@@ -207,7 +207,7 @@ class ThinFilmRunner(Runner):
         h_mid = (1-eta) * h[2:-2] + eta * h[3:-1]              # (n_fluid-1, )
         g_mid = (1-eta) * g[1:n_fluid] + eta * g[2:n_fluid+1]  # (n_fluid-1, )
         # calculate the flux coefficients at the cell boundaries
-        fc = (h_mid - g_mid) * ((h_mid - g_mid)**2/12 + (h_mid**2 + g_mid**2)/4 + self.phyp.slip * (h_mid - g_mid))
+        fc = (h_mid - g_mid)**2 * ((h_mid-g_mid)/3 + self.phyp.slip)
         fc = np.concatenate(((0.0,), fc, (0.0, )))  # (n_fluid+1, ), zero flux at both boundaries
         # build the FD scheme
         ctab = np.zeros((n_fluid, 5))
