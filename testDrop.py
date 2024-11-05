@@ -598,4 +598,7 @@ class Drop_Runner(Runner):
 
 if __name__ == "__main__":
     solp = SolverParameters(dt=1.0/8192/4, Te=1.0)
-    Drop_Runner(solp).run()
+    runner = Drop_Runner(solp)
+    runner.prepare()
+    runner.run()
+    runner.finish()
