@@ -7,6 +7,7 @@ from fem import *
 from scipy.sparse import bmat
 from scikits.umfpack import spsolve
 from matplotlib import pyplot
+from matplotlib.collections import LineCollection
 from colorama import Fore, Style
 
 @dataclass
@@ -340,40 +341,30 @@ class Drop_Runner(Runner):
         t = self.step * self.solp.dt
         if self.args.vis:
             self.ax.clear()
-            press = self.p0.view(np.ndarray)[self.P0_sp.elem_dof][0] + np.sum(self.p1.view(np.ndarray)[self.P1_sp.elem_dof], axis=0) / 3 # (Nt, )
-            tpc = self.ax.tripcolor(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], press, triangles=self.bulk_triangles, vmin=-40, vmax=40)
-            self.ax.triplot(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], triangles=self.bulk_triangles, linewidth=0.5)
+            # press = self.p0.view(np.ndarray)[self.P0_sp.elem_dof][0] + np.sum(self.p1.view(np.ndarray)[self.P1_sp.elem_dof], axis=0) / 3 # (Nt, )
+            # tpc = self.ax.tripcolor(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], press, triangles=self.bulk_triangles, vmin=-40, vmax=40)
+            # self.ax.triplot(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], triangles=self.bulk_triangles, linewidth=0.5)
             # plot the velocity
-            # _u = self.u.view(np.ndarray); _n = self.mesh.coord_map.size; _mag = np.sqrt(np.sum((_u[:_n]**2).reshape(-1, 2), axis=1))
-            # qv = self.ax.quiver(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], _u[:_n:2], _u[1:_n:2], _mag, cmap=pyplot.get_cmap("Spectral"))
-            if not hasattr(self, "colorbar"):
-                self.colorbar = pyplot.colorbar(tpc)
-            else:
-                self.colorbar.update_normal(tpc) # update the scale of the color bar without redrawing it
-            # plot the conormal
-            m3_ = self.m3.view(np.ndarray)
-            self.ax.quiver(self.q_k[self.cl_dof_Q2[::2]], self.q_k[self.cl_dof_Q2[1::2]], m3_[::2], m3_[1::2], color="tab:pink")
-            # plot reference sheet mesh
-            self.ax.plot(self.id_k[self.cl_dof_Q1[::2]], -0.1*np.ones(2), 'ro')
-            self.ax.plot(self.id_k[::2], self.id_k[1::2] - 0.1, 'b+') 
-            self.ax.plot([-1,1], [-0.1,-0.1], 'b-')
-            # plot the fluid stress
-            _x = self.id_k.view(np.ndarray)[self.Q_P1_sp.elem_dof[0::2]].T # (Ne, 2)
-            _x = np.sum(_x, axis=1)/2 # (Ne, )
-            _y0 = self.tau.view(np.ndarray)[self.TAU_sp.elem_dof[0]] # (Ne, )
-            _y0_max = max(np.linalg.norm(_y0, ord=np.inf), 1)
-            _y1 = self.tau.view(np.ndarray)[self.TAU_sp.elem_dof[1]]
-            _y1_max = max(np.linalg.norm(_y1, ord=np.inf), 1)
-            self.ax.plot(_x, _y0/_y0_max, marker="_", color="tab:orange")
-            self.ax.plot(_x, _y1/_y1_max, marker="|", color="tab:pink")
-            # self.ax.add_collection(LineCollection(segments=np.dstack((_x, _y0/_y0_max)), colors="tab:orange"))
-            # self.ax.add_collection(LineCollection(segments=np.dstack((_x, _y1/_y1_max)), colors="tab:pink"))
-            # plot displacement
-            self.ax.plot(self.id_k_lift[::2], self.w[::2], linestyle="", marker="o", color="tab:purple")
-            self.ax.plot(self.id_k_lift[::2], self.w[1::2], linestyle="", marker="x", color="tab:olive")
-            # plot the bending moment
-            self.ax.plot(self.id_k_lift[::2], self.mom-0.1, 'kv')
-            self.ax.set_ylim(-0.15, 1.0)
+            _u = self.u.view(np.ndarray); _n = self.mesh.coord_map.size; # _mag = np.sqrt(np.sum((_u[:_n]**2).reshape(-1, 2), axis=1))
+            qv = self.ax.quiver(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], _u[:_n:2], _u[1:_n:2], color="tab:blue") #, _mag, cmap=pyplot.get_cmap("Spectral"))
+            # plot the interface
+            Y_sp = self.y_k.fe # type: FunctionSpace
+            _y_k = self.y_k.view(np.ndarray)
+            p0 = _y_k[Y_sp.elem_dof[:2]].T # (Ne, 2)
+            p1 = _y_k[Y_sp.elem_dof[2:]].T # (Ne, 2)
+            segs = np.concatenate((p0[:,np.newaxis], p1[:,np.newaxis]), axis=1)
+            self.ax.add_collection(LineCollection(segments=segs, colors="tab:red"))
+            # plot the sheet
+            Q_P1_sp = self.Q_P1_sp
+            _q_k_down = self.q_k_down.view(np.ndarray)
+            p0 = _q_k_down[Q_P1_sp.elem_dof[:2]].T # (Ne, 2)
+            p1 = _q_k_down[Q_P1_sp.elem_dof[2:]].T # (Ne, 2)
+            segs = np.concatenate((p0[:,np.newaxis], p1[:,np.newaxis]), axis=1)
+            self.ax.add_collection(LineCollection(segments=segs, colors="tab:orange"))
+            # plot the frame
+            self.ax.plot((-1.0, -1.0, 1.0, 1.0), (0.0, 1.0, 1.0, 0.0), 'k-')
+            #
+            self.ax.set_xlim(-1.0, 1.0); self.ax.set_ylim(-0.15, 1.0)
             pyplot.title("t={:.5f}".format(t))
             pyplot.draw()
             pyplot.pause(1e-4)
