@@ -1,3 +1,4 @@
+from math import sqrt
 import numpy as np
 from fem.post import printConvergenceTable
 from thin_film import downsample
@@ -84,11 +85,80 @@ def plotSystemTrajectory() -> None:
     pyplot.show()
     fig.savefig("thin films.png", dpi=300)
 
+def plotOuter(xf: np.ndarray, xs: np.ndarray, gamma: tuple[float], B: float, V0: float, a: float, ax, alpha: float = 1.0) -> None:
+    # solve for p0 from V0
+    t1 = a**3*(1/gamma[0]+1/gamma[2])/3
+    t2 = a - sqrt(B/gamma[0])*(1 - np.exp(-sqrt(gamma[0]/B)*a))
+    c10 = B/(gamma[0]*sqrt(gamma[0]/gamma[1])*(sqrt(gamma[0])+sqrt(gamma[1])))*(-a/sqrt(B)-1/sqrt(gamma[1]))
+    p0 = V0 / (t1 + c10*t2)
+    # solve for the parameters in the sheet
+    c1 = c10 * p0
+    c2 = B/(sqrt(gamma[0]*gamma[1])*(sqrt(gamma[0])+sqrt(gamma[1])))*(1/sqrt(gamma[0]) - a/sqrt(B)) * p0
+    d1 = c2 - c1 - p0/(2*gamma[0])*a**2
+    #
+    h = p0/(2*gamma[2])*(a**2-xf**2) + c2
+    g = np.where(xs <= a, \
+                 p0/(2*gamma[0])*xs**2 + c1*np.exp(sqrt(gamma[0]/B)*(xs-a)) + d1, \
+                 c2*np.exp(-sqrt(gamma[1]/B)*(xs-a))
+    )
+    # check volume
+    nf = xf.size
+    vh = np.sum((h[1:] + h[:-1])/2*(xf[1:] - xf[:-1]))
+    vg = np.sum((g[1:nf] + g[:nf-1])/2*(xs[1:nf] - xs[:nf-1]))
+    print("Numerical volume = {:.6f}".format(vh - vg))
+    #
+    lines = ax.plot(xf, h, '-', alpha=alpha)
+    ax.plot(xs, g, '-', color=lines[0].get_color(), alpha=alpha)
 
+def plotAppContactAngle(gamma: tuple[np.ndarray], B: float, lb: float, V0: float, a: float, ax) -> None:
+    if lb != 0.0:
+        B = lb**2*gamma[0] # for fixing bending length
+    # solve for p0 from V0
+    t1 = a**3*(1/gamma[0]+1/gamma[2])/3
+    t2 = a - np.sqrt(B/gamma[0])*(1 - np.exp(-np.sqrt(gamma[0]/B)*a))
+    c10 = B/(gamma[0]*np.sqrt(gamma[0]/gamma[1])*(np.sqrt(gamma[0])+np.sqrt(gamma[1])))*(-a/np.sqrt(B)-1/np.sqrt(gamma[1]))
+    p0 = V0 / (t1 + c10*t2) # type: np.ndarray
+    # solve for the apparent contact angles
+    dh = -p0*a/gamma[2]
+    c2 = B/(np.sqrt(gamma[0]*gamma[1])*(np.sqrt(gamma[0])+np.sqrt(gamma[1])))*(1/np.sqrt(gamma[0]) - a/np.sqrt(B)) * p0
+    dg = -c2*np.sqrt(gamma[1]/B)
+    #
+    if lb != 0.0:
+        label="lb={:.2f}, a={:.2f}".format(lb, a)
+    else:
+        label="B={:.1e}, a={:.2f}".format(B, a)
+    lines = ax.plot(gamma[0], dg-dh, '-', label=label)
+    dh_limit = -3*V0/(gamma[2]*a**2)
+    ax.plot((gamma[0,0], gamma[0,-1]), (-dh_limit, -dh_limit), '--', color=lines[0].get_color())
+    ax.set_xlabel("gamma_1")
+    ax.set_ylabel("app. contact angle")
+    # todo: LaTeX labels and legends?
     
 
 if __name__ == "__main__":
     # getTimeConvergence()
     # getSpaceConvergence()
     # plotContactLine()
-    plotSystemTrajectory()
+    # plotSystemTrajectory()
+    # varying a
+    fig, ax = pyplot.subplots()
+    V0 = 1.0
+    gamma = np.zeros((3, 65))
+    gamma[0] = np.linspace(0.5, 20.0, 65)
+    gamma[1] = gamma[0] + 0.9
+    gamma[2,:] = 1.0
+    plotAppContactAngle(gamma, 1e-2, 0.0, V0, 1.0, ax)
+    plotAppContactAngle(gamma, 1e-2, 0.0, V0, 1.2, ax)
+    plotAppContactAngle(gamma, 1e-2, 0.0, V0, 1.4, ax)
+    plotAppContactAngle(gamma, 1e-2, 0.1, V0, 1.0, ax)
+    plotAppContactAngle(gamma, 1e-2, 0.1, V0, 1.2, ax)
+    plotAppContactAngle(gamma, 1e-2, 0.1, V0, 1.4, ax)
+    ax.legend()
+    # varying B
+    # fig, ax = pyplot.subplots()
+    # plotAppContactAngle(gamma, 1/8, V0, 1.2, ax)
+    # plotAppContactAngle(gamma, 1/32, V0, 1.2, ax)
+    # plotAppContactAngle(gamma, 1/128, V0, 1.2, ax)
+    # ax.legend()
+
+    pyplot.show()
