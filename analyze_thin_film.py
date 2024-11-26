@@ -110,7 +110,7 @@ def plotOuter(xf: np.ndarray, xs: np.ndarray, gamma: tuple[float], B: float, V0:
     lines = ax.plot(xf, h, '-', alpha=alpha)
     ax.plot(xs, g, '-', color=lines[0].get_color(), alpha=alpha)
 
-def plotAppContactAngle(gamma: tuple[np.ndarray], B: float, lb: float, V0: float, a: float, ax) -> None:
+def plotAppContactAngle(ax, gamma: np.ndarray, B: float, lb: float, V0: float, a: np.ndarray) -> None:
     if lb != 0.0:
         B = lb**2*gamma[0] # for fixing bending length
     # solve for p0 from V0
@@ -123,14 +123,18 @@ def plotAppContactAngle(gamma: tuple[np.ndarray], B: float, lb: float, V0: float
     c2 = B/(np.sqrt(gamma[0]*gamma[1])*(np.sqrt(gamma[0])+np.sqrt(gamma[1])))*(1/np.sqrt(gamma[0]) - a/np.sqrt(B)) * p0
     dg = -c2*np.sqrt(gamma[1]/B)
     #
-    if lb != 0.0:
-        label="lb={:.2f}, a={:.2f}".format(lb, a)
+    if isinstance(a, np.ndarray):
+        ax.plot(a, dg-dh, '-', label="gamma_1={:.2f}, B={:.2e}".format(gamma[0], B))
+        ax.set_xlabel("a")
     else:
-        label="B={:.1e}, a={:.2f}".format(B, a)
-    lines = ax.plot(gamma[0], dg-dh, '-', label=label)
-    dh_limit = -3*V0/(gamma[2]*a**2)
-    ax.plot((gamma[0,0], gamma[0,-1]), (-dh_limit, -dh_limit), '--', color=lines[0].get_color())
-    ax.set_xlabel("gamma_1")
+        if lb != 0.0:
+            label="lb={:.2f}, a={:.2f}".format(lb, a)
+        else:
+            label="B={:.1e}, a={:.2f}".format(B, a)
+        lines = ax.plot(gamma[0], dg-dh, '-', label=label)
+        dh_limit = -3*V0/(gamma[2]*a**2)
+        ax.plot((gamma[0,0], gamma[0,-1]), (-dh_limit, -dh_limit), '--', color=lines[0].get_color())
+        ax.set_xlabel("gamma_1")
     ax.set_ylabel("app. contact angle")
     # todo: LaTeX labels and legends?
     
@@ -147,18 +151,17 @@ if __name__ == "__main__":
     gamma[0] = np.linspace(0.5, 20.0, 65)
     gamma[1] = gamma[0] + 0.9
     gamma[2,:] = 1.0
-    plotAppContactAngle(gamma, 1e-2, 0.0, V0, 1.0, ax)
-    plotAppContactAngle(gamma, 1e-2, 0.0, V0, 1.2, ax)
-    plotAppContactAngle(gamma, 1e-2, 0.0, V0, 1.4, ax)
-    plotAppContactAngle(gamma, 1e-2, 0.1, V0, 1.0, ax)
-    plotAppContactAngle(gamma, 1e-2, 0.1, V0, 1.2, ax)
-    plotAppContactAngle(gamma, 1e-2, 0.1, V0, 1.4, ax)
+    plotAppContactAngle(ax, gamma, 0.0, 0.1, V0, 1.0)
+    plotAppContactAngle(ax, gamma, 0.0, 0.1, V0, 1.2)
+    plotAppContactAngle(ax, gamma, 0.0, 0.1, V0, 1.4)
     ax.legend()
-    # varying B
-    # fig, ax = pyplot.subplots()
-    # plotAppContactAngle(gamma, 1/8, V0, 1.2, ax)
-    # plotAppContactAngle(gamma, 1/32, V0, 1.2, ax)
-    # plotAppContactAngle(gamma, 1/128, V0, 1.2, ax)
-    # ax.legend()
+    # 
+    fig, ax = pyplot.subplots()
+    a = np.linspace(1.0, 2.0, 65)
+    plotAppContactAngle(ax, (2.0, 2.9, 1.0), 0.0, 0.1, 1.0, a)
+    plotAppContactAngle(ax, (4.0, 4.9, 1.0), 0.0, 0.1, 1.0, a)
+    plotAppContactAngle(ax, (8.0, 8.9, 1.0), 0.0, 0.1, 1.0, a)
+    plotAppContactAngle(ax, (20.0, 20.9, 1.0), 0.0, 0.1, 1.0, a)
+    ax.legend()
 
     pyplot.show()
