@@ -11,14 +11,14 @@ class PhysicalParameters:
     slip: float = 1e-4   # the slip length
     theta_Y: float = 0.4
     mu_cl: float = 1.0
-    bm: float = 1 * 1e-3     # the bending modulus
+    bm: float = 4.0 * 1e-2     # the bending modulus
 
 class ThinFilmRunner(Runner):
 
     def __init__(self, solp):
         super().__init__(solp)
 
-    def spr_from_outer(self, row_idx: np.ndarray, vec1: np.ndarray, col_idx: np.ndarray, vec2: np.ndarray, mshape: tuple[int]) -> sp.csc_matrix:
+    def spr_from_outer_prod(self, row_idx: np.ndarray, vec1: np.ndarray, col_idx: np.ndarray, vec2: np.ndarray, mshape: tuple[int]) -> sp.csc_matrix:
         nrow, ncol = row_idx.size, col_idx.size
         row_x = np.tile(row_idx, ncol)
         col_x = np.repeat(col_idx, nrow)
@@ -133,8 +133,8 @@ class ThinFilmRunner(Runner):
         Ljv = Ljv[n_fluid:n_fluid+2] # the effective entries are [n_fluid:n_fluid+2]
         # col_vec = np.array((-1.0 / (a_star * dxi_at_cl), 1.0 / (a_star * dxi_at_cl)))
         col_vec = np.array((-1.0 / self.dxi_at_cl, 1.0 / self.dxi_at_cl))
-        self.Lj4h = self.spr_from_outer(np.arange(n_fluid, n_fluid+2), Ljv, np.arange(n_fluid+1, n_fluid+3), col_vec, (n_total+2, n_fluid+3))
-        self.Lj4g = self.spr_from_outer(np.arange(n_fluid, n_fluid+2), Ljv, np.arange(n_fluid, n_fluid+2), col_vec, (n_total+2, n_total+2))
+        self.Lj4h = self.spr_from_outer_prod(np.arange(n_fluid, n_fluid+2), Ljv, np.arange(n_fluid+1, n_fluid+3), col_vec, (n_total+2, n_fluid+3))
+        self.Lj4g = self.spr_from_outer_prod(np.arange(n_fluid, n_fluid+2), Ljv, np.arange(n_fluid, n_fluid+2), col_vec, (n_total+2, n_total+2))
         
         # 3. set initial values
         self.a_hist = np.zeros((2, self.num_steps + 1))
@@ -272,8 +272,8 @@ class ThinFilmRunner(Runner):
         dg = (g[n_fluid+1] - g[n_fluid]) / (a_star * dxi_at_cl)
         adot = self.phyp.mu_cl/2 * ((dh-dg)**2 - self.phyp.theta_Y**2)
         self.a += adot * solp.dt
-        print("diff={:.2e}, {:.2e}, a_next={:.5f}, adot={:.2e}, dh={:.2e}, dg={:.2e}".format(
-            delta_h, delta_g, a_star, adot, dh, dg))
+        print("diff={:.2e}, {:.2e}, a_next={:.5f}, adot={:.2e}, dh-dg={:.2e}".format(
+            delta_h, delta_g, self.a, adot, dh-dg))
 
         # adaptively change the dt
         self.t += self.solp.dt
@@ -304,11 +304,13 @@ if __name__ == "__main__":
         np.linspace(7/8, 15/16, m+1)[1:],
         np.linspace(15/16, 31/32, m+1)[1:],
         np.linspace(31/32, 63/64, m+1)[1:],
-        np.linspace(63/64, 1.0, 2*m+1)[1:],
+        np.linspace(63/64, 127/128, m+1)[1:],
+        np.linspace(127/128, 255/256, m+1)[1:],
+        np.linspace(255/256, 1.0, 2*m+1)[1:],
     ))
-    # finest h = 1/4096
+    # finest h = 1/16384
 
-    solp = SolverParameters(dt = 1/(1024*64), Te=4.0)
+    solp = SolverParameters(dt = 1/(1024*256), Te=4.0)
     solp.dt_cp = 1.0/8
     solp.adapt_t = False
 
