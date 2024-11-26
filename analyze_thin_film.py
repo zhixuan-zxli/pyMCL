@@ -2,6 +2,7 @@ from math import sqrt
 import numpy as np
 from fem.post import printConvergenceTable
 from thin_film import downsample
+import matplotlib
 from matplotlib import pyplot
 from colorama import Fore, Style
 
@@ -124,26 +125,26 @@ def plotAppContactAngle(ax, gamma: np.ndarray, B: float, lb: float, V0: float, a
     dg = -c2*np.sqrt(gamma[1]/B)
     #
     if isinstance(a, np.ndarray):
-        ax.plot(a, dg-dh, '-', label="gamma_1={:.2f}, B={:.2e}".format(gamma[0], B))
-        ax.set_xlabel("a")
+        ax.plot(a, dg-dh, '-', label=r"$\gamma_1={:.2f}, B={:.2e}$".format(gamma[0], B))
+        ax.set_xlabel(r"$a$")
     else:
         if lb != 0.0:
-            label="lb={:.2f}, a={:.2f}".format(lb, a)
+            label=r"$l_b={:.2f}, a={:.2f}$".format(lb, a)
         else:
-            label="B={:.1e}, a={:.2f}".format(B, a)
+            label=r"$B={:.1e}, a={:.2f}$".format(B, a)
         lines = ax.plot(gamma[0], dg-dh, '-', label=label)
         dh_limit = -3*V0/(gamma[2]*a**2)
         ax.plot((gamma[0,0], gamma[0,-1]), (-dh_limit, -dh_limit), '--', color=lines[0].get_color())
-        ax.set_xlabel("gamma_1")
-    ax.set_ylabel("app. contact angle")
-    # todo: LaTeX labels and legends?
+        ax.set_xlabel(r"$\gamma_1$")
+    ax.set_ylabel(r"$\theta_{\mathrm{app}}$")
     
 
 if __name__ == "__main__":
+
     # getTimeConvergence()
     # getSpaceConvergence()
     # plotContactLine()
-    # plotSystemTrajectory()
+    plotSystemTrajectory()
     # varying a
     fig, ax = pyplot.subplots()
     V0 = 1.0
