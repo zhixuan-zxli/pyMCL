@@ -62,7 +62,7 @@ def plotContactLine() -> None:
     pyplot.show()
 
 def plotSystemTrajectory() -> None:
-    filename = "tf-s-4-g4-adap-Y0.4"
+    filename = "tf-s-4-g4-adap-fine-Y0.4"
     checkpoints = [2, 8, 16, 32]
     npzdata = []
     for cp in checkpoints:
@@ -79,12 +79,51 @@ def plotSystemTrajectory() -> None:
         g = data["g"]
         t = a_hist[0, -1]
         a = a_hist[1, -1]
-        gline = ax.plot(a * xi_c[2:-2], g[1:-1], "-", label=f"t={t}", alpha=alpha)
+        gline = ax.plot(a * xi_c[2:-2], g[1:-1], "-", label=f"$t={t}$", alpha=alpha)
         n_fluid = h.size - 3
         ax.plot(a * xi_c[2:2+n_fluid], h[2:-1], "-", color=gline[0].get_color(), alpha=alpha)
     ax.legend()
+    # pyplot.show()
+    # fig.savefig("thin films.png", dpi=300)
+
+def plotInterfaceSlope() -> None:
+    lbd = 1e-4
+    eps = -1.0 / np.log(lbd)
+    theta_Y = 0.4
+    filename = "tf-s-4-g4-adap-fine-Y0.4"
+    checkpoints = [2, 8, 16, 32]
+    npzdata = []
+    for cp in checkpoints:
+        name = "result/" + filename + "/{:04}.npz".format(cp)
+        npzdata.append(np.load(name))
+    #
+    _, ax1 = pyplot.subplots() # for the slope of the fluid interface
+    _, ax2 = pyplot.subplots() # for the slope of h-g
+    # _, ax3 = pyplot.subplots() # for the slope connecting the CL
+    alpha_list = np.linspace(0.2, 1.0, len(checkpoints))
+    for data, alpha in zip(npzdata, alpha_list):
+        xi_c = data["xi_c"]
+        a_hist = data["a_hist"]
+        h = data["h"]
+        g = data["g"]
+        t = a_hist[0, -1]
+        a = a_hist[1, -1]
+        n_fluid = h.size - 3
+        xi_cc = (xi_c[3:n_fluid+2] + xi_c[2:n_fluid+1]) / 2
+        z_c = np.log(a * (1.0 - xi_cc)) * eps + 1.0
+        z = np.log(a * (1.0 - xi_c[2:n_fluid+1])) * eps + 1.0
+        dh = (h[3:n_fluid+2] - h[2:n_fluid+1]) / (xi_c[3:n_fluid+2] - xi_c[2:n_fluid+1]) / a
+        dg = (g[2:n_fluid+1] - g[1:n_fluid]) / (xi_c[3:n_fluid+2] - xi_c[2:n_fluid+1]) / a
+        gline = ax1.plot(z_c, dg, '-o', markerfacecolor='none', label=f"$t={t}$", alpha=alpha)
+        ax2.plot(z_c, dg-dh, '-o', markerfacecolor='none', label=f"$t={t}$", color=gline[0].get_color(), alpha=alpha)
+        # ax3.plot(z, (h[3:n_fluid+2] - g[2:n_fluid+1]) / (1.0 - xi_c[2:n_fluid+1]) / a, '-o', markerfacecolor='none', label=f"$t={t}$", color=gline[0].get_color(), alpha=alpha)
+    # plot the auxiliary line
+    ax2.plot((z_c[0], z_c[-1]), (theta_Y, theta_Y), '--', color='black')
+    ax1.set_title("$g'$"); ax1.legend()
+    ax2.set_title("$h'-g'$"); ax2.legend()
+    # ax3.set_title("$(h-g)/y$"); ax3.legend()
     pyplot.show()
-    fig.savefig("thin films.png", dpi=300)
+
 
 def plotOuter(xf: np.ndarray, xs: np.ndarray, gamma: tuple[float], B: float, V0: float, a: float, ax, alpha: float = 1.0) -> None:
     # solve for p0 from V0
@@ -145,24 +184,25 @@ if __name__ == "__main__":
     # getSpaceConvergence()
     # plotContactLine()
     plotSystemTrajectory()
+    plotInterfaceSlope()
     # varying a
-    fig, ax = pyplot.subplots()
-    V0 = 1.0
-    gamma = np.zeros((3, 65))
-    gamma[0] = np.linspace(0.5, 20.0, 65)
-    gamma[1] = gamma[0] + 0.9
-    gamma[2,:] = 1.0
-    plotAppContactAngle(ax, gamma, 0.0, 0.1, V0, 1.0)
-    plotAppContactAngle(ax, gamma, 0.0, 0.1, V0, 1.2)
-    plotAppContactAngle(ax, gamma, 0.0, 0.1, V0, 1.4)
-    ax.legend()
-    # 
-    fig, ax = pyplot.subplots()
-    a = np.linspace(1.0, 2.0, 65)
-    plotAppContactAngle(ax, (2.0, 2.9, 1.0), 0.0, 0.1, 1.0, a)
-    plotAppContactAngle(ax, (4.0, 4.9, 1.0), 0.0, 0.1, 1.0, a)
-    plotAppContactAngle(ax, (8.0, 8.9, 1.0), 0.0, 0.1, 1.0, a)
-    plotAppContactAngle(ax, (20.0, 20.9, 1.0), 0.0, 0.1, 1.0, a)
-    ax.legend()
+    # fig, ax = pyplot.subplots()
+    # V0 = 1.0
+    # gamma = np.zeros((3, 65))
+    # gamma[0] = np.linspace(0.5, 20.0, 65)
+    # gamma[1] = gamma[0] + 0.9
+    # gamma[2,:] = 1.0
+    # plotAppContactAngle(ax, gamma, 0.0, 0.1, V0, 1.0)
+    # plotAppContactAngle(ax, gamma, 0.0, 0.1, V0, 1.2)
+    # plotAppContactAngle(ax, gamma, 0.0, 0.1, V0, 1.4)
+    # ax.legend()
+    # # 
+    # fig, ax = pyplot.subplots()
+    # a = np.linspace(1.0, 2.0, 65)
+    # plotAppContactAngle(ax, (2.0, 2.9, 1.0), 0.0, 0.1, 1.0, a)
+    # plotAppContactAngle(ax, (4.0, 4.9, 1.0), 0.0, 0.1, 1.0, a)
+    # plotAppContactAngle(ax, (8.0, 8.9, 1.0), 0.0, 0.1, 1.0, a)
+    # plotAppContactAngle(ax, (20.0, 20.9, 1.0), 0.0, 0.1, 1.0, a)
+    # ax.legend()
 
     pyplot.show()
