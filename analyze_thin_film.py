@@ -44,11 +44,11 @@ def getSpaceConvergence() -> None:
     printConvergenceTable(table_headers, error_table)
 
 def plotContactLine() -> None:
-    # dt = 1/(1024*4*8)
-    datanames = ["tf-s-4-g2-adap", "tf-s-4-g4-adap", "tf-s-4-g8-adap"]
-    data = []
-    for name in datanames:
-        data.append(np.load("result/" + name + "/0032.npz"))
+    datanames = ["result/tf-s-4-g2-adap/0032.npz", 
+                 "result/tf-s-4-g4-adap/0032.npz", 
+                 "result/tf-s-4-g8-adap/0032.npz", 
+                 "result/tf-s-4-g4-aa/0128.npz"]
+    data = [np.load(name) for name in datanames]
     # plot the contact line location
     _, ax1 = pyplot.subplots()
     _, ax2 = pyplot.subplots()
@@ -58,8 +58,7 @@ def plotContactLine() -> None:
         speed = (a_hist[1,1:] - a_hist[1,:-1]) / (a_hist[0,1:] - a_hist[0,:-1])
         ax2.plot(a_hist[0,1:-1], speed[1:], '-', label=name)
     ax1.legend()
-    ax2.legend()
-    pyplot.show()
+    ax2.set_ylim(0.0, 0.5); ax2.legend()
 
 def plotSystemTrajectory() -> None:
     filename = "tf-s-4-g4-adap-fine-Y0.4"
@@ -182,9 +181,9 @@ if __name__ == "__main__":
 
     # getTimeConvergence()
     # getSpaceConvergence()
-    # plotContactLine()
-    plotSystemTrajectory()
-    plotInterfaceSlope()
+    plotContactLine()
+    # plotSystemTrajectory()
+    # plotInterfaceSlope()
     # varying a
     # fig, ax = pyplot.subplots()
     # V0 = 1.0

@@ -1,9 +1,12 @@
 from typing import Union
+from dataclasses import dataclass
+import pickle
 import numpy as np
 from scipy import sparse as sp
-from scikits.umfpack import spsolve
+from scipy.sparse.linalg import spsolve
 from matplotlib import pyplot
-from runner import *
+from runner import SolverParameters, Runner
+from colorama import Fore, Style
 
 @dataclass
 class PhysicalParameters:
@@ -37,7 +40,7 @@ class ThinFilmRunner(Runner):
             pickle.dump(self.phyp, f)
             
         if isinstance(base_grid, int):
-            xi_b_f = np.linspace(0.0, 1.0, base_grid * 2**solp.spaceref + 1)
+            xi_b_f = np.linspace(0.0, 1.0, base_grid * 2**self.solp.spaceref + 1)
         else:
             xi_b_f = base_grid
         
@@ -149,6 +152,7 @@ class ThinFilmRunner(Runner):
             self.h = self.resume_file["h"].copy()
             self.g = self.resume_file["g"].copy()
             self.kappa = self.resume_file["kappa"].copy()
+            self.solp.dt = self.resume_file["dt"] #recover the previously adapted dt
             del self.resume_file
         else:
             self.t = 0.0
@@ -178,7 +182,7 @@ class ThinFilmRunner(Runner):
         if self.t >= self.cp * self.solp.dt_cp:
             print(Fore.GREEN + "\n* Checkpoint {} ".format(self.cp) + Style.RESET_ALL)
             filename = self._get_output_name("{:04}.npz".format(self.cp))
-            np.savez(filename, xi_c=self.xi_c, h=self.h, g=self.g, kappa=self.kappa, a_hist=self.a_hist[:, :self.step+1])
+            np.savez(filename, xi_c=self.xi_c, h=self.h, g=self.g, kappa=self.kappa, a_hist=self.a_hist[:, :self.step+1], dt=self.solp.dt)
             self.cp += 1
         # visualization
         if self.args.vis:
@@ -193,7 +197,8 @@ class ThinFilmRunner(Runner):
         return self.t >= self.solp.Te
     
     def main_step(self) -> None:
-           
+        
+        solp = self.solp
         h, g = self.h, self.g
         dd_table = self.dd_table
         xi_b_f, xi_c_f = self.xi_b_f, self.xi_c_f
@@ -271,15 +276,16 @@ class ThinFilmRunner(Runner):
         dh = (h[-1] - h[-2]) / (a_star * dxi_at_cl)
         dg = (g[n_fluid+1] - g[n_fluid]) / (a_star * dxi_at_cl)
         adot = self.phyp.mu_cl/2 * ((dh-dg)**2 - self.phyp.theta_Y**2)
-        self.a += adot * solp.dt
+        self.a += adot * self.solp.dt
         print("diff={:.2e}, {:.2e}, a_next={:.5f}, adot={:.2e}, dh-dg={:.2e}".format(
             delta_h, delta_g, self.a, adot, dh-dg))
 
         # adaptively change the dt
         self.t += self.solp.dt
         if self.solp.adapt_t and self.step > 0 and self.step % 128 == 0 \
-            and solp.dt < self.min_dxi / adot / 16 and solp.dt < self.min_dxi:
-            solp.dt *= 2
+            and self.solp.dt * adot < self.min_dxi / 8 and self.solp.dt < self.min_dxi:
+            self.solp.dt *= 2
+            print(Fore.GREEN + "Adaptively change dt to {:.3e}".format(self.solp.dt) + Style.RESET_ALL)
 
 def downsample(u: np.ndarray, ng_left: int) -> np.ndarray:
     """
@@ -310,11 +316,11 @@ if __name__ == "__main__":
     ))
     # finest h = 1/16384
 
-    solp = SolverParameters(dt = 1/(1024*256), Te=4.0)
-    solp.dt_cp = 1.0/8
-    solp.adapt_t = False
+    the_solp = SolverParameters(dt = 1/(1024*256), Te=16.0)
+    the_solp.dt_cp = 1.0/2
+    the_solp.adapt_t = True #False
 
-    runner = ThinFilmRunner(solp)
+    runner = ThinFilmRunner(the_solp)
     runner.prepare(base_grid=xi_b_f)
     # runner.prepare(base_grid=128)
     runner.run()
