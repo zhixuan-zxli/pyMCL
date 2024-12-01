@@ -1,8 +1,7 @@
-from math import sqrt
+import pickle
 import numpy as np
 from fem.post import printConvergenceTable
-from thin_film import downsample
-import matplotlib
+from thin_film import downsample, PhysicalParameters
 from matplotlib import pyplot
 from colorama import Fore, Style
 
@@ -43,7 +42,7 @@ def getSpaceConvergence() -> None:
     print(Fore.GREEN + "\nSpace convergence: " + Style.RESET_ALL)
     printConvergenceTable(table_headers, error_table)
 
-def plotContactLine() -> None:
+def plotCLSpeed() -> None:
     datanames = ["result/tf-s-4-g4-aa/0032.npz"]
     data = [np.load(name) for name in datanames]
     # plot the contact line location
@@ -57,96 +56,88 @@ def plotContactLine() -> None:
     ax1.set_ylabel("$a(t)$"); ax1.legend()
     ax2.set_ylabel("$\\dot{a}(t)$"); ax2.set_ylim(0.0, 0.5); ax2.legend()
 
-def plotSystemTrajectory() -> None:
+def plotProfiles() -> None:
     filename = "tf-s-4-g4-aa"
-    checkpoints = [1, 2, 4, 8, 16, 32]
+    checkpoints = [2, 8] #[1, 2, 4, 8, 16, 32]
+    V0 = 4.0 * (1 - (1-np.exp(-4))/4)
+    with open("result/" + filename + "/PhysicalParameters", "rb") as f:
+        phyp = pickle.load(f)
+    print("Parameters of the profiles: \nV0 = {:.4f}\n".format(V0), phyp)
+    eps = -1.0 / np.log(phyp.slip)
+    # load the data
     npzdata = []
     for cp in checkpoints:
         name = "result/" + filename + "/{:04}.npz".format(cp)
         npzdata.append(np.load(name))
     #
-    fig, ax = pyplot.subplots()
+    fig, ax1 = pyplot.subplots() # axis for plotting the profiles
+    _, ax2 = pyplot.subplots() # axis for plotting the slopes
     alpha_list = np.linspace(0.2, 1.0, len(checkpoints))
     for data, alpha in zip(npzdata, alpha_list):
-        # alpha = 1.0
         xi_c = data["xi_c"]
         a_hist = data["a_hist"]
         h = data["h"]
         g = data["g"]
         t = a_hist[0, -1]
         a = a_hist[1, -1]
-        gline = ax.plot(a * xi_c[2:-2], g[1:-1], "-", label="$t={:.2f}$".format(t), alpha=alpha)
+        adot = (a_hist[1, -1] - a_hist[1, -2]) / (a_hist[0, -1] - a_hist[0, -2])
+        gline = ax1.plot(a * xi_c[2:-2], g[1:-1], "-", label="$t={:.2f}$".format(t), alpha=alpha)
         n_fluid = h.size - 3
-        ax.plot(a * xi_c[2:2+n_fluid], h[2:-1], "-", color=gline[0].get_color(), alpha=alpha)
-    ax.legend()
+        ax1.plot(a * xi_c[2:2+n_fluid], h[2:-1], "-", color=gline[0].get_color(), alpha=alpha)
+        # calculate and plot the slopes
+        xi_cc = (xi_c[3:n_fluid+2] + xi_c[2:n_fluid+1]) / 2
+        z_c = np.log(a * (1.0 - xi_cc)) * eps + 1.0
+        dh = (h[3:n_fluid+2] - h[2:n_fluid+1]) / (xi_c[3:n_fluid+2] - xi_c[2:n_fluid+1]) / a
+        dg = (g[2:n_fluid+1] - g[1:n_fluid]) / (xi_c[3:n_fluid+2] - xi_c[2:n_fluid+1]) / a
+        # gline = ax1.plot(z_c, dg, '-o', markerfacecolor='none', label=f"$t={t}$", alpha=alpha)
+        ax2.plot(z_c, dg-dh, 'o', markerfacecolor='none', label="$t={:.2f}$".format(t), alpha=alpha)
+        # plot the theoretical prediction
+        plotPrediction(xi_c[2:2+n_fluid], xi_c[2:-2], phyp, V0, a, adot, alpha, ax1, ax2)
+    ax1.legend()
+    ax2.legend(); ax2.set_xlabel("$z$"); ax2.set_ylabel("$h'-g'$")
     # pyplot.show()
     # fig.savefig("thin films.png", dpi=300)
 
-def plotInterfaceSlope() -> None:
-    lbd = 1e-4
-    eps = -1.0 / np.log(lbd)
-    theta_Y = 0.4
-    filename = "tf-s-4-g4-adap-fine-Y0.4"
-    checkpoints = [2, 8, 16, 32]
-    npzdata = []
-    for cp in checkpoints:
-        name = "result/" + filename + "/{:04}.npz".format(cp)
-        npzdata.append(np.load(name))
-    #
-    _, ax1 = pyplot.subplots() # for the slope of the fluid interface
-    _, ax2 = pyplot.subplots() # for the slope of h-g
-    # _, ax3 = pyplot.subplots() # for the slope connecting the CL
-    alpha_list = np.linspace(0.2, 1.0, len(checkpoints))
-    for data, alpha in zip(npzdata, alpha_list):
-        xi_c = data["xi_c"]
-        a_hist = data["a_hist"]
-        h = data["h"]
-        g = data["g"]
-        t = a_hist[0, -1]
-        a = a_hist[1, -1]
-        n_fluid = h.size - 3
-        xi_cc = (xi_c[3:n_fluid+2] + xi_c[2:n_fluid+1]) / 2
-        z_c = np.log(a * (1.0 - xi_cc)) * eps + 1.0
-        z = np.log(a * (1.0 - xi_c[2:n_fluid+1])) * eps + 1.0
-        dh = (h[3:n_fluid+2] - h[2:n_fluid+1]) / (xi_c[3:n_fluid+2] - xi_c[2:n_fluid+1]) / a
-        dg = (g[2:n_fluid+1] - g[1:n_fluid]) / (xi_c[3:n_fluid+2] - xi_c[2:n_fluid+1]) / a
-        gline = ax1.plot(z_c, dg, '-o', markerfacecolor='none', label=f"$t={t}$", alpha=alpha)
-        ax2.plot(z_c, dg-dh, '-o', markerfacecolor='none', label=f"$t={t}$", color=gline[0].get_color(), alpha=alpha)
-        # ax3.plot(z, (h[3:n_fluid+2] - g[2:n_fluid+1]) / (1.0 - xi_c[2:n_fluid+1]) / a, '-o', markerfacecolor='none', label=f"$t={t}$", color=gline[0].get_color(), alpha=alpha)
-    # plot the auxiliary line
-    ax2.plot((z_c[0], z_c[-1]), (theta_Y, theta_Y), '--', color='black')
-    ax1.set_title("$g'$"); ax1.legend()
-    ax2.set_title("$h'-g'$"); ax2.legend()
-    # ax3.set_title("$(h-g)/y$"); ax3.legend()
-    pyplot.show()
+def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters, V0: float, a: float, adot: float, alpha: float, ax1, ax2) -> None:
+    eps = -1.0 / np.log(phyp.slip)
+    # ================== Outer region ==================
+    a_app = 3*V0 / (a**2 * (1+1/phyp.gamma[0]))
+    b_app = -1/phyp.gamma[0] * a_app
+    th_app = 3*V0 / a**2
+    h0 = a_app * a * (1.0 - xi_f**2) / 2
+    xf = a * xi_f
+    # h1 = adot / th_app**2 * ((a+xf) * np.log(a+xf) + (a-xf)*np.log(a-xf) - 2*a*np.log(2*a) + 3*a/2*(1.0-xi_f**2)) # the first order correction
+    xs = a * xi_s
+    g0 = np.where(xi_s <= 1.0, b_app * a * (1.0 - xi_s**2) / 2, 0.0)
+    # g1 = np.where(xi_s <= 1.0, \
+    #     -adot / phyp.gamma[0] / th_app**2 * ((a+xs) * np.log(a+xs) + (a-xs)*np.log(a-xs) - 2*a*np.log(2*a) + 3*a/2*(1.0-xi_s**2)), \
+    #     0.0)
+    # ax.plot(xf, h0, '--', color='k', alpha=alpha)
+    # ax.plot(xs, g0, '--', color='k', alpha=alpha)
+    y = a - xf
+    z = np.log(y) * eps + 1.0
+    ax2.plot(z, th_app * xf / a + eps * adot * (1+1/phyp.gamma[0]) / th_app**2 * (np.log(y) + (3-np.log(2*a))), ':', color='k', alpha=alpha)
+
+    # ================== Bending region ==================
+    B0 = np.sqrt(phyp.bm / phyp.gamma[0]) / eps
+    lb = [np.sqrt(B0 / gam) for gam in phyp.gamma]
+    # beta_til = np.sqrt(B0) * np.sqrt(phyp.gamma[0]) / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app
+    C_neg = np.sqrt(phyp.gamma[0]) * lb[1] / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app
+    C_pos = np.sqrt(phyp.gamma[1]) * lb[0] / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app
+    D = C_neg - C_pos
+    y_til = (a - xs) / eps
+    g_til = np.where(y_til >= 0.0, 
+                     D + b_app * y_til + C_pos * np.exp(-y_til / lb[0]), 
+                     C_neg * np.exp(y_til / lb[1]))
+    ax1.plot(xs, g_til * eps, ':', color='k', alpha=alpha)
+    
+    # ================== Inner region ==================
+    th_y = phyp.theta_Y
+    s = y / phyp.slip
+    ax2.plot(z, th_y + eps * adot / th_y**2 * np.log(th_y*s + 1), ':', color='k', alpha=alpha)
 
 
-def plotOuter(xf: np.ndarray, xs: np.ndarray, gamma: tuple[float], B: float, V0: float, a: float, ax, alpha: float = 1.0) -> None:
-    # solve for p0 from V0
-    t1 = a**3*(1/gamma[0]+1/gamma[2])/3
-    t2 = a - sqrt(B/gamma[0])*(1 - np.exp(-sqrt(gamma[0]/B)*a))
-    c10 = B/(gamma[0]*sqrt(gamma[0]/gamma[1])*(sqrt(gamma[0])+sqrt(gamma[1])))*(-a/sqrt(B)-1/sqrt(gamma[1]))
-    p0 = V0 / (t1 + c10*t2)
-    # solve for the parameters in the sheet
-    c1 = c10 * p0
-    c2 = B/(sqrt(gamma[0]*gamma[1])*(sqrt(gamma[0])+sqrt(gamma[1])))*(1/sqrt(gamma[0]) - a/sqrt(B)) * p0
-    d1 = c2 - c1 - p0/(2*gamma[0])*a**2
-    #
-    h = p0/(2*gamma[2])*(a**2-xf**2) + c2
-    g = np.where(xs <= a, \
-                 p0/(2*gamma[0])*xs**2 + c1*np.exp(sqrt(gamma[0]/B)*(xs-a)) + d1, \
-                 c2*np.exp(-sqrt(gamma[1]/B)*(xs-a))
-    )
-    # check volume
-    nf = xf.size
-    vh = np.sum((h[1:] + h[:-1])/2*(xf[1:] - xf[:-1]))
-    vg = np.sum((g[1:nf] + g[:nf-1])/2*(xs[1:nf] - xs[:nf-1]))
-    print("Numerical volume = {:.6f}".format(vh - vg))
-    #
-    lines = ax.plot(xf, h, '-', alpha=alpha)
-    ax.plot(xs, g, '-', color=lines[0].get_color(), alpha=alpha)
-
-def plotAppContactAngle(ax, gamma: np.ndarray, B: float, lb: float, V0: float, a: np.ndarray) -> None:
+def plotRelation(ax, gamma: np.ndarray, B: float, lb: float, V0: float, a: np.ndarray) -> None:
     if lb != 0.0:
         B = lb**2*gamma[0] # for fixing bending length
     # solve for p0 from V0
@@ -178,27 +169,8 @@ if __name__ == "__main__":
 
     # getTimeConvergence()
     # getSpaceConvergence()
-    plotContactLine()
-    plotSystemTrajectory()
+    # plotCLSpeed()
+    plotProfiles()
     # plotInterfaceSlope()
-    # varying a
-    # fig, ax = pyplot.subplots()
-    # V0 = 1.0
-    # gamma = np.zeros((3, 65))
-    # gamma[0] = np.linspace(0.5, 20.0, 65)
-    # gamma[1] = gamma[0] + 0.9
-    # gamma[2,:] = 1.0
-    # plotAppContactAngle(ax, gamma, 0.0, 0.1, V0, 1.0)
-    # plotAppContactAngle(ax, gamma, 0.0, 0.1, V0, 1.2)
-    # plotAppContactAngle(ax, gamma, 0.0, 0.1, V0, 1.4)
-    # ax.legend()
-    # # 
-    # fig, ax = pyplot.subplots()
-    # a = np.linspace(1.0, 2.0, 65)
-    # plotAppContactAngle(ax, (2.0, 2.9, 1.0), 0.0, 0.1, 1.0, a)
-    # plotAppContactAngle(ax, (4.0, 4.9, 1.0), 0.0, 0.1, 1.0, a)
-    # plotAppContactAngle(ax, (8.0, 8.9, 1.0), 0.0, 0.1, 1.0, a)
-    # plotAppContactAngle(ax, (20.0, 20.9, 1.0), 0.0, 0.1, 1.0, a)
-    # ax.legend()
 
     pyplot.show()
