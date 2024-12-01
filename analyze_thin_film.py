@@ -44,10 +44,7 @@ def getSpaceConvergence() -> None:
     printConvergenceTable(table_headers, error_table)
 
 def plotContactLine() -> None:
-    datanames = ["result/tf-s-4-g2-adap/0032.npz", 
-                 "result/tf-s-4-g4-adap/0032.npz", 
-                 "result/tf-s-4-g8-adap/0032.npz", 
-                 "result/tf-s-4-g4-aa/0128.npz"]
+    datanames = ["result/tf-s-4-g4-aa/0032.npz"]
     data = [np.load(name) for name in datanames]
     # plot the contact line location
     _, ax1 = pyplot.subplots()
@@ -57,12 +54,12 @@ def plotContactLine() -> None:
         ax1.plot(a_hist[0], a_hist[1], '-', label=name)
         speed = (a_hist[1,1:] - a_hist[1,:-1]) / (a_hist[0,1:] - a_hist[0,:-1])
         ax2.plot(a_hist[0,1:-1], speed[1:], '-', label=name)
-    ax1.legend()
-    ax2.set_ylim(0.0, 0.5); ax2.legend()
+    ax1.set_ylabel("$a(t)$"); ax1.legend()
+    ax2.set_ylabel("$\\dot{a}(t)$"); ax2.set_ylim(0.0, 0.5); ax2.legend()
 
 def plotSystemTrajectory() -> None:
-    filename = "tf-s-4-g4-adap-fine-Y0.4"
-    checkpoints = [2, 8, 16, 32]
+    filename = "tf-s-4-g4-aa"
+    checkpoints = [1, 2, 4, 8, 16, 32]
     npzdata = []
     for cp in checkpoints:
         name = "result/" + filename + "/{:04}.npz".format(cp)
@@ -78,7 +75,7 @@ def plotSystemTrajectory() -> None:
         g = data["g"]
         t = a_hist[0, -1]
         a = a_hist[1, -1]
-        gline = ax.plot(a * xi_c[2:-2], g[1:-1], "-", label=f"$t={t}$", alpha=alpha)
+        gline = ax.plot(a * xi_c[2:-2], g[1:-1], "-", label="$t={:.2f}$".format(t), alpha=alpha)
         n_fluid = h.size - 3
         ax.plot(a * xi_c[2:2+n_fluid], h[2:-1], "-", color=gline[0].get_color(), alpha=alpha)
     ax.legend()
@@ -182,7 +179,7 @@ if __name__ == "__main__":
     # getTimeConvergence()
     # getSpaceConvergence()
     plotContactLine()
-    # plotSystemTrajectory()
+    plotSystemTrajectory()
     # plotInterfaceSlope()
     # varying a
     # fig, ax = pyplot.subplots()

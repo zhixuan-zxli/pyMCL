@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import pickle
 import numpy as np
 from scipy import sparse as sp
+# from scikits.umfpack import spsolve
 from scipy.sparse.linalg import spsolve
 from matplotlib import pyplot
 from runner import SolverParameters, Runner
@@ -12,9 +13,9 @@ from colorama import Fore, Style
 class PhysicalParameters:
     gamma: tuple[float] = (4.0, 4.9, 1.0) # the (effective) surface tension for the wet, dry and the interface
     slip: float = 1e-4   # the slip length
-    theta_Y: float = 0.4
+    theta_Y: float = 1.0
     mu_cl: float = 1.0
-    bm: float = 4.0 * 1e-2     # the bending modulus
+    bm: float = gamma[0] * (1.0 / np.log(slip))**2      # the bending modulus
 
 class ThinFilmRunner(Runner):
 
@@ -160,7 +161,7 @@ class ThinFilmRunner(Runner):
             self.cp = 0 # number of checkpoints reached
             
             self.h = 1 - np.exp(4.0*(xi_c_f-1))
-            self.h *= 1.5
+            self.h *= 4.0
             self.h[-1] = -self.h[-2]
             self.g = np.zeros((n_total+2, ))
             self.kappa = np.zeros((n_total+2, ))
@@ -283,7 +284,7 @@ class ThinFilmRunner(Runner):
         # adaptively change the dt
         self.t += self.solp.dt
         if self.solp.adapt_t and self.step > 0 and self.step % 128 == 0 \
-            and self.solp.dt * adot < self.min_dxi / 8 and self.solp.dt < self.min_dxi:
+            and self.solp.dt * adot < self.min_dxi / 8 and self.solp.dt < self.min_dxi * 4:
             self.solp.dt *= 2
             print(Fore.GREEN + "Adaptively change dt to {:.3e}".format(self.solp.dt) + Style.RESET_ALL)
 
