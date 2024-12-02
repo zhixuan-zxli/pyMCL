@@ -1,8 +1,9 @@
 import pickle
 import numpy as np
+from scipy.special import expi
 from fem.post import printConvergenceTable
 from thin_film import downsample, PhysicalParameters
-from bending import BendingProblem
+# from bending import BendingProblem
 from matplotlib import pyplot
 from colorama import Fore, Style
 
@@ -100,6 +101,13 @@ def plotProfiles() -> None:
     # pyplot.show()
     # fig.savefig("thin films.png", dpi=300)
 
+def phi(x: np.ndarray) -> np.ndarray:
+    r1 = np.exp(x) * expi(-x)
+    r2 = np.exp(-x) * expi(x)
+    r = (r1 - r2) / 2
+    r[x == 0.0] = 0.0
+    return r
+
 def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters, V0: float, a: float, adot: float, alpha: float, ax1, ax2) -> None:
     eps = -1.0 / np.log(phyp.slip)
     # ================== Outer region ==================
@@ -114,32 +122,40 @@ def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters,
     g1 = np.where(xi_s <= 1.0, \
         -adot / phyp.gamma[0] / th_app**2 * ((a+xs) * np.log(a+xs) + (a-xs)*np.log(a-xs) - 2*a*np.log(2*a) + 3*a/2*(1.0-xi_s**2)), \
         0.0)
-    # ax1.plot(xf, h0, ':', color='r', alpha=alpha)
-    # ax1.plot(xs, g0, ':', color='r', alpha=alpha)
-    ax1.plot(xf, h0 + h1, '--', color='k', alpha=alpha)
-    ax1.plot(xs, g0 + g1, '--', color='k', alpha=alpha)
+    # ax1.plot(xf, h0 + h1, '--', color='k', alpha=alpha)
+    # ax1.plot(xs, g0 + g1, '--', color='k', alpha=alpha)
     y = a - xf
     z = np.log(y) * eps + 1.0
     # ax2.plot(z, th_app * xf / a, ':', color='r', alpha=alpha)
     ax2.plot(z, th_app * xf / a + adot * (1+1/phyp.gamma[0]) / th_app**2 * (np.log(y) + (3-np.log(2*a))), ':', color='k', alpha=alpha)
 
-    # ================== Bending region ==================
-    B0 = np.sqrt(phyp.bm / phyp.gamma[0]) / eps
-    lb = [np.sqrt(B0 / gam) for gam in phyp.gamma]
-    # beta_til = np.sqrt(B0) * np.sqrt(phyp.gamma[0]) / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app
-    C_neg = np.sqrt(phyp.gamma[0]) * lb[1] / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app
-    C_pos = np.sqrt(phyp.gamma[1]) * lb[0] / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app
-    D = C_neg - C_pos
-    y_til = (a - xs) / eps
-    g_til = np.where(y_til >= 0.0, 
-                     D + b_app * y_til + C_pos * np.exp(-y_til / lb[0]), 
-                     C_neg * np.exp(y_til / lb[1]))
-    # ax1.plot(xs, g_til * eps, ':', color='k', alpha=alpha)
-    
     # ================== Inner region ==================
     th_y = phyp.theta_Y
     s = y / phyp.slip
     ax2.plot(z, th_y + adot / th_y**2 * np.log(th_y*s + 1), ':', color='k', alpha=alpha)
+    
+    # ================== Bending region ==================
+    B0 = np.sqrt(phyp.bm / phyp.gamma[0]) / eps
+    lb = [np.sqrt(B0 / gam) for gam in phyp.gamma]
+    beta_til = np.sqrt(B0) * np.sqrt(phyp.gamma[0]) / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app
+    C_neg = np.sqrt(phyp.gamma[0]) * lb[1] / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app
+    C_pos = np.sqrt(phyp.gamma[1]) * lb[0] / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app
+    D = C_neg - C_pos
+    y_til = (a - xs) / eps
+    g_til_0 = np.where(y_til >= 0.0, 
+                     D + b_app * y_til + C_pos * np.exp(-y_til / lb[0]), 
+                     C_neg * np.exp(y_til / lb[1]))
+    # b_app_1 = b_app + adot * 0.5772156649 / (phyp.gamma[0] * th_app**2)
+    # C_neg = np.sqrt(phyp.gamma[0]) * lb[1] / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app_1
+    # C_pos = np.sqrt(phyp.gamma[1]) * lb[0] / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app_1
+    # y_til_1 = y_til / lb[0]
+    # g_til_1 = np.where(y_til >= 0.0, 
+    #                  D + b_app * y_til + C_pos * np.exp(-y_til / lb[0]) + adot * lb[0] / (phyp.gamma[0] * th_app**2) * (phi(y_til_1) - y_til_1 * (np.log(y_til_1) - 1)), 
+    #                  C_neg * np.exp(y_til / lb[1]))
+    ax1.plot(xs, g_til_0 * eps, 'k:', alpha=alpha)
+    # ax1.plot(xs, g_til_1 * eps, 'r:', alpha=alpha)
+    zs = np.log(a - xs) * eps + 1.0
+    ax2.plot(zs, a_app - (b_app - C_pos / lb[0] * np.exp(-y_til / lb[0])) + adot / (a_app - beta_til)**2 * np.log(y_til), ':', color='k', alpha=alpha)
 
 
 def plotRelation(ax, gamma: np.ndarray, B: float, lb: float, V0: float, a: np.ndarray) -> None:
@@ -175,18 +191,17 @@ if __name__ == "__main__":
     # getTimeConvergence()
     # getSpaceConvergence()
     # plotCLSpeed()
-    # plotProfiles()
-    # plotInterfaceSlope()
+    plotProfiles()
 
-    n = 256
-    bp = BendingProblem(1.0, (4.9, 4.0), (-8.0, 8.0), n)
-    bp.setupLinearSystem()
-    x = bp.x
-    f = np.where(x >= 0.0, 1.0/x, 0.0)
-    y, kappa = bp.solve(f, (-1.0, 2.0))
-    pyplot.plot(x, y, '-', x, kappa, '--')
+    # n = 256
+    # bp = BendingProblem(1.0, (4.9, 4.0), (-8.0, 8.0), n)
+    # bp.setupLinearSystem()
+    # x = bp.x
+    # f = np.where(x >= 0.0, 1.0/x, 0.0)
+    # y, kappa = bp.solve(f, (-1.0, 2.0))
+    # pyplot.plot(x, y, '-', x, kappa, '--')
 
-    f[:] = 0.0
-    y, kappa = bp.solve(f, (-1.0, 2.0))
-    pyplot.plot(x, y, '-', color='r')
+    # f[:] = 0.0
+    # y, kappa = bp.solve(f, (-1.0, 2.0))
+    # pyplot.plot(x, y, '-', color='r')
     pyplot.show()
