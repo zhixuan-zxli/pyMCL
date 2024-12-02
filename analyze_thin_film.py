@@ -2,6 +2,7 @@ import pickle
 import numpy as np
 from fem.post import printConvergenceTable
 from thin_film import downsample, PhysicalParameters
+from bending import BendingProblem
 from matplotlib import pyplot
 from colorama import Fore, Style
 
@@ -81,6 +82,7 @@ def plotProfiles() -> None:
         t = a_hist[0, -1]
         a = a_hist[1, -1]
         adot = (a_hist[1, -1] - a_hist[1, -2]) / (a_hist[0, -1] - a_hist[0, -2])
+        print("adot = {:.3e}".format(adot))
         gline = ax1.plot(a * xi_c[2:-2], g[1:-1], "-", label="$t={:.2f}$".format(t), alpha=alpha)
         n_fluid = h.size - 3
         ax1.plot(a * xi_c[2:2+n_fluid], h[2:-1], "-", color=gline[0].get_color(), alpha=alpha)
@@ -106,17 +108,20 @@ def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters,
     th_app = 3*V0 / a**2
     h0 = a_app * a * (1.0 - xi_f**2) / 2
     xf = a * xi_f
-    # h1 = adot / th_app**2 * ((a+xf) * np.log(a+xf) + (a-xf)*np.log(a-xf) - 2*a*np.log(2*a) + 3*a/2*(1.0-xi_f**2)) # the first order correction
+    h1 = adot / th_app**2 * ((a+xf) * np.log(a+xf) + (a-xf)*np.log(a-xf) - 2*a*np.log(2*a) + 3*a/2*(1.0-xi_f**2)) # the first order correction
     xs = a * xi_s
     g0 = np.where(xi_s <= 1.0, b_app * a * (1.0 - xi_s**2) / 2, 0.0)
-    # g1 = np.where(xi_s <= 1.0, \
-    #     -adot / phyp.gamma[0] / th_app**2 * ((a+xs) * np.log(a+xs) + (a-xs)*np.log(a-xs) - 2*a*np.log(2*a) + 3*a/2*(1.0-xi_s**2)), \
-    #     0.0)
-    # ax.plot(xf, h0, '--', color='k', alpha=alpha)
-    # ax.plot(xs, g0, '--', color='k', alpha=alpha)
+    g1 = np.where(xi_s <= 1.0, \
+        -adot / phyp.gamma[0] / th_app**2 * ((a+xs) * np.log(a+xs) + (a-xs)*np.log(a-xs) - 2*a*np.log(2*a) + 3*a/2*(1.0-xi_s**2)), \
+        0.0)
+    # ax1.plot(xf, h0, ':', color='r', alpha=alpha)
+    # ax1.plot(xs, g0, ':', color='r', alpha=alpha)
+    ax1.plot(xf, h0 + h1, '--', color='k', alpha=alpha)
+    ax1.plot(xs, g0 + g1, '--', color='k', alpha=alpha)
     y = a - xf
     z = np.log(y) * eps + 1.0
-    ax2.plot(z, th_app * xf / a + eps * adot * (1+1/phyp.gamma[0]) / th_app**2 * (np.log(y) + (3-np.log(2*a))), ':', color='k', alpha=alpha)
+    # ax2.plot(z, th_app * xf / a, ':', color='r', alpha=alpha)
+    ax2.plot(z, th_app * xf / a + adot * (1+1/phyp.gamma[0]) / th_app**2 * (np.log(y) + (3-np.log(2*a))), ':', color='k', alpha=alpha)
 
     # ================== Bending region ==================
     B0 = np.sqrt(phyp.bm / phyp.gamma[0]) / eps
@@ -129,12 +134,12 @@ def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters,
     g_til = np.where(y_til >= 0.0, 
                      D + b_app * y_til + C_pos * np.exp(-y_til / lb[0]), 
                      C_neg * np.exp(y_til / lb[1]))
-    ax1.plot(xs, g_til * eps, ':', color='k', alpha=alpha)
+    # ax1.plot(xs, g_til * eps, ':', color='k', alpha=alpha)
     
     # ================== Inner region ==================
     th_y = phyp.theta_Y
     s = y / phyp.slip
-    ax2.plot(z, th_y + eps * adot / th_y**2 * np.log(th_y*s + 1), ':', color='k', alpha=alpha)
+    ax2.plot(z, th_y + adot / th_y**2 * np.log(th_y*s + 1), ':', color='k', alpha=alpha)
 
 
 def plotRelation(ax, gamma: np.ndarray, B: float, lb: float, V0: float, a: np.ndarray) -> None:
@@ -170,7 +175,18 @@ if __name__ == "__main__":
     # getTimeConvergence()
     # getSpaceConvergence()
     # plotCLSpeed()
-    plotProfiles()
+    # plotProfiles()
     # plotInterfaceSlope()
 
+    n = 256
+    bp = BendingProblem(1.0, (4.9, 4.0), (-8.0, 8.0), n)
+    bp.setupLinearSystem()
+    x = bp.x
+    f = np.where(x >= 0.0, 1.0/x, 0.0)
+    y, kappa = bp.solve(f, (-1.0, 2.0))
+    pyplot.plot(x, y, '-', x, kappa, '--')
+
+    f[:] = 0.0
+    y, kappa = bp.solve(f, (-1.0, 2.0))
+    pyplot.plot(x, y, '-', color='r')
     pyplot.show()
