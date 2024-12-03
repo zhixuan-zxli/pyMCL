@@ -45,7 +45,7 @@ def getSpaceConvergence() -> None:
     printConvergenceTable(table_headers, error_table)
 
 def plotCLSpeed() -> None:
-    datanames = ["result/tf-s-4-g4-aa/0032.npz"]
+    datanames = ["result/tf-s-6-g4-aa/0008.npz"]
     data = [np.load(name) for name in datanames]
     # plot the contact line location
     _, ax1 = pyplot.subplots()
@@ -59,8 +59,8 @@ def plotCLSpeed() -> None:
     ax2.set_ylabel("$\\dot{a}(t)$"); ax2.set_ylim(0.0, 0.5); ax2.legend()
 
 def plotProfiles() -> None:
-    filename = "tf-s-4-g4-aa"
-    checkpoints = [2, 8] #[1, 2, 4, 8, 16, 32]
+    filename = "tf-s-6-g4-aa"
+    checkpoints = [2, 4] #[1, 2, 4, 8, 16, 32]
     V0 = 4.0 * (1 - (1-np.exp(-4))/4)
     with open("result/" + filename + "/PhysicalParameters", "rb") as f:
         phyp = pickle.load(f)
@@ -74,7 +74,7 @@ def plotProfiles() -> None:
     #
     fig, ax1 = pyplot.subplots() # axis for plotting the profiles
     _, ax2 = pyplot.subplots() # axis for plotting the slopes
-    alpha_list = np.linspace(0.2, 1.0, len(checkpoints))
+    alpha_list = np.linspace(1.0, 0.2, len(checkpoints))[::-1]
     for data, alpha in zip(npzdata, alpha_list):
         xi_c = data["xi_c"]
         a_hist = data["a_hist"]
@@ -88,12 +88,13 @@ def plotProfiles() -> None:
         n_fluid = h.size - 3
         ax1.plot(a * xi_c[2:2+n_fluid], h[2:-1], "-", color=gline[0].get_color(), alpha=alpha)
         # calculate and plot the slopes
-        xi_cc = (xi_c[3:n_fluid+2] + xi_c[2:n_fluid+1]) / 2
-        z_c = np.log(a * (1.0 - xi_cc)) * eps + 1.0
-        dh = (h[3:n_fluid+2] - h[2:n_fluid+1]) / (xi_c[3:n_fluid+2] - xi_c[2:n_fluid+1]) / a
-        dg = (g[2:n_fluid+1] - g[1:n_fluid]) / (xi_c[3:n_fluid+2] - xi_c[2:n_fluid+1]) / a
+        # xi_cc = (xi_c[3:n_fluid+2] + xi_c[2:n_fluid+1]) / 2
+        # z_c = np.log(a * (1.0 - xi_cc)) * eps + 1.0
+        z = np.log(a * (1.0 - xi_c[2:n_fluid+2])) * eps + 1.0
+        dh = (h[3:n_fluid+3] - h[1:n_fluid+1]) / (xi_c[3:n_fluid+3] - xi_c[1:n_fluid+1]) / a
+        dg = (g[2:n_fluid+2] - g[:n_fluid]) / (xi_c[3:n_fluid+3] - xi_c[1:n_fluid+1]) / a
         # gline = ax1.plot(z_c, dg, '-o', markerfacecolor='none', label=f"$t={t}$", alpha=alpha)
-        ax2.plot(z_c, dg-dh, 'o', markerfacecolor='none', label="$t={:.2f}$".format(t), alpha=alpha)
+        ax2.plot(z, dg-dh, 'o', markerfacecolor='none', label="$t={:.2f}$".format(t), alpha=alpha)
         # plot the theoretical prediction
         plotPrediction(xi_c[2:2+n_fluid], xi_c[2:-2], phyp, V0, a, adot, alpha, ax1, ax2)
     ax1.legend()
@@ -110,10 +111,17 @@ def phi(x: np.ndarray) -> np.ndarray:
 
 def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters, V0: float, a: float, adot: float, alpha: float, ax1, ax2) -> None:
     eps = -1.0 / np.log(phyp.slip)
-    # ================== Outer region ==================
+    th_y = phyp.theta_Y
+    # estimate from asymptotic relation
     a_app = 3*V0 / (a**2 * (1+1/phyp.gamma[0]))
     b_app = -1/phyp.gamma[0] * a_app
     th_app = 3*V0 / a**2
+    B0 = np.sqrt(phyp.bm / phyp.gamma[0]) / eps
+    b_til = np.sqrt(phyp.gamma[0]) / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app
+    a0 = ((a_app - b_til)**3 - th_y**3) / 3
+    a1 = (adot - eps*a0) / eps
+    print("adot = {:.3e}, eps*a0 = {:.3e}".format(adot, eps*a0))
+    # ================== Outer region ==================
     h0 = a_app * a * (1.0 - xi_f**2) / 2
     xf = a * xi_f
     h1 = adot / th_app**2 * ((a+xf) * np.log(a+xf) + (a-xf)*np.log(a-xf) - 2*a*np.log(2*a) + 3*a/2*(1.0-xi_f**2)) # the first order correction
@@ -127,17 +135,19 @@ def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters,
     y = a - xf
     z = np.log(y) * eps + 1.0
     # ax2.plot(z, th_app * xf / a, ':', color='r', alpha=alpha)
-    ax2.plot(z, th_app * xf / a + adot * (1+1/phyp.gamma[0]) / th_app**2 * (np.log(y) + (3-np.log(2*a))), ':', color='k', alpha=alpha)
+    ax2.plot(z, th_app * xf / a + adot * (1+1/phyp.gamma[0]) / th_app**2 * (np.log(y) + (3-np.log(2*a))), ':', color='c', alpha=alpha)
 
     # ================== Inner region ==================
-    th_y = phyp.theta_Y
     s = y / phyp.slip
-    ax2.plot(z, th_y + adot / th_y**2 * np.log(th_y*s + 1), ':', color='k', alpha=alpha)
+    ax2.plot(z, th_y + adot / th_y * (np.log(th_y*s + 1) / th_y + s * np.log(1 + 1/(th_y*s)) + 1), ':', color='g', alpha=alpha)
+
+    # ================== Intermediate region ==================
+    m0 = (th_y**3 + 3*a0*z)**(1/3)
+    ax2.plot(z, m0, ':', color='m', alpha=alpha)
+    # ax2.plot(z, m0 + adot / m0**2, ':', color='m', alpha=alpha)
     
     # ================== Bending region ==================
-    B0 = np.sqrt(phyp.bm / phyp.gamma[0]) / eps
     lb = [np.sqrt(B0 / gam) for gam in phyp.gamma]
-    beta_til = np.sqrt(B0) * np.sqrt(phyp.gamma[0]) / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app
     C_neg = np.sqrt(phyp.gamma[0]) * lb[1] / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app
     C_pos = np.sqrt(phyp.gamma[1]) * lb[0] / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app
     D = C_neg - C_pos
@@ -145,6 +155,7 @@ def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters,
     g_til_0 = np.where(y_til >= 0.0, 
                      D + b_app * y_til + C_pos * np.exp(-y_til / lb[0]), 
                      C_neg * np.exp(y_til / lb[1]))
+    ax1.plot(xs, g_til_0 * eps, 'k:', alpha=alpha)
     # b_app_1 = b_app + adot * 0.5772156649 / (phyp.gamma[0] * th_app**2)
     # C_neg = np.sqrt(phyp.gamma[0]) * lb[1] / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app_1
     # C_pos = np.sqrt(phyp.gamma[1]) * lb[0] / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app_1
@@ -152,10 +163,10 @@ def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters,
     # g_til_1 = np.where(y_til >= 0.0, 
     #                  D + b_app * y_til + C_pos * np.exp(-y_til / lb[0]) + adot * lb[0] / (phyp.gamma[0] * th_app**2) * (phi(y_til_1) - y_til_1 * (np.log(y_til_1) - 1)), 
     #                  C_neg * np.exp(y_til / lb[1]))
-    ax1.plot(xs, g_til_0 * eps, 'k:', alpha=alpha)
     # ax1.plot(xs, g_til_1 * eps, 'r:', alpha=alpha)
     zs = np.log(a - xs) * eps + 1.0
-    ax2.plot(zs, a_app - (b_app - C_pos / lb[0] * np.exp(-y_til / lb[0])) + adot / (a_app - beta_til)**2 * np.log(y_til), ':', color='k', alpha=alpha)
+    # ax2.plot(zs, a_app - (b_app - C_pos / lb[0] * np.exp(-y_til / lb[0])) + adot * (1.0 + 1/phyp.gamma[0]) / (a_app - b_app)**2 * np.log(y_til), ':', color='r', alpha=alpha) # y_til -> +infty
+    ax2.plot(zs, a_app - (b_app - C_pos / lb[0] * np.exp(-y_til / lb[0])) + adot / (a_app - b_til)**2 * np.log(y_til), ':', color='r', alpha=alpha) # y_til -> 0
 
 
 def plotRelation(ax, gamma: np.ndarray, B: float, lb: float, V0: float, a: np.ndarray) -> None:
@@ -190,7 +201,7 @@ if __name__ == "__main__":
 
     # getTimeConvergence()
     # getSpaceConvergence()
-    # plotCLSpeed()
+    plotCLSpeed()
     plotProfiles()
 
     # n = 256
