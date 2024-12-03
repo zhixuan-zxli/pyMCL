@@ -192,6 +192,7 @@ class ThinFilmRunner(Runner):
             self.ax.plot(self.a * self.xi_c_f[2:-1], (-self.L4h @ self.h)[2:2+n_fluid], ':') # fluid interface curvature
             self.ax.plot(self.a * xi_c[2:-2], self.g[1:-1], '-')      # sheet
             self.ax.plot(self.a * xi_c[2:-2], self.kappa[1:-1], '--') # curvature of the sheet
+            self.ax.plot((0.0, 2 * self.a), (0.0, 0.0), 'r:')         # the reference level
             self.ax.set_xlim(0.0, 3.0); self.ax.set_ylim(-1.0, 2.0)
             pyplot.draw(); pyplot.pause(1e-4)
         
@@ -274,10 +275,11 @@ class ThinFilmRunner(Runner):
         self.kappa[:] = kappa_next
         
         # correct the CL 
-        dh = (h[-1] - h[-2]) / (a_star * dxi_at_cl)
-        dg = (g[n_fluid+1] - g[n_fluid]) / (a_star * dxi_at_cl)
-        adot = self.phyp.mu_cl/2 * ((dh-dg)**2 - self.phyp.theta_Y**2)
-        self.a += adot * self.solp.dt
+        # dh = (h[-1] - h[-2]) / (a_star * dxi_at_cl)
+        # dg = (g[n_fluid+1] - g[n_fluid]) / (a_star * dxi_at_cl)
+        # adot = self.phyp.mu_cl/2 * ((dh-dg)**2 - self.phyp.theta_Y**2)
+        # self.a += adot * self.solp.dt
+        self.a = a_star
         print("diff={:.2e}, {:.2e}, a_next={:.5f}, adot={:.2e}, dh-dg={:.2e}".format(
             delta_h, delta_g, self.a, adot, dh-dg))
 
@@ -313,11 +315,12 @@ if __name__ == "__main__":
         np.linspace(31/32, 63/64, m+1)[1:],
         np.linspace(63/64, 127/128, m+1)[1:],
         np.linspace(127/128, 255/256, m+1)[1:],
-        np.linspace(255/256, 1.0, 2*m+1)[1:],
+        np.linspace(255/256, 511/512, m+1)[1:],
+        np.linspace(511/512, 1.0, 2*m+1)[1:],
     ))
-    # finest h = 1/16384
+    # finest h = 1/32768
 
-    the_solp = SolverParameters(dt = 1/(1024*256), Te=16.0)
+    the_solp = SolverParameters(dt = 1/(1024*512), Te=16.0)
     the_solp.dt_cp = 1.0/2
     the_solp.adapt_t = True #False
 
