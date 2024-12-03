@@ -214,7 +214,7 @@ class ThinFilmRunner(Runner):
         h_mid = (1-eta) * h[2:-2] + eta * h[3:-1]              # (n_fluid-1, )
         g_mid = (1-eta) * g[1:n_fluid] + eta * g[2:n_fluid+1]  # (n_fluid-1, )
         # calculate the flux coefficients at the cell boundaries
-        fc = (h_mid - g_mid)**2 * ((h_mid-g_mid)/3 + self.phyp.slip)
+        fc = (h_mid - g_mid)**2 * ((h_mid-g_mid) + self.phyp.slip)
         fc = np.concatenate(((0.0,), fc, (0.0, )))  # (n_fluid+1, ), zero flux at both boundaries
         # build the FD scheme
         ctab = np.zeros((n_fluid, 5))
@@ -262,6 +262,7 @@ class ThinFilmRunner(Runner):
         g0 = np.zeros_like(g)
         b = np.concatenate((solp.dt * adv + h_g, g0, g0))
         x = spsolve(A, b)
+        # x = spsolve(self.Ihh + (solp.dt*gamma[2]/a_star**4)*C + self.G4hh, solp.dt * adv + h_g) # flat
         h_next = x[:n_fluid+3]
         g_next = x[n_fluid+3:n_fluid+n_total+5]
         kappa_next = x[n_fluid+n_total+5:]
@@ -269,6 +270,7 @@ class ThinFilmRunner(Runner):
         # some other info: 
         delta_h = np.linalg.norm(h_next[2:-1] - h[2:-1], ord=np.inf) / solp.dt
         delta_g = np.linalg.norm(g_next[1:-1] - g[1:-1], ord=np.inf) / solp.dt
+        # delta_g = 0.0 # flat
 
         self.h[:] = h_next
         self.g[:] = g_next
