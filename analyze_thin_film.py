@@ -59,7 +59,7 @@ def plotCLSpeed() -> None:
     ax2.set_ylabel("$\\dot{a}(t)$"); ax2.set_ylim(0.0, 0.5); ax2.legend()
 
 def plotProfiles() -> None:
-    filename = "tf-s-6-g4-aa"
+    filename = "tf-s-4-g4-aa"
     checkpoints = [2, 4] #[1, 2, 4, 8, 16, 32]
     V0 = 4.0 * (1 - (1-np.exp(-4))/4)
     with open("result/" + filename + "/PhysicalParameters", "rb") as f:
@@ -73,7 +73,8 @@ def plotProfiles() -> None:
         npzdata.append(np.load(name))
     #
     fig, ax1 = pyplot.subplots() # axis for plotting the profiles
-    _, ax2 = pyplot.subplots() # axis for plotting the slopes
+    _, ax2 = pyplot.subplots() # axis for plotting the slope dh
+    _, ax3 = pyplot.subplots() # axis for plotting the slope dg
     alpha_list = np.linspace(1.0, 0.2, len(checkpoints))[::-1]
     for data, alpha in zip(npzdata, alpha_list):
         xi_c = data["xi_c"]
@@ -93,12 +94,13 @@ def plotProfiles() -> None:
         z = np.log(a * (1.0 - xi_c[2:n_fluid+2])) * eps + 1.0
         dh = (h[3:n_fluid+3] - h[1:n_fluid+1]) / (xi_c[3:n_fluid+3] - xi_c[1:n_fluid+1]) / a
         dg = (g[2:n_fluid+2] - g[:n_fluid]) / (xi_c[3:n_fluid+3] - xi_c[1:n_fluid+1]) / a
-        # gline = ax1.plot(z_c, dg, '-o', markerfacecolor='none', label=f"$t={t}$", alpha=alpha)
         ax2.plot(z, dg-dh, 'o', markerfacecolor='none', label="$t={:.2f}$".format(t), alpha=alpha)
+        ax3.plot(z, -dg, 'o', markerfacecolor='none', label="$t={:.2f}$".format(t), alpha=alpha)
         # plot the theoretical prediction
-        plotPrediction(xi_c[2:2+n_fluid], xi_c[2:-2], phyp, V0, a, adot, alpha, ax1, ax2)
+        plotPrediction(xi_c[2:2+n_fluid], xi_c[2:-2], phyp, V0, a, adot, alpha, ax1, ax2, ax3)
     ax1.legend()
-    ax2.legend(); ax2.set_xlabel("$z$"); ax2.set_ylabel("$h'-g'$")
+    ax2.legend(); ax2.set_xlabel("$z$"); ax2.set_ylabel("$h'$")
+    ax3.legend(); ax3.set_xlabel("$z$"); ax3.set_ylabel("$g'$")
     # pyplot.show()
     # fig.savefig("thin films.png", dpi=300)
 
@@ -109,7 +111,7 @@ def phi(x: np.ndarray) -> np.ndarray:
     r[x == 0.0] = 0.0
     return r
 
-def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters, V0: float, a: float, adot: float, alpha: float, ax1, ax2) -> None:
+def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters, V0: float, a: float, adot: float, alpha: float, ax1, ax2, ax3) -> None:
     eps = -1.0 / np.log(phyp.slip)
     th_y = phyp.theta_Y
     # estimate from asymptotic relation
@@ -124,27 +126,28 @@ def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters,
     # ================== Outer region ==================
     h0 = a_app * a * (1.0 - xi_f**2) / 2
     xf = a * xi_f
-    h1 = adot / th_app**2 * ((a+xf) * np.log(a+xf) + (a-xf)*np.log(a-xf) - 2*a*np.log(2*a) + 3*a/2*(1.0-xi_f**2)) # the first order correction
+    # h1 = adot / th_app**2 * ((a+xf) * np.log(a+xf) + (a-xf)*np.log(a-xf) - 2*a*np.log(2*a) + 3*a/2*(1.0-xi_f**2)) # the first order correction
     xs = a * xi_s
     g0 = np.where(xi_s <= 1.0, b_app * a * (1.0 - xi_s**2) / 2, 0.0)
-    g1 = np.where(xi_s <= 1.0, \
-        -adot / phyp.gamma[0] / th_app**2 * ((a+xs) * np.log(a+xs) + (a-xs)*np.log(a-xs) - 2*a*np.log(2*a) + 3*a/2*(1.0-xi_s**2)), \
-        0.0)
+    # g1 = np.where(xi_s <= 1.0, \
+    #     -adot / phyp.gamma[0] / th_app**2 * ((a+xs) * np.log(a+xs) + (a-xs)*np.log(a-xs) - 2*a*np.log(2*a) + 3*a/2*(1.0-xi_s**2)), \
+    #     0.0)
     # ax1.plot(xf, h0 + h1, '--', color='k', alpha=alpha)
     # ax1.plot(xs, g0 + g1, '--', color='k', alpha=alpha)
     y = a - xf
     z = np.log(y) * eps + 1.0
     # ax2.plot(z, th_app * xf / a, ':', color='r', alpha=alpha)
-    ax2.plot(z, th_app * xf / a + adot * (1+1/phyp.gamma[0]) / th_app**2 * (np.log(y) + (3-np.log(2*a))), ':', color='c', alpha=alpha)
+    ax2.plot(z, th_app * xf / a + eps * a0 * (1 + phyp.gamma[0]) / th_app**2 * (np.log(y) + (3-np.log(2*a))), ':', color='c', alpha=alpha)
+    ax3.plot(z, b_app * xf / a + adot / phyp.gamma[0] / th_app**2 * (np.log(y) + (3-np.log(2*a))), ':', color='c', alpha=alpha)
 
     # ================== Inner region ==================
     s = y / phyp.slip
-    ax2.plot(z, th_y + adot / th_y * (np.log(th_y*s + 1) / th_y + s * np.log(1 + 1/(th_y*s)) + 1), ':', color='g', alpha=alpha)
+    # ax2.plot(z, th_y + adot / th_y * (np.log(th_y*s + 1) / th_y + s * np.log(1 + 1/(th_y*s)) + 1), ':', color='g', alpha=alpha)
 
     # ================== Intermediate region ==================
     m0 = (th_y**3 + 3*a0*z)**(1/3)
-    ax2.plot(z, m0, ':', color='m', alpha=alpha)
-    # ax2.plot(z, m0 + adot / m0**2, ':', color='m', alpha=alpha)
+    # ax2.plot(z, m0, ':', color='m', alpha=alpha)
+    ax2.plot(z, m0 + eps * a0 / m0**2, ':', color='m', alpha=alpha)
     
     # ================== Bending region ==================
     lb = [np.sqrt(B0 / gam) for gam in phyp.gamma]
@@ -165,8 +168,10 @@ def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters,
     #                  C_neg * np.exp(y_til / lb[1]))
     # ax1.plot(xs, g_til_1 * eps, 'r:', alpha=alpha)
     zs = np.log(a - xs) * eps + 1.0
+    # ax2.plot(zs, a_app + eps*a0 / (a_app - b_til)**2 * np.log(y_til), ':', color='r', alpha=alpha) # y_til -> 0
+    ax3.plot(zs, b_app - C_pos / lb[0] * np.exp(-y_til / lb[0]), ':', color='r', alpha=alpha)
     # ax2.plot(zs, a_app - (b_app - C_pos / lb[0] * np.exp(-y_til / lb[0])) + adot * (1.0 + 1/phyp.gamma[0]) / (a_app - b_app)**2 * np.log(y_til), ':', color='r', alpha=alpha) # y_til -> +infty
-    ax2.plot(zs, a_app - (b_app - C_pos / lb[0] * np.exp(-y_til / lb[0])) + adot / (a_app - b_til)**2 * np.log(y_til), ':', color='r', alpha=alpha) # y_til -> 0
+    # ax2.plot(zs, a_app - (b_app - C_pos / lb[0] * np.exp(-y_til / lb[0])) + adot / (a_app - b_til)**2 * np.log(y_til), ':', color='r', alpha=alpha) # y_til -> 0
 
 
 def plotRelation(ax, gamma: np.ndarray, B: float, lb: float, V0: float, a: np.ndarray) -> None:
@@ -201,7 +206,7 @@ if __name__ == "__main__":
 
     # getTimeConvergence()
     # getSpaceConvergence()
-    plotCLSpeed()
+    # plotCLSpeed()
     plotProfiles()
 
     # n = 256
