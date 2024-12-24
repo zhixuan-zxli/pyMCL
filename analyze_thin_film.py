@@ -1,5 +1,6 @@
 import pickle
 import numpy as np
+from os.path import join as pjoin
 from scipy.linalg import solve as dense_solve
 from scipy.special import expi
 from fem.post import printConvergenceTable
@@ -45,63 +46,79 @@ def getSpaceConvergence() -> None:
     printConvergenceTable(table_headers, error_table)
 
 def plotCLSpeed() -> None:
-    datanames = ["result/tf-s-6-g4-aa/0008.npz"]
-    data = [np.load(name) for name in datanames]
-    # plot the contact line location
+    cp_list = ["result/tf-s-4-g4-aa/0008.npz", "result/tf-s-4-g48-aa/0008.npz"]
+    labels = []; npzdata = []; params = []
+    # load also the parameters
+    for cp in cp_list:
+        parts = cp.split("/")
+        labels.append(parts[-2])
+        npzdata.append(np.load(cp))
+        with open(pjoin(*parts[:-1], "PhysicalParameters"), "rb") as f:
+            params.append(pickle.load(f))
+            params[-1].eps = -1.0 / np.log(params[-1].slip)
     _, ax1 = pyplot.subplots()
     _, ax2 = pyplot.subplots()
-    for name, npz in zip(datanames, data):
+    for label, npz, phyp in zip(labels, npzdata, params):
         a_hist = npz["a_hist"]
-        ax1.plot(a_hist[0], a_hist[1], '-', label=name)
+        ax1.plot(a_hist[0], a_hist[1], '-', label=label)
         speed = (a_hist[1,1:] - a_hist[1,:-1]) / (a_hist[0,1:] - a_hist[0,:-1])
-        ax2.plot(a_hist[0,1:-1], speed[1:], '-', label=name)
-    ax1.set_ylabel("$a(t)$"); ax1.legend()
-    ax2.set_ylabel("$\\dot{a}(t)$"); ax2.set_ylim(0.0, 0.5); ax2.legend()
+        a = a_hist[1,1:]
+        ax2.plot(a_hist[0, 2:], speed[1:], '--', label=label, alpha=0.4)
+        # calculate and plot the theoretical prediction
+        a_app = 3*phyp.vol/(a**2*(1+1/phyp.gamma[0]))
+        b_app = -a_app / phyp.gamma[0]
+        b_til = np.sqrt(phyp.gamma[0]) / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app
+        a_est = phyp.eps * ((a_app - b_til)**3 - phyp.theta_Y**3) / 3
+        ax2.plot(a_hist[0, 2:], a_est[1:], '-')
+    ax1.set_xlabel("$t$"); ax1.set_ylabel("$a(t)$"); ax1.legend()
+    ax2.set_xlabel("$t$"); ax2.set_ylabel("$\\dot{a}(t)$"); ax2.legend()
 
 def plotProfiles() -> None:
-    filename = "tf-s-4-g4-aa"
-    checkpoints = [2, 4] #[1, 2, 4, 8, 16, 32]
-    V0 = 4.0 * (1 - (1-np.exp(-4))/4)
+    # filename = "tf-s-4-g4-aa"
+    filename = "tf-s-4-g8-aa"
+    cp_list = [4, 8]
     with open("result/" + filename + "/PhysicalParameters", "rb") as f:
         phyp = pickle.load(f)
     phyp.eps = -1.0 / np.log(phyp.slip)
-    print("Parameters of the profiles: \nV0 = {:.4f}\n".format(V0), phyp)
+    print("Parameters of the profiles:", phyp)
     # load the data
     npzdata = []
-    for cp in checkpoints:
+    for cp in cp_list:
         name = "result/" + filename + "/{:04}.npz".format(cp)
         npzdata.append(np.load(name))
     #
     _, ax1 = pyplot.subplots() # axis for plotting the profiles
     _, ax2 = pyplot.subplots() # axis for plotting the slope dh
     _, ax3 = pyplot.subplots() # axis for plotting the slope dg
-    alpha_list = np.linspace(1.0, 0.2, len(checkpoints))[::-1]
-    for data, alpha in zip(npzdata, alpha_list):
+    alpha_list = np.linspace(1.0, 0.2, len(cp_list))[::-1]
+    for cp, data, alpha in zip(cp_list, npzdata, alpha_list):
         xi_c = data["xi_c"]
         a_hist = data["a_hist"]
         h = data["h"]
         g = data["g"]
         t = a_hist[0, -1]
         a = a_hist[1, -1]
-        adot = (a_hist[1, -1] - a_hist[1, -2]) / (a_hist[0, -1] - a_hist[0, -2])
-        print("adot = {:.3e}".format(adot))
+        adot = (a_hist[1,1:] - a_hist[1,:-1]) / (a_hist[0,1:] - a_hist[0,:-1])
+        print("Plotting checkpoint {}, adot = {:.3e}".format(cp, adot[-1]))
+        label = "$t={:.2f}$".format(t)
+        # plot the profiles
         n_fluid = h.size - 3
-        ax1.plot(a * xi_c[2:-2], g[1:-1], "-", color="tab:blue", label="$t={:.2f}$".format(t), alpha=alpha)
+        ax1.plot(a * xi_c[2:-2], g[1:-1], "-", color="tab:blue", label=label, alpha=alpha)
         ax1.plot(a * xi_c[2:2+n_fluid], h[2:-1], "-", color="tab:blue", alpha=alpha)
         # calculate and plot the slopes
         z = np.log(a * (1.0 - xi_c[2:n_fluid+2])) * phyp.eps + 1.0
         dh = (h[3:n_fluid+3] - h[1:n_fluid+1]) / (xi_c[3:n_fluid+3] - xi_c[1:n_fluid+1]) / a
         dg = (g[2:n_fluid+2] - g[:n_fluid]) / (xi_c[3:n_fluid+3] - xi_c[1:n_fluid+1]) / a
-        ax2.plot(z, -dh, 'o', markerfacecolor='none', label="$t={:.2f}$".format(t), alpha=alpha)
-        ax3.plot(z, -dg, 'o', markerfacecolor='none', label="$t={:.2f}$".format(t), alpha=alpha)
+        ax2.plot(z, -dh, 'o', markerfacecolor='none', label=label, alpha=alpha)
+        ax3.plot(z, -dg, 'o', markerfacecolor='none', label=label, alpha=alpha)
         # plot the theoretical prediction
-        plotPrediction(xi_c[2:2+n_fluid], xi_c[2:-2], phyp, V0, a, adot, alpha, ax1, ax2, ax3)
-    ax1.legend()
+        plotPrediction(xi_c[2:2+n_fluid], xi_c[2:-2], phyp, a, adot[-1], alpha, ax1, ax2, ax3)
+    ax1.legend(); ax1.set_xlabel("$x$")
     ax2.legend(); ax2.set_xlabel("$z$"); ax2.set_ylabel("$h'$")
     ax3.legend(); ax3.set_xlabel("$z$"); ax3.set_ylabel("$g'$")
-    # pyplot.show()
     # fig.savefig("thin films.png", dpi=300)
 
+# these are the specific solutions appeared in the next-order solution of the bending problem
 def phi(x: np.ndarray) -> np.ndarray:
     r1 = np.exp(x) * expi(-x)
     r2 = np.exp(-x) * expi(x)
@@ -116,14 +133,14 @@ def dphi(x: np.ndarray) -> np.ndarray:
     r[x == 0.0] = 0.0
     return r
 
-def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters, V0: float, a: float, adot: float, alpha: float, ax1, ax2, ax3) -> None:
+def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters, a: float, adot: float, alpha: float, ax1, ax2, ax3) -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         eps, th_y = phyp.eps, phyp.theta_Y
         # estimate from asymptotic relation
-        a_app = 3*V0 / (a**2 * (1+1/phyp.gamma[0]))
+        a_app = 3*phyp.vol / (a**2 * (1+1/phyp.gamma[0]))
         b_app = -1/phyp.gamma[0] * a_app
-        th_app = 3*V0 / a**2
+        th_app = 3*phyp.vol / a**2
         B0 = phyp.bm / eps**2 #np.sqrt(phyp.bm / phyp.gamma[0]) / eps
         b_til = np.sqrt(phyp.gamma[0]) / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app
         a0 = ((a_app - b_til)**3 - th_y**3) / 3
@@ -168,18 +185,18 @@ def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters,
         # calculate the constants in the next-order solution
         C1_til, C0_til = -a_app / a, 3 + np.log(eps) - np.log(2*a)
         A = np.array(((gamma[0], -gamma[1]), (1.0/lb[0], 1.0/lb[1])))
-        b = np.array((B0/gamma[0]*C1_til, adot / (gamma[0] * th_app**2) * (0.57721 - np.log(lb[0]) - C0_til)))
+        b = np.array((B0/gamma[0]*C1_til, eps*a0 / (gamma[0] * th_app**2) * (0.57721 - np.log(lb[0]) - C0_til)))
         D = dense_solve(A, b)
-        E1 = adot / th_app**2 * (-np.log(lb[0]) - C0_til)
+        E1 = eps*a0 / th_app**2 * (-np.log(lb[0]) - C0_til)
         F1 = gamma[0] / lb[0] * (D[1] - D[0])
         z1 = np.maximum(0.0, y_til / lb[0])
         g_til_1 = np.where(y_til >= 0.0, 
-                        D[0]*np.exp(-z1) + lb[0] / gamma[0] * (-C1_til*lb[0]/2*z1**2 + E1*z1 + F1 + adot/th_app**2*(phi(z1) - z1*(np.log(z1)-1))), 
+                        D[0]*np.exp(-z1) + lb[0] / gamma[0] * (-C1_til*lb[0]/2*z1**2 + E1*z1 + F1 + eps*a0/th_app**2*(phi(z1) - z1*(np.log(z1)-1))), 
                         D[1]*np.exp(y_til / lb[1]))
         ax1.plot(xs, (g_til_0 + eps * g_til_1) * eps, 'k:', alpha=alpha)
         z1 = z1[z1 > 0.0]
         dg_til_0 = b_app - C_pos / lb[0] * np.exp(-z1)
-        dg_til_1 = (-D[0]*np.exp(-z1) + lb[0]/gamma[0]*(adot/th_app**2*(dphi(z1) - np.log(z1)) - C1_til*lb[0]*z1 + E1)) / lb[0]
+        dg_til_1 = (-D[0]*np.exp(-z1) + lb[0]/gamma[0]*(eps*a0/th_app**2*(dphi(z1) - np.log(z1)) - C1_til*lb[0]*z1 + E1)) / lb[0]
         dh_til_1 = C1_til * (z1*lb[0]) + a0/th_app**2*(np.log(z1*lb[0]) + (3.0+np.log(eps)-np.log(2*a)))
         ax3.plot(np.log(z1 * lb[0] * eps) * eps + 1.0, dg_til_0 + eps * dg_til_1, 'r-', alpha=alpha)
         ax2.plot(np.log(z1 * lb[0] * eps) * eps + 1.0, a_app + eps * (dh_til_1), 'r-', alpha=alpha) # y_til -> +infty    
@@ -188,7 +205,7 @@ if __name__ == "__main__":
 
     # getTimeConvergence()
     # getSpaceConvergence()
-    # plotCLSpeed()
-    plotProfiles()
+    plotCLSpeed()
+    # plotProfiles()
 
     pyplot.show()
