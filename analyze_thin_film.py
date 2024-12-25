@@ -46,7 +46,8 @@ def getSpaceConvergence() -> None:
     printConvergenceTable(table_headers, error_table)
 
 def plotCLSpeed() -> None:
-    cp_list = ["result/tf-s-4-g4-aa/0008.npz", "result/tf-s-4-g48-aa/0008.npz"]
+    cp_list = ["result/tf-s-4-g8-aa/0008.npz", "result/tf-s-4-g4-aa/0008.npz", 
+               "result/tf-s-4-g2-aa/0008.npz", "result/tf-s-4-g1-aa/0008.npz"]
     labels = []; npzdata = []; params = []
     # load also the parameters
     for cp in cp_list:
@@ -59,19 +60,20 @@ def plotCLSpeed() -> None:
     _, ax1 = pyplot.subplots()
     _, ax2 = pyplot.subplots()
     for label, npz, phyp in zip(labels, npzdata, params):
+        print("Plotting", phyp)
         a_hist = npz["a_hist"]
         ax1.plot(a_hist[0], a_hist[1], '-', label=label)
         speed = (a_hist[1,1:] - a_hist[1,:-1]) / (a_hist[0,1:] - a_hist[0,:-1])
         a = a_hist[1,1:]
-        ax2.plot(a_hist[0, 2:], speed[1:], '--', label=label, alpha=0.4)
+        ax2.plot(a[1::4096], speed[1::4096], 'o', label=label, alpha=0.4)
         # calculate and plot the theoretical prediction
         a_app = 3*phyp.vol/(a**2*(1+1/phyp.gamma[0]))
         b_app = -a_app / phyp.gamma[0]
         b_til = np.sqrt(phyp.gamma[0]) / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app
         a_est = phyp.eps * ((a_app - b_til)**3 - phyp.theta_Y**3) / 3
-        ax2.plot(a_hist[0, 2:], a_est[1:], '-')
+        ax2.plot(a[1:], a_est[1:], '-')
     ax1.set_xlabel("$t$"); ax1.set_ylabel("$a(t)$"); ax1.legend()
-    ax2.set_xlabel("$t$"); ax2.set_ylabel("$\\dot{a}(t)$"); ax2.legend()
+    ax2.set_xlabel("$a$"); ax2.set_ylabel("$\\dot{a}(t)$"); ax2.legend()
 
 def plotProfiles() -> None:
     # filename = "tf-s-4-g4-aa"
