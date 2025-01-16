@@ -17,6 +17,7 @@ class PhysicalParameters:
     mu_cl: float = 1.0
     bm: float = gamma[0] * (1.0 / np.log(slip))**2      # the bending modulus
     vol: float = 4.0 * (1 - (1-np.exp(-4))/4)
+    a_init: float = 1.0
 
 class ThinFilmRunner(Runner):
 
@@ -158,11 +159,11 @@ class ThinFilmRunner(Runner):
             del self.resume_file
         else:
             self.t = 0.0
-            self.a = 1.0
+            self.a = self.phyp.a_init
             self.cp = 0 # number of checkpoints reached
             
             self.h = 1 - np.exp(4.0*(xi_c_f-1))
-            self.h *= self.phyp.vol / (1 - (1-np.exp(-4))/4)
+            self.h *= self.phyp.vol / (self.a * (1 - (1-np.exp(-4))/4))
             self.h[-1] = -self.h[-2]
             self.g = np.zeros((n_total+2, ))
             self.kappa = np.zeros((n_total+2, ))
