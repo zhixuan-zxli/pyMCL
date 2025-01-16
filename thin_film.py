@@ -255,7 +255,7 @@ class ThinFilmRunner(Runner):
         A = sp.bmat((
             (self.Ihh + (solp.dt*gamma[2]/a_star**4)*C + self.G4hh, -self.Ihg - self.G4hg, None), # h
             (None, self.L/a_star**2 + self.G, self.Igk), # g
-            (gamma[2]*(-self.L4h + self.Lj4h)/a_star**2, (gamma[0]-gamma[1])*self.Lj4g/a_star**2, self.phyp.bm*self.L/a_star**2 + self.gamma_dia + self.G),  # kappa
+            (gamma[2]*(-self.L4h/a_star**2 + self.Lj4h/a_star), -gamma[2]*self.Lj4g/a_star, self.phyp.bm*self.L/a_star**2 + self.gamma_dia + self.G),  # kappa
             ), format="csc")
         # prepare the RHS
         h_g = np.zeros_like(h)
@@ -292,18 +292,6 @@ class ThinFilmRunner(Runner):
             and self.solp.dt * adot < self.min_dxi / 8 and self.solp.dt < self.min_dxi * 4:
             self.solp.dt *= 2
             print(Fore.GREEN + "Adaptively change dt to {:.3e}".format(self.solp.dt) + Style.RESET_ALL)
-
-def downsample(u: np.ndarray, ng_left: int) -> np.ndarray:
-    """
-    ng_left [int] number of ghosts on the left
-    """
-    usize = u.size
-    u_down = np.zeros(((usize-ng_left-1)//2 + ng_left+1, ))
-    u_down[ng_left:-1] = (u[ng_left:-2:2] + u[ng_left+1:-1:2]) / 2
-    # symmetry condition at the left
-    for i in range(ng_left):
-        u_down[i] = u_down[2*ng_left-i-1]
-    return u_down
 
 if __name__ == "__main__":
     
