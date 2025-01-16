@@ -4,7 +4,7 @@ from os.path import join as pjoin
 from scipy.linalg import solve as dense_solve
 from scipy.special import expi
 from fem.post import printConvergenceTable
-from thin_film import downsample, PhysicalParameters
+from thin_film import PhysicalParameters
 from matplotlib import pyplot
 import warnings
 
@@ -25,6 +25,18 @@ def getTimeConvergence() -> None:
         error_table["a"].append(np.abs(a_diff).item())
     print("\nTime convergence: ")
     printConvergenceTable(table_headers, error_table)
+
+def downsample(u: np.ndarray, ng_left: int) -> np.ndarray:
+    """
+    ng_left [int] number of ghosts on the left
+    """
+    usize = u.size
+    u_down = np.zeros(((usize-ng_left-1)//2 + ng_left+1, ))
+    u_down[ng_left:-1] = (u[ng_left:-2:2] + u[ng_left+1:-1:2]) / 2
+    # symmetry condition at the left
+    for i in range(ng_left):
+        u_down[i] = u_down[2*ng_left-i-1]
+    return u_down
 
 def getSpaceConvergence() -> None:
     num_hier = 4
