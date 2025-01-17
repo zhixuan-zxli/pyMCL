@@ -12,11 +12,11 @@ from colorama import Fore, Style
 @dataclass
 class PhysicalParameters:
     gamma: tuple[float] = (2.0, 2.9, 1.0) # the (effective) surface tension for the wet, dry and the interface
-    slip: float = 1e-4   # the slip length
+    slip: float = 1e-2   # the slip length
     theta_Y: float = 1.0
     mu_cl: float = 1.0
-    bm: float = gamma[0] * (1.0 / np.log(slip))**2      # the bending modulus
-    vol: float = 4.0 * (1 - (1-np.exp(-4))/4)
+    bm: float = 0.01 #gamma[0] * (1.0 / np.log(slip))**2      # the bending modulus
+    vol: float = 2.0
     a_init: float = 1.0
 
 class ThinFilmRunner(Runner):
@@ -162,8 +162,9 @@ class ThinFilmRunner(Runner):
             self.a = self.phyp.a_init
             self.cp = 0 # number of checkpoints reached
             
-            self.h = 1 - np.exp(4.0*(xi_c_f-1))
-            self.h *= self.phyp.vol / (self.a * (1 - (1-np.exp(-4))/4))
+            # self.h = 1 - np.exp(4.0*(xi_c_f-1))
+            self.h = (1.0 - xi_c_f**2) * (1.0 + 0.2 * np.cos(2*np.pi*xi_c_f))
+            self.h *= self.phyp.vol / (self.a * 0.656534548302433)
             self.h[-1] = -self.h[-2]
             self.g = np.zeros((n_total+2, ))
             self.kappa = np.zeros((n_total+2, ))
@@ -191,11 +192,12 @@ class ThinFilmRunner(Runner):
         if self.args.vis:
             self.ax.clear()
             self.ax.plot(self.a * self.xi_c_f[2:], self.h[2:], '-')   # fluid
-            self.ax.plot(self.a * self.xi_c_f[2:-1], (-self.L4h @ self.h)[2:2+n_fluid], ':') # fluid interface curvature
+            # self.ax.plot(self.a * self.xi_c_f[2:-1], (-self.L4h @ self.h)[2:2+n_fluid], ':') # fluid interface curvature
             self.ax.plot(self.a * xi_c[2:-2], self.g[1:-1], '-')      # sheet
-            self.ax.plot(self.a * xi_c[2:-2], self.kappa[1:-1], '--') # curvature of the sheet
+            # self.ax.plot(self.a * xi_c[2:-2], self.kappa[1:-1], '--') # curvature of the sheet
             self.ax.plot((0.0, 2 * self.a), (0.0, 0.0), 'r:')         # the reference level
-            self.ax.set_xlim(0.0, 3.0); self.ax.set_ylim(-1.0, 2.0)
+            self.ax.set_xlim(0.0, 3.0); 
+            self.ax.set_ylim(-0.5, 1.0)
             pyplot.draw(); pyplot.pause(1e-4)
         
         return self.t >= self.solp.Te
@@ -256,7 +258,7 @@ class ThinFilmRunner(Runner):
         A = sp.bmat((
             (self.Ihh + (solp.dt*gamma[2]/a_star**4)*C + self.G4hh, -self.Ihg - self.G4hg, None), # h
             (None, self.L/a_star**2 + self.G, self.Igk), # g
-            (gamma[2]*(-self.L4h/a_star**2 + self.Lj4h/a_star), -gamma[2]*self.Lj4g/a_star, self.phyp.bm*self.L/a_star**2 + self.gamma_dia + self.G),  # kappa
+            (gamma[2]*(-self.L4h + self.Lj4h)/a_star**2, (gamma[0]-gamma[1])*self.Lj4g/a_star**2, self.phyp.bm*self.L/a_star**2 + self.gamma_dia + self.G),  # kappa
             ), format="csc")
         # prepare the RHS
         h_g = np.zeros_like(h)
@@ -297,28 +299,31 @@ class ThinFilmRunner(Runner):
 if __name__ == "__main__":
     
     # set up the grid. 
-    m = 32
-    xi_b_f = np.concatenate((
-        np.linspace(0.0, 0.5, m+1), 
-        np.linspace(1/2, 3/4, m+1)[1:], 
-        np.linspace(3/4, 7/8, m+1)[1:],
-        np.linspace(7/8, 15/16, m+1)[1:],
-        np.linspace(15/16, 31/32, m+1)[1:],
-        np.linspace(31/32, 63/64, m+1)[1:],
-        np.linspace(63/64, 127/128, m+1)[1:],
-        np.linspace(127/128, 255/256, m+1)[1:],
-        np.linspace(255/256, 511/512, m+1)[1:],
-        np.linspace(511/512, 1.0, 2*m+1)[1:],
-    ))
+    # m = 32
+    # xi_b_f = np.concatenate((
+    #     np.linspace(0.0, 0.5, m+1), 
+    #     np.linspace(1/2, 3/4, m+1)[1:], 
+    #     np.linspace(3/4, 7/8, m+1)[1:],
+    #     np.linspace(7/8, 15/16, m+1)[1:],
+    #     np.linspace(15/16, 31/32, m+1)[1:],
+    #     np.linspace(31/32, 63/64, m+1)[1:],
+    #     np.linspace(63/64, 127/128, m+1)[1:],
+    #     np.linspace(127/128, 255/256, m+1)[1:],
+    #     np.linspace(255/256, 511/512, m+1)[1:],
+    #     np.linspace(511/512, 1.0, 2*m+1)[1:],
+    # ))
     # finest h = 1/32768
 
-    the_solp = SolverParameters(dt = 1/(1024*512), Te=16.0)
-    the_solp.dt_cp = 1.0/2
-    the_solp.adapt_t = True #False
+    # the_solp = SolverParameters(dt = 1/(1024*512), Te=16.0)
+    # the_solp.dt_cp = 1.0/2
+    # the_solp.adapt_t = True #False    
+    the_solp = SolverParameters(dt = 1/512, Te=2.0)
+    the_solp.dt_cp = 1.0/8
+    the_solp.adapt_t = False
 
     runner = ThinFilmRunner(the_solp)
-    runner.prepare(base_grid=xi_b_f)
-    # runner.prepare(base_grid=128)
+    # runner.prepare(base_grid=xi_b_f)
+    runner.prepare(base_grid=128)
     runner.run()
     runner.finish()
 
