@@ -10,17 +10,19 @@ import warnings
 
 def getTimeConvergence() -> None:
     num_hier = 4
-    filenames = "result/tf-s-2-g4-s1t{}/0032.npz"
+    filenames = "result/tf-s-2-g2-uni-s1t{}/0004.npz"
     data = []
-    table_headers = ["T{}".format(i+2) for i in range(num_hier-1)]
-    error_table = { "h inf": [], "g inf": [], "a": [] }
+    table_headers = ["T{}".format(i+1) for i in range(num_hier-1)]
+    error_table = { "h inf": [], "g inf": [], "kappa inf": [], "a": [] }
     for i in range(num_hier):
-        data.append(np.load(filenames.format(i+2)))
+        data.append(np.load(filenames.format(i+1)))
     for i in range(num_hier-1):
         h_diff = data[i+1]["h"] - data[i]["h"]
         error_table["h inf"].append(np.linalg.norm(h_diff[2:-1], ord=np.inf))
         g_diff = data[i+1]["g"] - data[i]["g"]
         error_table["g inf"].append(np.linalg.norm(g_diff[1:-1], ord=np.inf))
+        k_diff = data[i+1]["kappa"] - data[i]["kappa"]
+        error_table["kappa inf"].append(np.linalg.norm(k_diff[1:-1], ord=np.inf))
         a_diff = data[i+1]["a_hist"][1,-1] - data[i]["a_hist"][1,-1]
         error_table["a"].append(np.abs(a_diff).item())
     print("\nTime convergence: ")
@@ -41,17 +43,19 @@ def downsample(u: np.ndarray, ng_left: int) -> np.ndarray:
 def getSpaceConvergence() -> None:
     num_hier = 4
     base_grid = 128
-    filenames = "result/tf-s-2-g4-s{}t{}/0032.npz"
+    filenames = "result/tf-s-2-g2-uni-s{}t{}/0004.npz"
     data = []
     table_headers = ["1/{}".format(base_grid*2**i) for i in range(num_hier-1)]
-    error_table = {"h": [], "g": [], "a": []}
+    error_table = {"h": [], "g": [], "kappa": [], "a": []}
     for i in range(num_hier):
-        data.append(np.load(filenames.format(i, 2*i)))
+        data.append(np.load(filenames.format(i, i)))
     for i in range(num_hier-1):
         h_diff = downsample(data[i+1]["h"], 2) - data[i]["h"]
         error_table["h"].append(np.linalg.norm(h_diff[2:-1], ord=np.inf))
         g_diff = downsample(data[i+1]["g"], 1) - data[i]["g"]
         error_table["g"].append(np.linalg.norm(g_diff[2:-1], ord=np.inf))
+        k_diff = downsample(data[i+1]["kappa"], 1) - data[i]["kappa"]
+        error_table["kappa"].append(np.linalg.norm(k_diff[2:-1], ord=np.inf))
         a_diff = data[i+1]["a_hist"][1,-1] - data[i]["a_hist"][1,-1]
         error_table["a"].append(np.abs(a_diff).item())
     print("\nSpace convergence: ")
@@ -88,9 +92,8 @@ def plotCLSpeed() -> None:
     ax2.set_xlabel("$a$"); ax2.set_ylabel("$\\dot{a}(t)$"); ax2.legend()
 
 def plotProfiles() -> None:
-    # filename = "tf-s-4-g4-aa"
-    filename = "tf-s-4-g8-aa"
-    cp_list = [4, 8]
+    filename = "tf-s-4-g2-Y1-rec"
+    cp_list = [1, 8, 24, 48]
     with open("result/" + filename + "/PhysicalParameters", "rb") as f:
         phyp = pickle.load(f)
     phyp.eps = -1.0 / np.log(phyp.slip)
@@ -114,10 +117,10 @@ def plotProfiles() -> None:
         a = a_hist[1, -1]
         adot = (a_hist[1,1:] - a_hist[1,:-1]) / (a_hist[0,1:] - a_hist[0,:-1])
         print("Plotting checkpoint {}, adot = {:.3e}".format(cp, adot[-1]))
-        label = "$t={:.2f}$".format(t)
+        label = "$t={:.1f}$".format(t)
         # plot the profiles
         n_fluid = h.size - 3
-        ax1.plot(a * xi_c[2:-2], g[1:-1], "-", color="tab:blue", label=label, alpha=alpha)
+        ax1.plot(a * xi_c[2:-2], g[1:-1], "-", color="k", label=label, alpha=alpha)
         ax1.plot(a * xi_c[2:2+n_fluid], h[2:-1], "-", color="tab:blue", alpha=alpha)
         # calculate and plot the slopes
         z = np.log(a * (1.0 - xi_c[2:n_fluid+2])) * phyp.eps + 1.0
@@ -127,7 +130,7 @@ def plotProfiles() -> None:
         ax3.plot(z, -dg, 'o', markerfacecolor='none', label=label, alpha=alpha)
         # plot the theoretical prediction
         plotPrediction(xi_c[2:2+n_fluid], xi_c[2:-2], phyp, a, adot[-1], alpha, ax1, ax2, ax3)
-    ax1.legend(); ax1.set_xlabel("$x$")
+    ax1.legend(); ax1.set_xlabel("$x$"); ax1.set_xlim(0.0, 2.5); ax1.set_ylabel("$z$")
     ax2.legend(); ax2.set_xlabel("$z$"); ax2.set_ylabel("$h'$")
     ax3.legend(); ax3.set_xlabel("$z$"); ax3.set_ylabel("$g'$")
     # fig.savefig("thin films.png", dpi=300)
@@ -207,7 +210,7 @@ def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters,
         g_til_1 = np.where(y_til >= 0.0, 
                         D[0]*np.exp(-z1) + lb[0] / gamma[0] * (-C1_til*lb[0]/2*z1**2 + E1*z1 + F1 + eps*a0/th_app**2*(phi(z1) - z1*(np.log(z1)-1))), 
                         D[1]*np.exp(y_til / lb[1]))
-        ax1.plot(xs, (g_til_0 + eps * g_til_1) * eps, 'k:', alpha=alpha)
+        # ax1.plot(xs, (g_til_0 + eps * g_til_1) * eps, 'k:', alpha=alpha)
         z1 = z1[z1 > 0.0]
         dg_til_0 = b_app - C_pos / lb[0] * np.exp(-z1)
         dg_til_1 = (-D[0]*np.exp(-z1) + lb[0]/gamma[0]*(eps*a0/th_app**2*(dphi(z1) - np.log(z1)) - C1_til*lb[0]*z1 + E1)) / lb[0]
@@ -219,7 +222,7 @@ if __name__ == "__main__":
 
     # getTimeConvergence()
     # getSpaceConvergence()
-    plotCLSpeed()
-    # plotProfiles()
+    # plotCLSpeed()
+    plotProfiles()
 
     pyplot.show()
