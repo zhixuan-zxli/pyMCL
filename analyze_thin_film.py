@@ -92,8 +92,8 @@ def plotCLSpeed() -> None:
     ax2.set_xlabel("$a$"); ax2.set_ylabel("$\\dot{a}(t)$"); ax2.legend()
 
 def plotProfiles() -> None:
-    filename = "tf-s-4-g2-Y1-adv"
-    cp_list = [2, 8]
+    filename = "tf-s-4-g2-Y1-rec"
+    cp_list = [8]
     with open("result/" + filename + "/PhysicalParameters", "rb") as f:
         phyp = pickle.load(f)
     phyp.eps = -1.0 / np.log(phyp.slip)
@@ -120,8 +120,10 @@ def plotProfiles() -> None:
         print("Plotting checkpoint {}, adot = {:.3e}".format(cp, adot[-1]))
         label = "$t={:.1f}$".format(t)
         # plot the profiles
-        ax1.plot(a * xi_c[2:-2:4], g[1:-1:4], "o", mfc='none', mec="tab:orange", label=label, alpha=alpha)
-        ax1.plot(a * xi_c[2:2+n_fluid:4], h[2:-1:4], "o", mfc='none', mec="tab:blue", alpha=alpha)
+        ax1.plot(a * xi_c[2:-2], g[1:-1], '-', color="tab:orange", label=label, alpha=alpha)
+        ax1.plot(a * xi_c[2:2+n_fluid], h[2:-1], '-', color="tab:blue", alpha=alpha)
+        # ax1.plot(a * xi_c[2:-2:4], g[1:-1:4], "o", mfc='none', mec="tab:orange", label=label, alpha=alpha)
+        # ax1.plot(a * xi_c[2:2+n_fluid:4], h[2:-1:4], "o", mfc='none', mec="tab:blue", alpha=alpha)
         # calculate and plot the slopes
         z = np.log(a * (1.0 - xi_c[2:n_fluid+2])) * phyp.eps + 1.0
         dh = (h[3:n_fluid+3] - h[1:n_fluid+1]) / (xi_c[3:n_fluid+3] - xi_c[1:n_fluid+1]) / a
@@ -129,7 +131,7 @@ def plotProfiles() -> None:
         ax2.plot(z[::2], -dh[::2], 'o', mfc='none', mec="tab:blue", label=label, alpha=alpha)
         ax3.plot(z[::2], -dg[::2], 'o', mfc='none', mec="tab:orange", label=label, alpha=alpha)
         # plot the theoretical prediction
-        plotPrediction(xi_c[2:2+n_fluid], xi_c[2:-2], phyp, a, adot[-1], alpha, ax1, ax2, ax3)
+        plotPrediction(xi_c[2:2+n_fluid], xi_c[2:-2], phyp, a, adot[-1], alpha, ax1, ax2, ax3, cp == cp_list[-1])
     ax1.legend(); ax1.set_xlabel("$x$"); ax1.set_xlim(0.0, 2.5); ax1.set_ylabel("$z$")
     ax2.legend(); ax2.set_xlabel("$z$"); ax2.set_ylabel("$h'$")
     ax3.legend(); ax3.set_xlabel("$z$"); ax3.set_ylabel("$g'$")
@@ -150,7 +152,7 @@ def dphi(x: np.ndarray) -> np.ndarray:
     r[x == 0.0] = 0.0
     return r
 
-def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters, a: float, adot: float, alpha: float, ax1, ax2, ax3) -> None:
+def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters, a: float, adot: float, alpha: float, ax1, ax2, ax3, lab: bool) -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         eps, th_y = phyp.eps, phyp.theta_Y
@@ -171,25 +173,25 @@ def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters,
         g1 = np.where(xi_s <= 1.0, \
             -a0 / phyp.gamma[0] / th_app**2 * ((a+xs) * np.log(a+xs) + (a-xs)*np.log(a-xs) - 2*a*np.log(2*a) + 3*a/2*(1.0-xi_s**2)), \
             0.0)
-        # ax1.plot(xf, h0 + eps * h1, 'k-', label="asymptotics")
+        # ax1.plot(xf, h0 + eps * h1, 'k-', label="Asymptotics" if lab else None)
         # ax1.plot(xs, g0 + eps * g1, 'k-')
         y = a - xf
         z = np.log(y) * eps + 1.0
         dh_outer = a_app * xf / a + eps * a0 / th_app**2 * (np.log(y) + (3-np.log(2*a)))
         mask = z > 0.7
-        ax2.plot(z[mask], dh_outer[mask], 'k-', label="Outer")
+        ax2.plot(z[mask], dh_outer[mask], 'k-', label="Outer" if lab else None)
 
         # ================== Inner region ==================
         s = y / phyp.slip
         dh_inner = th_y + b_til + eps * a0 / th_y * (np.log(th_y*s + 1) / th_y + s * np.log(1 + 1/(th_y*s)) + 1)
         mask = z < 0.2
-        ax2.plot(z[mask], dh_inner[mask], 'm--', label="Inner")
+        ax2.plot(z[mask], dh_inner[mask], 'm--', label="Inner" if lab else None)
 
         # ================== Intermediate region ==================
         m0 = (th_y**3 + 3*a0*z)**(1/3)
         m01 = m0 + 1 / m0**2 * (ea1*z + eps * a0 * (th_y + np.log(th_y) + 1))
         mask = (z > 0.0) & (z < 0.5)
-        ax2.plot(z[mask], m01[mask] + b_til, 'm-', label="Intermediate")
+        ax2.plot(z[mask], m01[mask] + b_til, 'm-', label="Intermediate" if lab else None)
         
         # ================== Bending region ==================
         gamma = phyp.gamma
@@ -215,8 +217,8 @@ def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters,
         #
         h_til_0 = a_app * y_til + C2
         h_til_1 = a0/th_app**2 * (y_til * np.log(y_til) + (2 + np.log(eps/(2*a)))*y_til) - a_app/(2*a)*y_til**2 + D[1]*lb[1]
-        ax1.plot(xs, (h_til_0 + eps * h_til_1) * eps, 'k-', label="asymptotics")
-        ax1.plot(xs, (g_til_0 + eps * g_til_1) * eps, 'k-')
+        # ax1.plot(xs, (h_til_0 + eps * h_til_1) * eps, 'k-', label="Asymptotics" if lab else None)
+        # ax1.plot(xs, (g_til_0 + eps * g_til_1) * eps, 'k-')
         # plot the slopes
         y_til = y_til[y_til > 0.0]
         y1 = y1[y1 > 0.0]
@@ -224,10 +226,10 @@ def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters,
         mask = (z > 0.3) & (z < 0.7)
         dg_til_0 = b_app - C1 / lb[0] * np.exp(-y1)
         dg_til_1 = -D[0]*lb[0]*np.exp(-y1) - b_app/a*y_til + a0/(gamma[0]*th_app**2)*(dphi(y1) - np.log(y1) + E1)
-        ax3.plot(z, dg_til_0 + eps * dg_til_1, 'k-', label="asymptotics")
+        ax3.plot(z, dg_til_0 + eps * dg_til_1, 'k-', label="Asymptotics" if lab else None)
         dh_til_0 = a_app
         dh_til_1 = a0/th_app**2*(np.log(y_til) + 3 + np.log(eps/(2*a))) - a_app/a*y_til
-        ax2.plot(z[mask], (dh_til_0 + eps*dh_til_1)[mask], 'k--', label="Bending") # y_til -> +infty    
+        ax2.plot(z[mask], (dh_til_0 + eps*dh_til_1)[mask], 'k--', label="Bending" if lab else None) # y_til -> +infty    
 
 if __name__ == "__main__":
 
