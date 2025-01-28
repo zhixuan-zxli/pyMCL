@@ -62,38 +62,53 @@ def getSpaceConvergence() -> None:
     printConvergenceTable(table_headers, error_table)
 
 def plotCLSpeed() -> None:
-    cp_list = ["result/tf-s-4-g8-aa/0008.npz", "result/tf-s-4-g4-aa/0008.npz", 
-               "result/tf-s-4-g2-aa/0008.npz", "result/tf-s-4-g1-aa/0008.npz"]
-    labels = []; npzdata = []; params = []
+    # cp_list = ["result/tf-s-4-g2-Y1-B0_0625-adv/0064.npz", 
+    #            "result/tf-s-4-g2-Y1-B0_25-adv/0064.npz",
+    #            "result/tf-s-4-g2-Y1-adv/0064.npz"]
+    cp_list = ["result/tf-s-4-g1-Y1-adv/0064.npz", 
+               "result/tf-s-4-g2-Y1-adv/0064.npz", 
+               "result/tf-s-4-g4-Y1-adv/0064.npz", 
+               "result/tf-s-4-g8-Y1-adv/0064.npz"]
+            #    ["result/tf-s-4-g1-Y1-rec/0064.npz", 
+            #    "result/tf-s-4-g2-Y1-rec/0064.npz", 
+            #    "result/tf-s-4-g4-Y1-rec/0064.npz", 
+            #    "result/tf-s-4-g8-Y1-rec/0064.npz"]
+    npzdata = []; params = []; markers='o^*+XD'
     # load also the parameters
     for cp in cp_list:
         parts = cp.split("/")
-        labels.append(parts[-2])
         npzdata.append(np.load(cp))
         with open(pjoin(*parts[:-1], "PhysicalParameters"), "rb") as f:
             params.append(pickle.load(f))
             params[-1].eps = -1.0 / np.log(params[-1].slip)
     _, ax1 = pyplot.subplots()
     _, ax2 = pyplot.subplots()
-    for label, npz, phyp in zip(labels, npzdata, params):
+    for npz, phyp, marker in zip(npzdata, params, markers):
         print("Plotting", phyp)
+        label = "$\\gamma_1 = {:.1f}$".format(phyp.gamma[0])
         a_hist = npz["a_hist"]
         ax1.plot(a_hist[0], a_hist[1], '-', label=label)
         speed = (a_hist[1,1:] - a_hist[1,:-1]) / (a_hist[0,1:] - a_hist[0,:-1])
         a = a_hist[1,1:]
-        ax2.plot(a[1::4096], speed[1::4096], 'o', label=label, alpha=0.4)
+        marker_handles = ax2.plot(a[1::8192], speed[1::8192] / phyp.eps, ls='none', marker=marker, mfc='none', label=label, alpha = 0.5)
         # calculate and plot the theoretical prediction
         a_app = 3*phyp.vol/(a**2*(1+1/phyp.gamma[0]))
         b_app = -a_app / phyp.gamma[0]
         b_til = np.sqrt(phyp.gamma[0]) / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app
-        a_est = phyp.eps * ((a_app - b_til)**3 - phyp.theta_Y**3) / 3
-        ax2.plot(a[1:], a_est[1:], '-')
-    ax1.set_xlabel("$t$"); ax1.set_ylabel("$a(t)$"); ax1.legend()
-    ax2.set_xlabel("$a$"); ax2.set_ylabel("$\\dot{a}(t)$"); ax2.legend()
+        adot_0 = ((a_app - b_til)**3 - phyp.theta_Y**3) / 3
+        adot_1 = 0.0 # adot_0 * (2 + np.log(phyp.eps/(2*a)) - phyp.theta_Y - np.log(phyp.theta_Y)) - np.log(phyp.eps)
+        a_est = phyp.eps * (adot_0 + phyp.eps * adot_1)
+        ax2.plot(a[1::1024], a_est[1::1024] / phyp.eps, '-', color=marker_handles[0].get_color())
+    # plot the classical reference
+    a = np.linspace(1.0, 2.0, 129)
+    a_class = phyp.eps * ((3*phyp.vol/a**2)**3 - phyp.theta_Y**3) / 3
+    ax2.plot(a, a_class / phyp.eps, 'k--', label="Classical")
+    ax1.set_xlabel("$t$"); ax1.set_ylabel("$a(t)$"); ax1.legend(); ax2.set_xlim(1.0, 1.8); ax2.set_ylim(0, 6)
+    ax2.set_xlabel("$a$"); ax2.set_ylabel("$\\dot{a}(t)/\\epsilon$"); ax2.legend()
 
 def plotProfiles() -> None:
-    filename = "tf-s-4-g2-Y1-rec"
-    cp_list = [8]
+    filename = "tf-s-4-g2-Y1-adv"
+    cp_list = [2]
     with open("result/" + filename + "/PhysicalParameters", "rb") as f:
         phyp = pickle.load(f)
     phyp.eps = -1.0 / np.log(phyp.slip)
@@ -133,9 +148,8 @@ def plotProfiles() -> None:
         # plot the theoretical prediction
         plotPrediction(xi_c[2:2+n_fluid], xi_c[2:-2], phyp, a, adot[-1], alpha, ax1, ax2, ax3, cp == cp_list[-1])
     ax1.legend(); ax1.set_xlabel("$x$"); ax1.set_xlim(0.0, 2.5); ax1.set_ylabel("$z$")
-    ax2.legend(); ax2.set_xlabel("$z$"); ax2.set_ylabel("$h'$")
-    ax3.legend(); ax3.set_xlabel("$z$"); ax3.set_ylabel("$g'$")
-    # fig.savefig("thin films.png", dpi=300)
+    ax2.legend(); ax2.set_xlabel("$s$"); ax2.set_ylabel("$\partial_{y}h$")
+    ax3.legend(); ax3.set_xlabel("$s$"); ax3.set_ylabel("$\partial_{y}g$")
 
 # these are the specific solutions appeared in the next-order solution of the bending problem
 def phi(x: np.ndarray) -> np.ndarray:
