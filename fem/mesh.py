@@ -13,8 +13,7 @@ class Mesh:
     tdim: int
     point: np.ndarray
     point_tag: np.ndarray
-    cell: list[np.ndarray]
-    # cell[d] stores the node representation of a d-dimensional simplex, appended by a tag. 
+    cell: list[np.ndarray] # cell[d] stores the node representation of a d-dimensional simplex. 
     cell_tag: list[np.ndarray]
 
     facet_ref: np.ndarray
@@ -77,16 +76,16 @@ class Mesh:
         """
         if self.tdim == 0:
             return
-        # collect all the facets
+        # collect all the facets and identify the tagged facets among them
         all_facets = ref_doms[self.tdim]._get_sub_entities(self.cell[self.tdim], dim=self.tdim-1) # (Ne, num_sub_ent, tdim-1+1)
         num_facet = all_facets.shape[1]
         all_facets = all_facets.reshape(-1, self.tdim)
-        all_facets, _ = self._sort_with_orienation(all_facets)
+        all_facets, _ = self._sort_within_entities(all_facets)
         uq_facets, idx = np.unique(all_facets, return_index=True, axis=0)
-        tagged_facets, orientation = self._sort_with_orienation(self.cell[self.tdim-1])
+        tagged_facets, orientation = self._sort_within_entities(self.cell[self.tdim-1])
         tagged_idx = binsearchkw(uq_facets.astype(np.int32), tagged_facets) # type: np.ndarray
         assert np.all(tagged_idx != -1)
-        # preserve the order of the tagged facets
+        # preserve the order of appearance of the tagged facets
         Nf = uq_facets.shape[0]
         untagged_flag = np.ones((Nf, ), dtype=np.bool_)
         untagged_flag[tagged_idx] = False
@@ -108,13 +107,16 @@ class Mesh:
         old_tags = self.cell_tag[self.tdim-1]
         self.cell_tag[self.tdim-1] = INTERIOR_FACET_TAG * np.ones((Nf, ), dtype=np.int32)
         self.cell_tag[self.tdim-1][:tagged_idx.size] = old_tags
-        # fix the facet orientation
+        # Make sure that the first element ID <= the second element ID
         tags = self.cell_tag[self.tdim][self.facet_ref[:,0]] # (2, num_facet)
         flipped = tags[0] > tags[1]
         self.facet_ref[:,:,flipped] = self.facet_ref[::-1,:,flipped]
 
     @staticmethod
-    def _sort_with_orienation(entities: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def _sort_within_entities(entities: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Sort each row of entities and return the parity of each row. 
+        """
         N, d = entities.shape
         orientation = np.empty((N, ), dtype=np.bool8)
         res = entities.copy()
@@ -177,7 +179,7 @@ class Mesh:
         submesh.build_facet_ref()
         return submesh
     
-    def draw(self) -> None:
+    def show(self) -> None:
         if self.tdim == 3:
             print("Unable to visualize 3D mesh. ")
         elif self.tdim == 2:
