@@ -39,7 +39,7 @@ class Quadrature:
     )
     
     @staticmethod
-    def getTable(cellType: type, order: int) -> tuple[np.array, np.ndarray]:
+    def getTable(cellType: type, order: int) -> tuple[np.ndarray, np.ndarray]:
         if cellType == RefNode:
             return Quadrature._node
         if cellType == RefLine:

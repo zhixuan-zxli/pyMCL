@@ -5,6 +5,7 @@ from .refdom import ref_doms
 from tools.binsearchkw import binsearchkw
 from matplotlib import pyplot
 
+# any facet not tagged by the input mesh will be tagged by this value
 INTERIOR_FACET_TAG: int = 99
 
 class Mesh:
@@ -147,7 +148,7 @@ class Mesh:
         elem_tag = self.point_tag if dim == 0 else self.cell_tag[dim]
         keep_idx[dim] = np.zeros((elem_tag.shape[0], ), dtype=np.bool_)
         if tags == None:
-            keep_idx = True
+            keep_idx[dim][:] = True
         else:
             assert isinstance(tags, tuple)
             for t in tags:
@@ -175,7 +176,7 @@ class Mesh:
             submesh.cell_tag[d] = self.cell_tag[d][keep_idx[d]]
         # 3. Remap the elements
         submesh.cell[dim] = point_remap[submesh.cell[dim]]
-        # 4. 
+        # 4. build the facet reference
         submesh.build_facet_ref()
         return submesh
     

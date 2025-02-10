@@ -2,7 +2,6 @@ from typing import Callable, Union
 import numpy as np
 from scipy.sparse import csr_array
 from .measure import Measure
-from .function import Function
 from .funcbasis import FunctionBasis
 from .refdom import ref_doms
     

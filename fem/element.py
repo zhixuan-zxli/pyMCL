@@ -16,7 +16,11 @@ class Element:
     num_local_dof: int
     
     @staticmethod
-    def _eval(basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]: # (rdim, Nq), (rdim, tdim, Nq)
+    def _eval(basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]:
+        """
+        qpts: (tdim, num_of_quad_pts)
+        return the basis function value of shape (rdim, Nq) and gradient of shape (rdim, tdim, Nq)
+        """
         raise NotImplementedError # will be implemented by subclasses
     
 class NodeElement(Element):

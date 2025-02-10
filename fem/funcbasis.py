@@ -1,4 +1,3 @@
-from warnings import warn
 import numpy as np
 from .function import FunctionSpace, QuadData
 from .measure import Measure
