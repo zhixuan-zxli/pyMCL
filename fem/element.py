@@ -121,7 +121,7 @@ class TriDG0(TriElement):
 
     rdim: int = 1
     degree: int = 0
-    discontinuous: bool = False
+    discontinuous: bool = True
     dof_name: tuple[tuple[str]] = (
         None, # node
         None, # edge
