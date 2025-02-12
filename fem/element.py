@@ -206,6 +206,7 @@ class VectorElement(Element):
         self.tdim = base_elem.tdim
         self.rdim = num_copy
         self.degree = base_elem.degree
+        self.discontinuous = base_elem.discontinuous
         def _repeat(names: tuple[str]) -> tuple[str]:
             return sum((tuple(n + "_" + str(d) for d in range(num_copy)) for n in names), tuple())
         self.dof_name = tuple(_repeat(names) if names is not None else None for names in base_elem.dof_name)
@@ -220,7 +221,10 @@ class VectorElement(Element):
         return r, g
 
 class DiscontinuousElement(Element):
+    base_elem: Element
+
     def __init__(self, base_elem: Element) -> None:
+        self.base_elem = base_elem
         self.ref_cell = base_elem.ref_cell
         self.tdim = base_elem.tdim
         self.rdim = base_elem.rdim
@@ -229,4 +233,7 @@ class DiscontinuousElement(Element):
         self.dof_loc = base_elem.dof_loc
         self.num_local_dof = base_elem.num_local_dof
         self.discontinuous = True
+
+    def _eval(self, basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]:
+        return self.base_elem._eval(basis_id, qpts)
 

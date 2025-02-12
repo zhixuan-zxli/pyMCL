@@ -19,8 +19,7 @@ def setMeshMapping(mesh: Mesh, order: int = 1):
     mesh.coord_fe = FunctionSpace(mesh, VectorElement(elem, mesh.gdim))
     mesh.coord_map = Function(mesh.coord_fe)
     for d in range(mesh.gdim):
-        dof_d = mesh.coord_fe.dof_group["u_" + str(d)]
-        mesh.coord_map[dof_d] = mesh.coord_fe.dof_loc[dof_d, d]
+        mesh.coord_map[d::mesh.gdim] = mesh.coord_fe.dof_loc[d::mesh.gdim, d]
 
 def splitRefine(mesh: Mesh) -> Mesh:
     fine_mesh = Mesh()

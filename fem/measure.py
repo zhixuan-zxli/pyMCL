@@ -10,9 +10,9 @@ class Measure:
     mesh: Mesh
     dim: int
     doubleSided: bool
-    elem_ix: Union[np.ndarray, slice] # the element indices involved
-    facet_ix: np.ndarray # the facet indices of a surface measure
-    facet_id: np.ndarray # the facet if within an element, for a surface measure
+    elem_ix: np.ndarray # the element indices involved
+    # facet_ix: np.ndarray # the facet indices of a surface measure
+    facet_id: np.ndarray # the facet within an element, if for a surface measure
 
     quad_tab: np.ndarray # (num_quad, tdim) if volume measure, or (num_facets, num_quad, tdim) if surface measure
     quad_w: np.ndarray # (num_quad, )
@@ -36,12 +36,13 @@ class Measure:
         self.quad_tab, self.quad_w = Quadrature.getTable(ref_doms[dim], order)
         # 1. Volume measure
         if dim == mesh.tdim:
+            assert not doubleSided, "Volume measure cannot be double-sided. "
             # prepare the element indices
+            elem_tag = mesh.cell_tag[mesh.tdim]
             if tags is None:
-                self.elem_ix = slice(None) # select all the elements
+                self.elem_ix = np.arange(elem_tag.shape[0], dtype=np.int32)
             else:
                 # select the elements with the provided tags
-                elem_tag = mesh.cell_tag[mesh.tdim]
                 flag = np.zeros((elem_tag.shape[0],), dtype=np.bool_)
                 for t in tags:
                     flag[elem_tag == t] = True
@@ -50,23 +51,23 @@ class Measure:
         elif dim == mesh.tdim-1:
             # prepare the facet/element indices
             if tags is None:
-                self.facet_ix = slice(None)
+                facet_ix = slice(None)
             else:
                 # select the facets with the provided tags
                 facet_tag = mesh.cell_tag[mesh.tdim-1]
                 flag = np.zeros((facet_tag.shape[0], ), dtype=np.bool_)
                 for t in tags:
                     flag[facet_tag == t] = True
-                self.facet_ix = np.nonzero(flag)[0]
+                facet_ix = np.nonzero(flag)[0]
             #
             if doubleSided:
-                assert np.all(mesh.facet_ref[0,0,self.facet_ix] != mesh.facet_ref[1,0,self.facet_ix]), \
+                assert np.all(mesh.facet_ref[0,0,facet_ix] != mesh.facet_ref[1,0,facet_ix]), \
                 "The selected facets contain boundary facets. "
             n = 1 + doubleSided
-            self.elem_ix = mesh.facet_ref[:n, 0, self.facet_ix].reshape(-1) # (n * num_facets, )
-            self.facet_id = mesh.facet_ref[:n, 1, self.facet_ix].reshape(-1) # (n * num_facets, )
+            self.elem_ix = mesh.facet_ref[:n, 0, facet_ix].reshape(-1) # (n * num_facets, )
+            self.facet_id = mesh.facet_ref[:n, 1, facet_ix].reshape(-1) # (n * num_facets, )
             # calculate the quadrature locations
-            facet_entities = ref_doms[dim]._get_sub_entities(mesh.cell[dim][self.facet_ix], dim=dim) # (num_facets, 1, dim+1)
+            facet_entities = ref_doms[dim]._get_sub_entities(mesh.cell[dim][facet_ix], dim=dim) # (num_facets, 1, dim+1)
             quad_locs = _calculate_dof_locations(mesh, facet_entities, self.quad_tab) # (num_quad, num_facets, 1, gdim)
             quad_locs = quad_locs.reshape(self.quad_w.size, -1, mesh.gdim) # (num_quad, num_facets, gdim)
             quad_locs = np.tile(quad_locs, (1, n, 1)) # (num_quad, n*num_facets, gdim) # Why tile for interior facets?

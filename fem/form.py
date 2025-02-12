@@ -62,16 +62,18 @@ class BilinearForm(Functional):
         test_2s, trial_2s = test_mea.doubleSided, trial_mea.doubleSided
         assert test_Ne * (1 + trial_2s) == trial_Ne * (1 + test_2s), \
             "Number of elements (facets) in test and trial basis must be the same."
-        rows = np.empty((test_elem_dof.shape[0], trial_elem_dof.shape[0], 1 + test_2s, 1 + trial_2s, test_Ne), dtype=np.int32)
-        cols = np.empty((test_elem_dof.shape[0], trial_elem_dof.shape[0], 1 + test_2s, 1 + trial_2s, test_Ne), dtype=np.int32)
-        vals = np.empty((test_elem_dof.shape[0], trial_elem_dof.shape[0], 1 + test_2s, 1 + trial_2s, test_Ne))
+        test_x = (test_mea.x, ) if not test_2s else test_mea.x.sides()
+        trial_x = (trial_mea.x, ) if not trial_2s else trial_mea.x.sides()
+        rows = np.empty((test_elem_dof.shape[0], trial_elem_dof.shape[0], 1 + test_2s, 1 + trial_2s, test_x[0].shape[1]), dtype=np.int32)
+        cols = np.empty_like(rows, dtype=np.int32)
+        vals = np.empty_like(rows, dtype=np.float_)
         for i in range(test_elem_dof.shape[0]):
             test_data = (test_basis.data[i], ) if not test_2s else test_basis.data[i].sides()
             for j in range(trial_elem_dof.shape[0]):
                 trial_data = (trial_basis.data[j], ) if not trial_2s else trial_basis.data[j].sides()
                 for k in range(1 + test_2s):
                     for l in range(1 + trial_2s):
-                        form_data = self.form(test_data[k], trial_data[l], test_mea.x, trial_mea.x, **extra_args) # (1, num_elem, num_quad)
+                        form_data = self.form(test_data[k], trial_data[l], test_x[k], trial_x[l], **extra_args) # (1, num_elem, num_quad)
                         assert form_data.shape[0] == 1, "Please make sure that the form outputs a array of leading dimension 1. "
                         vals[i,j,k,l] = dx_ref * (form_data[0] @ test_mea.quad_w).reshape(-1) # (num_elem,), reduce by quadrature
                         rows[i,j,k,l] = test_elem_dof[i, test_basis.mea.elem_ix.reshape(1 + test_2s, -1)[k]]
