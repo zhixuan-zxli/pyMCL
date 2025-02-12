@@ -2,7 +2,7 @@ import numpy as np
 from fem import *
 from scipy.sparse import bmat
 from scipy.sparse.linalg import spsolve
-from matplotlib import pyplot
+# from matplotlib import pyplot
 from colorama import Fore, Style
 
 def u_exact(x, y) -> np.ndarray:
@@ -34,7 +34,7 @@ def f_exact(x, y) -> np.ndarray:
     return diffu - dp_exact(x, y)
 
 @BilinearForm
-def a(v, u, x) -> np.ndarray:
+def a(v, u, x, _) -> np.ndarray:
     # grad: (2, 2, Ne, Nq)
     z = np.zeros(x.shape[1:])
     for i, j in (0,0), (0,1), (1,0), (1,1):
@@ -42,7 +42,7 @@ def a(v, u, x) -> np.ndarray:
     return z[np.newaxis] * x.dx
 
 @BilinearForm
-def b(v, p, x) -> np.ndarray:
+def b(v, p, x, _) -> np.ndarray:
     # v.grad: (2,2,Ne,Nq)
     z = (v.grad[0,0] + v.grad[1,1]) * p[0]
     return z[np.newaxis] * x.dx
@@ -106,10 +106,10 @@ if __name__ == "__main__":
         p0_basis = FunctionBasis(P0, dx)
 
         # assemble the form
-        A = a.assemble(u_basis, u_basis, dx)
-        B1 = b.assemble(u_basis, p1_basis, dx)
-        B0 = b.assemble(u_basis, p0_basis, dx)
-        L = l.assemble(u_basis, dx)
+        A = a.assemble(u_basis, u_basis)
+        B1 = b.assemble(u_basis, p1_basis)
+        B0 = b.assemble(u_basis, p0_basis)
+        L = l.assemble(u_basis)
         G = g.assemble(u_s_basis, ds)
 
         # assemble the saddle point system
@@ -117,13 +117,14 @@ if __name__ == "__main__":
         p1 = Function(P1)
         p0 = Function(P0)
         # Aa = bmat(((A, B1), (B1.T, None)), format="csr")
-        Aa = bmat(((A, B1, B0), (B1.T, None, None), (B0.T, None, None)), format="csr")
+        Aa = bmat(((A, B1, B0), (B1.T, None, None), (B0.T, None, None)), format="csc")
         # La = group_fn(L, p1)
         La = group_fn(L+G, p1, p0)
 
         # impose the Dirichlet condition
-        bdof = np.unique(U.getFacetDof((2,)))
+        # bdof = np.unique(U.getFacetDof((2,)))
         # fdof = group_dof((U, P1), (bdof, np.array((0,))))
+        bdof = np.where(U.dof_loc[:,1] < 1e-12)[0]
         fdof = group_dof((U, P1, P0), (bdof, np.array((0,)), np.array((0,))))
         u_err = Function(U)
         u_err[:] = u_exact(U.dof_loc[::2,0], U.dof_loc[::2,1]).T.reshape(-1)

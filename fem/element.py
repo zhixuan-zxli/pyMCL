@@ -117,6 +117,28 @@ class TriElement(Element):
     ref_cell: RefCell = RefTri()
     tdim: int = 2
 
+class TriDG0(TriElement):
+
+    rdim: int = 1
+    degree: int = 0
+    discontinuous: bool = False
+    dof_name: tuple[tuple[str]] = (
+        None, # node
+        None, # edge
+        ('u', ), # tri
+    )
+    dof_loc: tuple[np.ndarray] = (
+        None, # node
+        None, # edge
+        np.array(((1.0/3, 1.0/3, 1.0/3),)) # tri
+    )
+    num_local_dof: int = 1
+
+    @staticmethod
+    def _eval(basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]:
+        assert basis_id == 0
+        return np.ones((1, qpts.shape[1])), np.zeros((1, 2, qpts.shape[1]))
+
 class TriP1(TriElement):
 
     rdim: int = 1
