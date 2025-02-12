@@ -5,15 +5,15 @@ from .measure import Measure
 
 class QuadData(np.ndarray):
     """
-    Discrete function values on quadrature points, (rdim, Ne, Nquad).
+    Discrete function values on quadrature points, (rdim, num_elem, num_quad).
     """
 
-    grad: np.ndarray
-    inv_grad: np.ndarray
-    dx: np.ndarray
-    cn: np.ndarray # cell normal
-    fn: np.ndarray # facet normal
-    ds: np.ndarray # surface Jacobian
+    grad: np.ndarray     # of shape (rdim, tdim, num_elem, num_quad)
+    inv_grad: np.ndarray # of shape (tdim, rdim, num_elem, num_quad)
+    dx: np.ndarray       # of shape (1, num_elem, num_quad)
+    cn: np.ndarray       # cell normal, (gdim, num_elem, num_quad)
+    fn: np.ndarray       # facet normal, (gdim, num_elem, num_quad), and points to the element with the bigger tag and is irrelevant to the facet orientation
+    ds: np.ndarray       # surface Jacobian (1, num_elem, num_quad)
 
     def __new__(cls, value: Optional[np.ndarray] = None):
         if value is None:
@@ -41,6 +41,7 @@ class QuadData(np.ndarray):
         # invalidate the attributes
         return np.array(out_arr)
 
+    # Split the num_elem dimension into two parts. Useful when dealing with discontinuous elements. 
     def sides(self) -> tuple["QuadData", "QuadData"]:
         assert self.shape[1] % 2 == 0
         Nf = self.shape[1] // 2
@@ -84,40 +85,40 @@ class Function(np.ndarray):
     def _interpolate(self, mea: Measure) -> QuadData:
         assert self.fe.mesh is mea.mesh
         tdim, rdim = self.fe.elem.tdim, self.fe.elem.rdim
-        Nq = mea.quad_w.size
+        num_quad = mea.quad_w.size
         elem_dof = self.fe.elem_dof
-        Ne = elem_dof.shape[1] if isinstance(mea.elem_ix, slice) else mea.elem_ix.size # Ne, or n * Nf
+        Ne = elem_dof.shape[1] if isinstance(mea.elem_ix, slice) else mea.elem_ix.size # num_elem if volume measure or n * num_facets if surface measure
         gdim = tdim if mea.x is None else mea.mesh.gdim
-        data = np.zeros((rdim, Ne, Nq))
-        grad = np.zeros((rdim, gdim, Ne, Nq))
+        data = np.zeros((rdim, Ne, num_quad))
+        grad = np.zeros((rdim, gdim, Ne, num_quad))
         # interpolate on cells
         if mea.dim == tdim:
             for i in range(elem_dof.shape[0]): # loop over each basis function
                 nodal = self.view(np.ndarray)[elem_dof[i, mea.elem_ix]] # (Ne, )
-                basis_data, grad_data = self.fe.elem._eval(i, mea.quad_tab.T) # (rdim, Nq), (rdim, tdim, Nq)
+                basis_data, grad_data = self.fe.elem._eval(i, mea.quad_tab.T) # (rdim, num_quad), (rdim, tdim, num_quad)
                 # interpolate function values
-                data += nodal[np.newaxis,:,np.newaxis] * basis_data[:, np.newaxis, :] # (rdim, Ne, Nq)
+                data += nodal[np.newaxis,:,np.newaxis] * basis_data[:, np.newaxis, :] # (rdim, Ne, num_quad)
                 # interpolate the gradients
                 grad_temp = nodal[np.newaxis,np.newaxis,:,np.newaxis] \
-                    * grad_data[:,:,np.newaxis,:] # (rdim, gdim, Ne, Nq)
+                    * grad_data[:,:,np.newaxis,:] # (rdim, gdim, Ne, num_quad)
                 if mea.x is not None:
                     grad_temp = np.einsum("ij...,jk...->ik...", grad_temp, mea.x.inv_grad)
                 grad += grad_temp
         elif mea.dim == tdim-1:
             for i in range(elem_dof.shape[0]):
-                nodal = self.view(np.ndarray)[elem_dof[i, mea.elem_ix]] # (n*Nf, )
+                nodal = self.view(np.ndarray)[elem_dof[i, mea.elem_ix]] # (n*num_facets, )
                 # interpolate function values
-                basis_data, grad_data = self.fe.elem._eval(i, mea.quad_tab.reshape(-1, tdim).T) 
-                basis_data = basis_data.reshape(rdim, -1, Nq) # (rdim, n*Nf, Nq)
-                data += nodal[np.newaxis,:,np.newaxis] * basis_data # (rdim, n*Nf, Nq)
+                basis_data, grad_data = self.fe.elem._eval(i, mea.quad_tab.reshape(-1, tdim).T)  # quad_tab is of shape (n * num_facets, num_quad, tdim)
+                basis_data = basis_data.reshape(rdim, -1, num_quad) # (rdim, n*num_facets, num_quad)
+                data += nodal[np.newaxis,:,np.newaxis] * basis_data # (rdim, n*num_facets, num_quad)
                 # interpolate the gradients
-                grad_data = grad_data.reshape(rdim, tdim, -1, Nq) # (rdim, tdim, n*Nf, Nq)
-                grad_temp = nodal[np.newaxis,np.newaxis,:,np.newaxis] * grad_data # (rdim, tdim, n*Nf, Nq)
+                grad_data = grad_data.reshape(rdim, tdim, -1, num_quad) # (rdim, tdim, n*num_facets, num_quad)
+                grad_temp = nodal[np.newaxis,np.newaxis,:,np.newaxis] * grad_data # (rdim, tdim, n*num_facets, num_quad)
                 if mea.x is not None:
-                    grad_temp = np.einsum("ij...,jk...->ik...", grad_temp, mea.x.inv_grad) # (rdim, gdim, n*Nf, Nq)
+                    grad_temp = np.einsum("ij...,jk...->ik...", grad_temp, mea.x.inv_grad) # (rdim, gdim, n*num_facets, num_quad)
                 grad += grad_temp
         else:
-            raise RuntimeError("Incorrect measure dimension")
+            raise RuntimeError("Incorrect measure dimension. ")
         #
         data = QuadData(data)
         data.grad = grad

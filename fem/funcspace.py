@@ -1,45 +1,35 @@
 from typing import Optional
+from warnings import warn
 import numpy as np
-from scipy.sparse import coo_array
 from .mesh import Mesh, INTERIOR_FACET_TAG
 from .refdom import ref_doms
 from .element import Element
-from tools.binsearchkw import binsearchkw
 
 class FunctionSpace:
-
+    """
+    This function accepts a mesh and a finite element type and generates the DOFs for the function space.
+    """
     mesh: Mesh
     elem: Element
     
     dof_loc: np.ndarray # (num_dof, gdim)
-    dof_group: dict[str, np.ndarray]
     elem_dof: np.ndarray
-    # elem_dof: (num_local_dof, Ne)
-    # where num_local_dof = \sum_{d=0}^{tdim} num_dof_loc[d] * num_sub_ent[d] * num_dof_type[d], 
+    # of shape (num_local_dof, Ne)
+    # where num_local_dof = \sum_{d=0}^{tdim} num_sub_ent[d] * num_dof_loc[d] * num_dof_type[d], 
     # and d = 0, 1, ..., tdim
-    facet_dof: np.ndarray # layout same as above
     
     num_dof: int
 
     def __init__(self, mesh: Mesh, elem: Element, constraint: Optional[callable] = None) -> None:
         self.mesh = mesh
         self.elem = elem
-
-        tdim = elem.tdim
+        tdim, gdim = elem.tdim, mesh.point.shape[-1]
         assert mesh.tdim == tdim
         elem_cell = mesh.cell[tdim]
         num_elem = elem_cell.shape[0]
 
         self.dof_loc = np.zeros((0, mesh.gdim))
-        self.dof_group = dict()
         self.elem_dof = np.zeros((0, num_elem), dtype=np.int32)
-
-        if tdim > 0:
-            facet_cell = mesh.cell[tdim-1][mesh.cell_tag[tdim-1] != INTERIOR_FACET_TAG] # exclude the interior facets
-            num_facet = facet_cell.shape[0]
-            self.facet_dof = np.zeros((0, num_facet), dtype=np.int32)
-        else:
-            self.facet_dof = np.zeros((0, 0), dtype=np.int32)
 
         # Build the dof for entities of each dimension. 
         offset = 0
@@ -51,87 +41,57 @@ class FunctionSpace:
             # 1. calculate and match the dof locations. 
             num_dof_loc = elem_dof_loc.shape[0]
             all_locs = _calculate_dof_locations(mesh, ref_doms[tdim]._get_sub_entities(elem_cell, dim=d), elem_dof_loc)
+            all_locs = all_locs.reshape(-1, gdim)
+            # of shape (num_dof_loc * num_elem * num_sub_entities, gdim)
             
-            if d < tdim: # match the dof locations if not element dofs
+            if not elem.discontinuous: 
                 if constraint is not None:
                     constraint(all_locs)
                 _, fw_idx, inv_idx = np.unique(all_locs.round(decimals=10), return_index=True, return_inverse=True, axis=0)
                 # the magic number 10 here may not be robust enough ^
                 uq_locs = all_locs[fw_idx] # to get rid off the rounding effect
                 inv_idx = inv_idx.astype(np.int32)
-            else: # keep all the element dofs
+            else: 
+                if constraint is not None:
+                    warn("The constraint is not supported for discontinuous elements. ")
                 fw_idx = np.lexsort(all_locs[:, ::-1].T)
                 uq_locs = all_locs[fw_idx, :]
                 inv_idx = np.empty_like(fw_idx, dtype=np.int32)
                 inv_idx[fw_idx] = np.arange(all_locs.shape[0], dtype=np.int32)
-            # inv_idx: (num_dof_loc * num_total_sub_ent, )
+            # inv_idx: (num_dof_loc * num_elem * num_sub_entities, )
 
-            # 2. Broadcast to multiple dof types; save the dof locations
+            # 2. Broadcast to multiple dof types; save the dof locations and the dof table. 
             num_new_dof = uq_locs.shape[0]
             num_dof_name = len(elem.dof_name[d])
             self.dof_loc = np.vstack((self.dof_loc, np.repeat(uq_locs, repeats=num_dof_name, axis=0)))
-            for i, name in enumerate(elem.dof_name[d]):
-                new_dof_idx = offset + np.arange(num_new_dof, dtype=np.int32) * num_dof_name + i
-                if name not in self.dof_group:
-                    self.dof_group[name] = new_dof_idx
-                else:
-                    self.dof_group[name] = np.concatenate((self.dof_group[name], new_dof_idx))
-
-            # 3. Save the dof table for each element. 
-            new_elem_dof = inv_idx.reshape(num_dof_loc, num_elem, -1).transpose(0, 2, 1)[:,:,np.newaxis,:] # (num_dof_loc, num_sub_ent, 1, num_elem)
+            new_elem_dof = inv_idx.reshape(num_dof_loc, num_elem, -1).transpose(2, 0, 3, 1) # of shape (num_sub_entites, num_dof_loc, 1, num_elem)
             new_elem_dof = offset + new_elem_dof * num_dof_name + np.arange(num_dof_name).reshape(1, 1, -1, 1) # (num_dof_loc, num_sub_ent, num_dof_type, num_elem)
             self.elem_dof = np.vstack((self.elem_dof, new_elem_dof.reshape(-1, num_elem))) 
             
-            # 3. Find the dof number for the facet dofs; does not work for element dofs on facets!
-            if d < tdim and num_facet > 0:
-                all_locs = _calculate_dof_locations(mesh, ref_doms[tdim-1]._get_sub_entities(facet_cell, dim=d), elem_dof_loc)
-                if constraint is not None:
-                    constraint(all_locs)
-                    
-                f_idx = binsearchkw(uq_locs.round(decimals=10), all_locs.round(decimals=10)) # (num_dof_loc * num_sub_ent, )
-                # the magic number 10 here may not be robust enough ^
-                assert np.all(f_idx != -1)
-                # save to facet dof
-                new_facet_dof = f_idx.reshape(num_dof_loc, num_facet, -1).transpose(0, 2, 1)[:,:,np.newaxis,:] # (num_dof_loc, num_sub_ent, 1, num_facet)
-                new_facet_dof = offset + new_facet_dof * num_dof_name + np.arange(num_dof_name).reshape(1, 1, -1, 1) # (num_dof_loc, num_sub_ent, num_dof_type, num_facet)
-                self.facet_dof = np.vstack((self.facet_dof, new_facet_dof.reshape(-1, num_facet)))
-
             offset += num_new_dof * num_dof_name
         # end for d
         assert elem.num_local_dof == self.elem_dof.shape[0]
         assert offset == self.dof_loc.shape[0]
         self.num_dof = offset
-
-    def getFacetDof(self, tags: Optional[tuple[int]] = None) -> np.ndarray:
-        if tags is None:
-            flag = slice(None)
-        else:
-            facet_tag = self.mesh.cell_tag[self.mesh.tdim-1]
-            facet_tag = facet_tag[facet_tag != INTERIOR_FACET_TAG] # exclude the interior facets
-            flag = np.zeros((facet_tag.shape[0], ), dtype=np.bool8)
-            for t in tags:
-                flag[facet_tag == t] = True
-        return self.facet_dof[:, flag]
     
 def _calculate_dof_locations(mesh: Mesh, sub_ent: np.ndarray, dof_loc: np.ndarray) -> np.ndarray:
-    d = sub_ent.shape[-1] - 1 # the dimension of the sub entities
-    num_total_ent = sub_ent.shape[0] * sub_ent.shape[1]
-    rows = np.broadcast_to(np.arange(num_total_ent, dtype=np.int32)[:,np.newaxis], (num_total_ent, d+1))
-    vals = np.zeros((num_total_ent, d+1))
-    coo = coo_array((vals.reshape(-1), (rows.reshape(-1), sub_ent.reshape(-1))), \
-                    shape=(num_total_ent, mesh.point.shape[0]))
-    all_locs = np.zeros((0, mesh.gdim)) # eventually (num_dof_loc * num_total_ent, gdim)
-    for loc in dof_loc:
-        coo.data = np.broadcast_to(loc[np.newaxis], (num_total_ent, d+1)).reshape(-1)
-        all_locs = np.vstack((all_locs, coo @ mesh.point))
-    return all_locs
+    # sub_ent: (num_elem, num_sub_entities, tdim+1)
+    # dof_loc: (num_dof_loc, tdim+1)
+    # result: (num_dof_loc, num_elem, num_sub_entities, gdim)
+    tdim = sub_ent.shape[-1] - 1 # the dimension of the sub entities
+    gdim = mesh.point.shape[-1] # the geometric dimension
+    result = np.zeros((dof_loc.shape[0], sub_ent.shape[0], sub_ent.shape[1], gdim))
+    for loc, r in zip(dof_loc, result):
+        for i in range(tdim+1):
+            r += mesh.point[sub_ent[:,:,i], :] * loc[i] # of shape (num_elem, num_sub_entities, gdim)
+    return result
 
 
 def group_dof(mixed_fe: tuple[FunctionSpace], dof_list: tuple[Optional[np.ndarray]]) -> np.ndarray:
     """
     Get the free dof (as a bool mask) for a mixed finite element space. 
     mixed_fe: a tuple of Element objects. 
-    dof_list: a tuple of dof lists. dof_list[c] is either or the fixed dof for mixed_fe[c].
+    dof_list: a tuple of dof lists. dof_list[c] is either None or a sequence of fixed dof indices. 
     """
     total_num_dof = sum(fe.num_dof for fe in mixed_fe)
     free_dof = np.ones((total_num_dof, ), dtype=np.bool8)
