@@ -90,7 +90,7 @@ class LineP2(LineElement):
         ('u', ), # edge
     )
     dof_loc: tuple[np.ndarray] = (
-        np.array((1.0,)), # node
+        np.array(((1.0,),)), # node
         np.array(((1.0/2, 1.0/2), )) # edge
     )
     num_local_dof: int = 3
