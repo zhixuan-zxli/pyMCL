@@ -276,13 +276,16 @@ def build_modulated_circle_mesh(amplitude: float, num_periods: int, num_points: 
 
     # Create a line loop and a plane surface
     line_loop = gmsh.model.geo.addCurveLoop(lines)
-    gmsh.model.geo.addPlaneSurface([line_loop])
+    # gmsh.model.geo.addPlaneSurface([line_loop])
 
     # Synchronize the CAD kernel with the Gmsh model
     gmsh.model.geo.synchronize()
 
     # Generate the mesh
     gmsh.model.mesh.generate(1)
+    
+    # Tag all 1D lines with number 2
+    gmsh.model.addPhysicalGroup(1, [s[1] for s in gmsh.model.getEntities(1)], 2)
 
     # Save the mesh to a binary file
     gmsh.option.setNumber("Mesh.Binary", 1)
