@@ -203,11 +203,102 @@ def build_unit_square(h: float) -> None:
     gmsh.write("mesh/unit_square.msh")
     gmsh.finalize()
 
+def build_dumbbell_mesh(radius: float, distance: float, mesh_size: float) -> None:
+    """
+    Build a dumbbell surface mesh in 3D using Gmsh.
+    
+    Parameters:
+    radius (float): Radius of the spheres.
+    distance (float): Distance between the centers of the two spheres.
+    mesh_size (float): Mesh size for the surface mesh.
+    """
+    gmsh.initialize()
+    gmsh.model.add("dumbbell")
+
+    # Define the centers of the two spheres
+    center1 = [-distance/2, 0, 0]
+    center2 = [distance/2, 0, 0]
+
+    # Add the points for the spheres
+    sphere1 = gmsh.model.occ.addSphere(center1[0], center1[1], center1[2], radius)
+    sphere2 = gmsh.model.occ.addSphere(center2[0], center2[1], center2[2], radius)
+
+    # Fuse the two spheres to create the dumbbell shape
+    gmsh.model.occ.fuse([(3, sphere1)], [(3, sphere2)])
+
+    # Synchronize the CAD kernel with the Gmsh model
+    gmsh.model.occ.synchronize()
+
+    # Set mesh size
+    gmsh.model.mesh.setSize(gmsh.model.getEntities(0), mesh_size)
+
+    # Generate the mesh
+    gmsh.model.mesh.generate(2)
+
+    # Save the mesh to a binary file
+    gmsh.option.setNumber("Mesh.Binary", 1)
+    gmsh.write("mesh/dumbbell.msh")
+
+    # Finalize Gmsh
+    gmsh.finalize()
+
+
+def build_modulated_circle_mesh(amplitude: float, num_periods: int, num_points: int) -> None:
+    """
+    Build a 1D mesh in 2D for a unit circle modulated in the normal direction by a sinusoidal wave.
+    
+    Parameters:
+    amplitude (float): Amplitude of the sinusoidal modulation.
+    num_points (int): Number of points to discretize the circle.
+    """
+    gmsh.initialize()
+    gmsh.model.add("modulated_circle")
+
+    # Define the points for the modulated circle
+    theta = np.linspace(0, 2 * np.pi, num_points, endpoint=False)
+    x = np.cos(theta)
+    y = np.sin(theta)
+    modulation = amplitude * np.sin(num_periods * theta)
+    x_modulated = x + modulation * np.cos(theta)
+    y_modulated = y + modulation * np.sin(theta)
+
+    # Add the points to Gmsh
+    points = []
+    for i in range(num_points):
+        points.append(gmsh.model.geo.addPoint(x_modulated[i], y_modulated[i], 0))
+
+    # Add the lines to form the modulated circle
+    lines = []
+    for i in range(num_points):
+        lines.append(gmsh.model.geo.addLine(points[i], points[(i + 1) % num_points]))
+
+    # Create a line loop and a plane surface
+    line_loop = gmsh.model.geo.addCurveLoop(lines)
+    gmsh.model.geo.addPlaneSurface([line_loop])
+
+    # Synchronize the CAD kernel with the Gmsh model
+    gmsh.model.geo.synchronize()
+
+    # Generate the mesh
+    gmsh.model.mesh.generate(1)
+
+    # Save the mesh to a binary file
+    gmsh.option.setNumber("Mesh.Binary", 1)
+    gmsh.write("mesh/modulated_circle.msh")
+
+    # Finalize Gmsh
+    gmsh.finalize()
+
+
 if __name__ == "__main__":
     if len(argv) < 2:
         print("python3 generate_mesh.py mesh_name")
         quit()
-    if argv[1] == "drop":
+    if argv[1] == "dumbbell":
+        build_dumbbell_mesh(radius=1.0, distance=1.6, mesh_size=0.08)
+    elif argv[1] == "modulated_circle":
+        build_modulated_circle_mesh(amplitude=0.1, num_periods=10, num_points=129)
+    elif argv[1] == "drop":
         bbox = np.array([[-1,0], [1,1]], dtype=np.float64)
         theta_0 = np.pi*2/3 # change this
         print("Theta_0 = {}".format(theta_0*180/np.pi))
@@ -225,3 +316,6 @@ if __name__ == "__main__":
         build_two_phase(bbox, (0.06, 0.25, 0.0, 0.5))
     elif argv[1] == "unit_square":
         build_unit_square(0.1)
+    else:
+        print("Unknown mesh name")
+        quit()
