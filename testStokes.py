@@ -5,6 +5,8 @@ from scipy.sparse.linalg import spsolve
 # from matplotlib import pyplot
 from colorama import Fore, Style
 
+# =======================================================================
+# below lists the exact solution
 def u_exact(x, y) -> np.ndarray:
     return np.array(
         (np.sin(x)**2 * np.sin(2*y), 
@@ -34,6 +36,8 @@ def f_exact(x, y) -> np.ndarray:
     )
     return diffu - dp_exact(x, y)
 
+# =======================================================================
+# below defines the forms
 @BilinearForm
 def a(v, u, x, _) -> np.ndarray:
     # grad: (2, 2, Ne, Nq)
@@ -128,7 +132,8 @@ if __name__ == "__main__":
     num_hier = 3
     mesh_table = tuple(f"{i}" for i in range(num_hier))
     error_head = ("u infty", "u L2", "p L2")
-    error_table = {k: [1.0] * num_hier for k in error_head}
+    strong_error_table = {k: [1.0] * num_hier for k in error_head}
+    weak_error_table = {k: [1.0] * num_hier for k in error_head}
     mesh = Mesh()
     mesh.load("mesh/unit_square.msh")
     # def periodic_constraint(x: np.ndarray) -> np.ndarray:
@@ -155,6 +160,8 @@ if __name__ == "__main__":
         p0_basis = FunctionBasis(P0, dx)
         p0_s_basis = FunctionBasis(P0, ds)
 
+        # =======================================================================
+        # Imposing the normal velocity using Nitsche method
         # assemble the form
         A = a.assemble(u_basis, u_basis)
         B1 = b.assemble(u_basis, p1_basis)
@@ -174,10 +181,8 @@ if __name__ == "__main__":
         u = Function(U)
         p1 = Function(P1)
         p0 = Function(P0)
-        # Aa = bmat(((A, -B1, -B0), (B1.T, None, None), (B0.T, None, None)), format="csc")
         # Aa = bmat(((A + A_nit + gamma*STAB, -B1+A_nit_p), (B1.T-A_nit_p.T, None)), format="csc")
         Aa = bmat(((A + A_nit + gamma*STAB, -B1+A_nit_p, -B0+A_nit_p0), (B1.T-A_nit_p.T, None, None), (B0.T-A_nit_p0.T, None, None)), format="csc")
-        # La = group_fn(-L+G, p1, p0)
         # La = group_fn(-L + L_nit + gamma * L_STAB + F_TAU, p1 + L_nit_p)
         La = group_fn(-L + L_nit + gamma * L_STAB + F_TAU, p1 + L_nit_p, p0 + L_nit_p0)
 
@@ -203,19 +208,52 @@ if __name__ == "__main__":
 
         # calculate the error
         u_err = u - u_err
-        error_table["u infty"][m] = np.linalg.norm(u_err, ord=np.inf)
-        error_table["u L2"][m] = np.sqrt(L2.assemble(dx, u=u_err._interpolate(dx)))
+        weak_error_table["u infty"][m] = np.linalg.norm(u_err, ord=np.inf)
+        weak_error_table["u L2"][m] = np.sqrt(L2.assemble(dx, u=u_err._interpolate(dx)))
 
         p_err = Function(P1)
         p_err[:] = p_exact(P1.dof_loc[:,0], P1.dof_loc[:,1])
         p_err = p1 - p_err
         # p_err -= integral_P1.assemble(dx, p1=p_err._interpolate(dx)) / 1.0
         p0 -= integral_P1P0.assemble(dx, p1=p_err._interpolate(dx), p0=p0._interpolate(dx)) / 1.0
+        weak_error_table["p L2"][m] = np.sqrt(L2_P1P0.assemble(dx, p1=p_err._interpolate(dx), p0=p0._interpolate(dx)))
+        
+        # =======================================================================
+        # Imposing the normal velocity strongly
+        p1[:] = 0.0
+        p0[:] = 0.0
+        Aa = bmat(((A, -B1, -B0), (B1.T, None, None), (B0.T, None, None)), format="csc")
+        La = group_fn(-L + F_TAU, p1, p0)
+        
+        # identify the fixed dofs
+        dof_lr = np.where((U.dof_loc[:,0] < 1e-12) | (U.dof_loc[:,0] > 1-1e-12))[0]
+        dof_tb_n = np.where((U.dof_loc[1::2,1] < 1e-12) | (U.dof_loc[1::2,1] > 1-1e-12))[0] * 2 + 1
+        bdof = np.unique(np.concatenate((dof_lr, dof_tb_n)))
+        fdof = group_dof((U, P1, P0), (bdof, np.array((0,)), np.array((0,))))
+        u_err[:] = u_exact(U.dof_loc[::2,0], U.dof_loc[::2,1]).T.reshape(-1)
+        u[:] = 0.0
+        u[bdof] = u_err[bdof]
+        p1[0] = p_exact(P1.dof_loc[0,0], P1.dof_loc[0,1]) # need to fix this pressure dof
 
-        # error_table["p infty"][m] = np.linalg.norm(p_err, ord=np.inf)
-        # error_table["p L2"][m] = np.sqrt(L2.assemble(dx, u=p_err._interpolate(dx)))
-        error_table["p L2"][m] = np.sqrt(L2_P1P0.assemble(dx, p1=p_err._interpolate(dx), p0=p0._interpolate(dx)))
+        # homogeneize the system
+        sol_vec = group_fn(u, p1, p0)
+        La = La - Aa @ sol_vec
+        sol_vec_free = spsolve(Aa[fdof][:,fdof], La[fdof])
+        sol_vec[fdof] = sol_vec_free
+        split_fn(sol_vec, u, p1, p0)
 
-    print(Fore.GREEN + "\nConvergence: " + Style.RESET_ALL)
-    printConvergenceTable(mesh_table, error_table)
+        # calculate the error
+        u_err[:] = u - u_err
+        strong_error_table["u infty"][m] = np.linalg.norm(u_err, ord=np.inf)
+        strong_error_table["u L2"][m] = np.sqrt(L2.assemble(dx, u=u_err._interpolate(dx)))
+
+        p_err[:] = p_exact(P1.dof_loc[:,0], P1.dof_loc[:,1])
+        p_err = p1 - p_err
+        p0 -= integral_P1P0.assemble(dx, p1=p_err._interpolate(dx), p0=p0._interpolate(dx)) / 1.0
+        strong_error_table["p L2"][m] = np.sqrt(L2_P1P0.assemble(dx, p1=p_err._interpolate(dx), p0=p0._interpolate(dx)))
+
+    print(Fore.GREEN + "\nConvergence of Nitsche method: " + Style.RESET_ALL)
+    printConvergenceTable(mesh_table, weak_error_table)
+    print(Fore.GREEN + "\nConvergence of strong method: " + Style.RESET_ALL)
+    printConvergenceTable(mesh_table, strong_error_table)
     
