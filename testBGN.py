@@ -3,37 +3,31 @@ import numpy as np
 from fem import *
 from scipy.sparse import bmat
 from scipy.sparse.linalg import spsolve
+# from scikits.umfpack import spsolve
 from matplotlib import pyplot
 
 @BilinearForm
-def a00(eta, x, z) -> np.ndarray:
+def a00(eta, x, z, _) -> np.ndarray:
     # x.grad (3, 3, Ne, Nq)
     # eta.grad (3, 3, Ne, Nq)
     return np.sum(x.grad * eta.grad, axis=(0,1))[np.newaxis] * z.dx
 
 @BilinearForm
-def a10(chi, x, z) -> np.ndarray:
+def a10(chi, x, z, _) -> np.ndarray:
     # x : (3, 1, Nq)
     # z.cn : (3, Ne, Nq)
     # chi : (1, 1, Nq)
     return np.sum(x * z.cn, axis=0, keepdims=True) * chi * z.dx
 
 @BilinearForm
-def a11(chi, kappa, z) -> np.ndarray:
+def a11(chi, kappa, z, _) -> np.ndarray:
     # kappa : (1, 1, Nq)
     # chi : (1, 1, Nq)
     return kappa * chi * z.dx
 
-@LinearForm
-def l1(chi, z, x_m) -> np.ndarray:
-    # chi : (1,1,Nq)
-    # z.n : (3, Ne, Nq)
-    # x_m : (3, Ne, Nq)
-    return np.sum(x_m * z.cn, axis=0, keepdims=True) * chi * z.dx
-
 class SolverParameters:
     dt: float = 1.0/1000
-    maxStep: int = 60
+    maxStep: int = 300
 
 if __name__ == "__main__":
 
@@ -50,8 +44,8 @@ if __name__ == "__main__":
         FunctionSpace(mesh, TriP1),  # kappa
     )
     dx = Measure(mesh, 2, order=3)
-    x_b = FunctionBasis(mixed_fs[0], dx)
-    k_b = FunctionBasis(mixed_fs[1], dx)
+    x_basis = FunctionBasis(mixed_fs[0], dx)
+    k_basis = FunctionBasis(mixed_fs[1], dx)
 
     x_m = Function(mixed_fs[0])
     x = Function(mixed_fs[0])
@@ -63,20 +57,18 @@ if __name__ == "__main__":
         pyplot.ion()
         fig = pyplot.figure()
         ax = fig.add_subplot(projection="3d")
-        nv = NodeVisualizer(mesh, mixed_fs[1])
 
     def redraw() -> None:
-        z = nv.remap(x_m, num_copy=3)
         ax.clear()
-        ts = ax.plot_trisurf(z[:,0], z[:,1], z[:,2], triangles=mesh.cell[2])
-        ts.set(linewidth=0.5)
+        ts = ax.plot_trisurf(x_m[::3], x_m[1::3], x_m[2::3], triangles=mixed_fs[0].elem_dof[::3].T//3)
+        ts.set(linewidth=0.2)
         ts.set_edgecolor("tab:blue")
         ts.set_facecolor((0.0, 0.0, 0.0, 0.0))
-        ax.set_xlim(-0.8, 0.8)
-        ax.set_ylim(-0.8, 0.8)
-        ax.set_zlim(-0.8, 0.8)
+        ax.set_xlim(-1.5, 1.5)
+        ax.set_ylim(-1.5, 1.5)
+        ax.set_zlim(-1.5, 1.5)
         pyplot.draw()
-        pyplot.pause(1e-3)
+        pyplot.pause(1e-4)
 
     for m in range(solp.maxStep):
         print("Solving t = {0:.4f}, ".format((m+1) * solp.dt), end="")
@@ -87,14 +79,13 @@ if __name__ == "__main__":
             redraw()
         # assemble the system
         dx.update()
-        x_b.update()
-        k_b.update()
-        A00 = a00.assemble(x_b, x_b, dx)
-        A10 = a10.assemble(k_b, x_b, dx)
-        A11 = a11.assemble(k_b, k_b, dx)
-        L1 = l1.assemble(k_b, dx, x_m=x_m._interpolate(dx))
-        Aa = bmat(((A00, A10.T), (A10, -solp.dt * A11)), format="csr")
-        La = group_fn(x, L1)
+        x_basis.update()
+        k_basis.update()
+        A00 = a00.assemble(x_basis, x_basis)
+        A10 = a10.assemble(k_basis, x_basis)
+        A11 = a11.assemble(k_basis, k_basis)
+        Aa = bmat(((A00, A10.T), (A10, -solp.dt * A11)), format="csc")
+        La = group_fn(x, A10 @ x_m)
         # solve the system
         sol_vec = spsolve(Aa, La)
         split_fn(sol_vec, x, k)
@@ -107,3 +98,5 @@ if __name__ == "__main__":
             redraw()
     
     print("Finished.\n")
+    pyplot.ioff()
+    pyplot.show()

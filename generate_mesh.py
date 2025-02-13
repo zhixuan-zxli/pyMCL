@@ -235,13 +235,15 @@ def build_dumbbell_mesh(radius: float, distance: float, mesh_size: float) -> Non
     # Generate the mesh
     gmsh.model.mesh.generate(2)
 
+    # Tag all 2D triangles with number 2
+    gmsh.model.addPhysicalGroup(2, [s[1] for s in gmsh.model.getEntities(2)], 2)
+
     # Save the mesh to a binary file
     gmsh.option.setNumber("Mesh.Binary", 1)
     gmsh.write("mesh/dumbbell.msh")
 
     # Finalize Gmsh
     gmsh.finalize()
-
 
 def build_modulated_circle_mesh(amplitude: float, num_periods: int, num_points: int) -> None:
     """
@@ -295,7 +297,7 @@ if __name__ == "__main__":
         print("python3 generate_mesh.py mesh_name")
         quit()
     if argv[1] == "dumbbell":
-        build_dumbbell_mesh(radius=1.0, distance=1.6, mesh_size=0.08)
+        build_dumbbell_mesh(radius=1.0, distance=1.6, mesh_size=0.2)
     elif argv[1] == "modulated_circle":
         build_modulated_circle_mesh(amplitude=0.1, num_periods=10, num_points=129)
     elif argv[1] == "drop":
