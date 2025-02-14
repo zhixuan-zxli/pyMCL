@@ -2,7 +2,7 @@
 
 **Prerequisites**
 
-`numpy`, `scipy`, `matplotlib`. `scikits.umfpack` is recommmended. 
+`numpy`, `scipy`, `matplotlib`, `meshio`. `scikit-umfpack` is recommmended. `gmsh` is needed for mesh generation. 
 
 **Generating videos from image sequence**
 ```
