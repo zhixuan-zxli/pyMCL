@@ -126,7 +126,6 @@ def testWillmoreFlow(solp: SolverParameters) -> None:
         pyplot.ion()
         fig = pyplot.figure()
         ax = fig.add_subplot()
-        ax.set_xlim(-1.1, 1.1); ax.set_ylim(-1.1, 1.1)
         ax.axis("equal")
         seg_reindex = sp.elem_dof[[0, 4, 2]].T.reshape(-1) // 2
 
@@ -155,6 +154,7 @@ def testWillmoreFlow(solp: SolverParameters) -> None:
             ax.clear()
             xx = x.reshape(-1, 2)
             ax.plot(xx[seg_reindex,0], xx[seg_reindex,1], 'bo-', mfc='none')
+            ax.set_xlim(-1.1, 1.1); ax.set_ylim(-1.1, 1.1)
             pyplot.draw()
             pyplot.pause(1e-1)
         pass

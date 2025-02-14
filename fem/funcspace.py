@@ -65,7 +65,7 @@ class FunctionSpace:
             num_dof_name = len(elem.dof_name[d])
             self.dof_loc = np.vstack((self.dof_loc, np.repeat(uq_locs, repeats=num_dof_name, axis=0)))
             new_elem_dof = inv_idx.reshape(num_dof_loc, num_elem, -1).transpose(2, 0, 1)[:,:,np.newaxis,:] # of shape (num_sub_entites, num_dof_loc, 1, num_elem)
-            new_elem_dof = offset + new_elem_dof * num_dof_name + np.arange(num_dof_name).reshape(1, 1, -1, 1) # (num_dof_loc, num_sub_ent, num_dof_type, num_elem)
+            new_elem_dof = offset + new_elem_dof * num_dof_name + np.arange(num_dof_name).reshape(1, 1, -1, 1) # (num_sub_ent, num_dof_loc, num_dof_type, num_elem)
             self.elem_dof = np.vstack((self.elem_dof, new_elem_dof.reshape(-1, num_elem))) 
             
             offset += num_new_dof * num_dof_name

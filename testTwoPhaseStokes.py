@@ -1,18 +1,18 @@
-from sys import argv
-from os import path, mkdir
 import numpy as np
 from math import cos
 from fem import *
 from scipy.sparse import bmat
-from scikits.umfpack import spsolve
+from scipy.sparse.linalg import spsolve
+from runner import *
 from matplotlib import pyplot
+from tools.binsearchkw import binsearchkw
 
 # physical groups from GMSH
 # group_name = {"fluid_1": 1, "fluid_2": 2, "interface": 3, "dry": 4, "wet": 5, \
 #              "right": 6, "top": 7, "left": 8, "cl": 9}
 
 @BilinearForm
-def a_wu(w, u, x, eta) -> np.ndarray:
+def a_wu(w, u, x, _, eta) -> np.ndarray:
     # eta: (Ne,)
     # grad: (2, 2, Ne, Nq)    
     z = np.zeros(x.shape[1:]) # (Ne, Nq)
@@ -21,46 +21,46 @@ def a_wu(w, u, x, eta) -> np.ndarray:
     return (z * eta[:, np.newaxis])[np.newaxis] * x.dx
 
 @BilinearForm
-def b_wp(w, p, x) -> np.ndarray:
+def b_wp(w, p, x, _) -> np.ndarray:
     # w.grad: (2,2,Ne,Nq)
     # p: (1, 1, Nq)
     z = (w.grad[0,0] + w.grad[1,1]) * p[0]
     return z[np.newaxis] * x.dx
 
 @BilinearForm
-def a_wk(w, kappa, x) -> np.ndarray:
+def a_wk(w, kappa, x, _) -> np.ndarray:
     # kappa: (1, 1, Nq)
-    # w: (2, 1, Nq)
+    # w: (2, Nf, Nq)
     # x.fn: (2, Nf, Nq)
     return np.sum(x.fn * w, axis=0, keepdims=True) * kappa * x.ds # (2, Nf, Nq)
 
 @BilinearForm
-def a_slip_wu(w, u, x, beta) -> np.ndarray:
-    # u, w: (2, 1, Nq)
+def a_slip_wu(w, u, x, _, beta) -> np.ndarray:
+    # u, w: (2, Nf, Nq)
     # beta: (Nf, )
     return (u[0] * w[0] * beta[:, np.newaxis])[np.newaxis] * x.ds
 
 @BilinearForm
-def a_gx(g, x, z) -> np.ndarray:
+def a_gx(g, x, z, _) -> np.ndarray:
     # grad: (2, 2, Ne, Nq)
     return np.sum(g.grad * x.grad, axis=(0,1))[np.newaxis] * z.dx
 
 @BilinearForm
-def a_gk(g, kappa, z) -> np.ndarray:
+def a_gk(g, kappa, z, _) -> np.ndarray:
     # kappa: (1, 1, Nq)
     # g: (2, Nf, Nq)
     # z.cn: (2, Nf, Nq)
     return np.sum(g * z.cn, axis=0, keepdims=True) * kappa * z.dx
 
 @BilinearForm
-def a_psiu(psi, u, z) -> np.ndarray:
-    # u: (2, 1, Nq)
+def a_psiu(psi, u, z, _) -> np.ndarray:
+    # u: (2, Nf, Nq)
     # psi: (1, 1, Nq)
-    # z.fn: (2, Ne, Nq)
-    return np.sum(u * z.fn, axis=0, keepdims=True) * psi * z.ds
+    # z.cn: (2, Nf, Nq)
+    return np.sum(u * z.cn, axis=0, keepdims=True) * psi * z.dx
 
 @BilinearForm
-def a_slip_gx(g, x, z) -> np.ndarray:
+def a_slip_gx(g, x, z, _) -> np.ndarray:
     # g: (2, 1, Nq)
     # x: (2, 1, Nq)
     # z.ds (1, 2, Nq)
@@ -75,7 +75,7 @@ def l_g(g, z) -> np.ndarray:
 
 # for linear elasticity
 @BilinearForm
-def a_el(Z, Y, x) -> np.ndarray:
+def a_el(Z, Y, x, _) -> np.ndarray:
     # grad: (2, 2, Ne, Nq)
     # x.dx: (1, Ne, Nq)
     lam_dx = x.dx + (x.dx.max() - x.dx.min()) # (1, Ne, Nq)
@@ -94,211 +94,215 @@ class PhysicalParameters:
     Ca: float = 0.1
     cosY: float = cos(np.pi/3)
 
-class SolverParemeters:
-    dt: float = 1.0/1024
-    Te: float = 1.0
-    startStep: int = 0
-    stride: int = 128
-    numChekpoint: int = 0
-    vis: bool = True
-    output_dir: str = "result/TPS"
-    spaceref: int = 0
-    timeref: int = 0
-
-
-if __name__ == "__main__":
-
-    phys = PhysicalParameters()
-    solp = SolverParemeters()
-    solp.vis = len(argv) >= 2 and bool(argv[1])
-
-    try:
-        mkdir(solp.output_dir)
-    except FileExistsError:
-        print("Output dir exists. ")
-
-    mesh = Mesh()
-    mesh.load("mesh/drop-a120-fine-1e-3.msh")
-    for _ in range(solp.spaceref):
-        mesh = splitRefine(mesh)
-    solp.dt /= 2**solp.timeref
-    solp.stride *= 2**solp.timeref
-    setMeshMapping(mesh)
-    def periodic_constraint(x: np.ndarray) -> np.ndarray:
-        flag = np.abs(x[:,0] - 1.0) < 1e-12
-        x[flag, 0] -= 2.0
-    
-    i_mesh = mesh.view(1, (3, ))
-    setMeshMapping(i_mesh)
-
-    mixed_fs = (
-        FunctionSpace(mesh, VectorElement(TriP2, 2), constraint=periodic_constraint), # U
-        FunctionSpace(mesh, TriP1, constraint=periodic_constraint), # P1
-        FunctionSpace(mesh, TriDG0, constraint=periodic_constraint), # P0
-        i_mesh.coord_fe, # X
-        FunctionSpace(i_mesh, LineP1), # K
-    )
-    
-    Y_fs = mesh.coord_fe # should be VectorElement(TriP1, 2)
-
-    # determine the fixed dof
-    top_dof = np.unique(mixed_fs[0].getFacetDof((7, )))
-    bot_dof = np.unique(mixed_fs[0].getFacetDof((4, 5)))
-    bot_vert_dof = bot_dof[1::2]
-    cl_dof = np.unique(mixed_fs[3].getFacetDof((9, )))
-    cl_vert_dof = cl_dof[1::2]
-
-    free_dof = group_dof(mixed_fs, (np.concatenate((top_dof, bot_vert_dof)), np.array((0,)), np.array((0,)), cl_vert_dof, None))
+class TwoPhaseStokes(Runner):
+    def prepare(self, phyp: PhysicalParameters) -> None:
+        super().prepare()
         
-    Y_fix_dof = np.unique(Y_fs.getFacetDof((3, 4, 5, 6, 7, 8)))
-    Y_bot_dof = np.unique(Y_fs.getFacetDof((4, 5)))
-    Y_int_dof = np.unique(Y_fs.getFacetDof((3,)))
+        self.phyp = phyp
+        with open(self._get_output_name("PhysicalParameters"), "wb") as f:
+            pickle.dump(self.phyp, f)
+        # load the meshes
+        # physical groups from GMSH
+        # group_name = {"fluid_1": 1, "fluid_2": 2, "interface": 3, "dry": 4, "wet": 5, \
+        #              "right": 6, "top": 7, "left": 8, "cl": 9, "clamp": 10}
+        self.mesh = Mesh()
+        self.mesh.load(self.args.mesh_name)
+        for _ in range(self.args.spaceref):
+            self.mesh = splitRefine(self.mesh)
+        setMeshMapping(self.mesh)    
+        self.i_mesh = self.mesh.view(1, tags=(3, ))
+        setMeshMapping(self.i_mesh)
 
-    Y_free_dof = group_dof((Y_fs,), (Y_fix_dof,))
-    
-    # get the piecewise constant viscosity and slip coefficient
-    eta = np.where(mesh.cell_tag[2] == 1, phys.eta_1, phys.eta_2)
-    bot_flag = (mesh.cell_tag[1] == 5) | (mesh.cell_tag[1] == 4)
-    bot_tag = mesh.cell_tag[1][bot_flag]
-    beta = np.where(bot_tag == 5, phys.beta_1, phys.beta_1)
+        # get the piecewise constant viscosity and slip coefficient
+        self.viscosity = np.where(self.mesh.cell_tag[2] == 1, phyp.eta_1, phyp.eta_2)
+        bot_flag = (self.mesh.cell_tag[1] == 5) | (self.mesh.cell_tag[1] == 4)
+        bot_tag = self.mesh.cell_tag[1][bot_flag]
+        self.slip_fric = np.where(bot_tag == 5, phyp.beta_1, phyp.beta_1)
 
-    # initialize the unknowns
-    u = Function(mixed_fs[0])
-    p1 = Function(mixed_fs[1])
-    p0 = Function(mixed_fs[2])
-    x_m = Function(mixed_fs[3])
-    x = Function(mixed_fs[3])
-    kappa = Function(mixed_fs[4])
+        def periodic_constraint(x: np.ndarray) -> np.ndarray:
+            flag = np.abs(x[:,0] - 1.0) < 1e-12
+            x[flag, 0] -= 2.0
 
-    Y = Function(Y_fs)
-    # Yg = np.zeros_like(Y)
+        # set up the function spaces
+        self.mixed_fs = (
+            FunctionSpace(self.mesh, VectorElement(TriP2, num_copy=2), constraint=periodic_constraint), # U
+            FunctionSpace(self.mesh, TriP1, constraint=periodic_constraint), # P1
+            FunctionSpace(self.mesh, TriDG0, constraint=periodic_constraint), # P0
+            self.i_mesh.coord_fe, # X
+            FunctionSpace(self.i_mesh, LineP1), # K
+        )
 
-    if solp.vis:
-        pyplot.ion()
-        ax = pyplot.subplot()
-        # nv = NodeVisualizer(mesh, Y_fs)
-        triangles = Y_fs.elem_dof[::2, :].T
-        assert np.all(triangles % 2 == 0)
-        triangles = triangles // 2
+        # extract the useful DOFs
+        self.top_dof = np.where(self.mixed_fs[0].dof_loc[:,1] > 1-1e-12)[0]
+        self.bot_dof = np.where(self.mixed_fs[0].dof_loc[:,1] < 1e-12)[0]
+        cl_pos = self.i_mesh.point[self.i_mesh.point_tag == 9, 0]
+        assert cl_pos.size == 2
+        flag = (self.mixed_fs[3].dof_loc[:,1] < 1e-12) & \
+            ((np.abs(self.mixed_fs[3].dof_loc[:,0] - cl_pos[0]) < 1e-12) | (np.abs(self.mixed_fs[3].dof_loc[:,0] - cl_pos[1]) < 1e-12))
+        self.cl_dof = np.where(flag)[0]
+        assert self.cl_dof.size == 4
 
-    colorbar = None
-    m = solp.startStep
-    while True:
-        t = m * solp.dt
-
-        # visualization
-        if solp.vis:
-            ax.clear()
-            press = p0.view(np.ndarray)[mixed_fs[2].elem_dof][0] + np.sum(p1.view(np.ndarray)[mixed_fs[1].elem_dof], axis=0) / 3 # (Nt, )
-            tpc = ax.tripcolor(mesh.coord_map[::2], mesh.coord_map[1::2], press, triangles=triangles)
-            if colorbar is None:
-                colorbar = pyplot.colorbar(tpc)
-            else:
-                colorbar.update_normal(tpc)
-            # pyplot.tripcolor(mesh.coord_map[::2], mesh.coord_map[1::2], mesh.cell_tag[2], triangles=triangles)
-            # plot the velocity
-            _u = u.view(np.ndarray); _n = mesh.coord_map.size
-            ax.quiver(mesh.coord_map[::2], mesh.coord_map[1::2], _u[:_n:2], _u[1:_n:2])
-            ax.triplot(mesh.coord_map[::2], mesh.coord_map[1::2], triangles=triangles)
-            ax.axis("equal")
-            pyplot.draw()
-            pyplot.pause(1e-3)
-
-        if m % solp.stride == 0:
-            filename = path.join(solp.output_dir, "{:04d}.npz".format(m))
-            np.savez(filename, y_k=x_m)
-            print("\n* Checkpoint saved to " + filename)
-
-        if t >= solp.Te:
-            break
-        print("Solving t = {0:.5f}, ".format(t), end="")
-        m += 1
+        self.free_dof = group_dof(self.mixed_fs, (np.concatenate((self.top_dof, self.bot_dof[1::2])), np.array((0,)), np.array((0,)), self.cl_dof[1::2], None))
             
+        Y_fs = self.mesh.coord_fe # type: FunctionSpace
+        self.Y_bot_dof = np.where(Y_fs.dof_loc[:,1] < 1e-12)[0]
+        _Y_int_dof = binsearchkw(Y_fs.dof_loc[::2].round(decimals=10), self.i_mesh.coord_fe.dof_loc[::2].round(decimals=10))
+        assert np.all(_Y_int_dof != -1)
+        # _Y_int_dof.sort()
+        self.Y_int_dof = np.stack((_Y_int_dof*2, _Y_int_dof*2+1), axis=1).reshape(-1)
+        Y_bound_dof = np.where((Y_fs.dof_loc[:,1] > 1-1e-12) | (Y_fs.dof_loc[:,0] < -1+1e-12) | (Y_fs.dof_loc[:,0] > 1-1e-12))[0]
+        Y_fix_dof = np.unique(np.concatenate((self.Y_bot_dof, self.Y_int_dof, Y_bound_dof)))
+
+        self.Y_free_dof = group_dof((Y_fs, ), (Y_fix_dof, ))
+
+        # allocate the functions
+        self.u = Function(self.mixed_fs[0])
+        self.p1 = Function(self.mixed_fs[1])
+        self.p0 = Function(self.mixed_fs[2])
+        self.x = Function(self.mixed_fs[3])
+        self.kappa = Function(self.mixed_fs[4])
+
+        self.Y = Function(Y_fs) # the mesh deformation
+    
+        # read checkpoints from file
+        if self.args.resume:
+            self.mesh.coord_map[:] = self.resume_file["bulk_coord_map"]
+            self.i_mesh.coord_map[:] = self.resume_file["x_m"]
+            del self.resume_file
+
+        # prepare visualization
+        if self.args.vis:
+            pyplot.ion()
+            self.ax = pyplot.subplot()
+            self.triangles = Y_fs.elem_dof[::2].T.copy()
+            assert np.all(self.triangles % 2 == 0)
+            self.triangles //= 2
+
+    def pre_step(self) -> bool:
+        if self.args.vis:
+            self.ax.clear()
+            # press = p0.view(np.ndarray)[mixed_fs[2].elem_dof][0] + np.sum(p1.view(np.ndarray)[mixed_fs[1].elem_dof], axis=0) / 3 # (Nt, )
+            # tpc = ax.tripcolor(mesh.coord_map[::2], mesh.coord_map[1::2], press, triangles=triangles)
+            # if colorbar is None:
+            #     colorbar = pyplot.colorbar(tpc)
+            # else:
+            #     colorbar.update_normal(tpc)
+            self.ax.tripcolor(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], self.mesh.cell_tag[2], triangles=self.triangles)
+            # plot the velocity
+            _u = self.u.view(np.ndarray); _n = self.mesh.coord_map.size
+            self.ax.quiver(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], _u[:_n:2], _u[1:_n:2])
+            self.ax.triplot(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], triangles=self.triangles)
+            self.ax.axis("equal")
+            pyplot.draw()
+            pyplot.pause(1e-4)
+        if self.step % self.solp.stride_checkpoint == 0:
+            filename = self._get_output_name("{:04d}.npz".format(self.step))
+            np.savez(filename, bulk_coord_map=self.mesh.coord_map, x_m=self.i_mesh.coord_map)
+            print("\n* Checkpoint saved to " + filename)
+        return self.step >= self.num_steps
+    
+    def main_step(self) -> None:
+        t = self.step * self.solp.dt
+
         # initialize the measure and basis
-        dx = Measure(mesh, 2, order=3)
-        ds_i = Measure(mesh, 1, order=3, tags=(3, ))
-        ds_bot = Measure(mesh, 1, order=3, tags=(4,5))
-        ds = Measure(i_mesh, 1, order=3)
-        dp = Measure(i_mesh, 0, order=1, tags=(9, ))
+        dx = Measure(self.mesh, 2, order=3)
+        ds_i = Measure(self.mesh, 1, order=3, tags=(3, ))
+        ds_bot = Measure(self.mesh, 1, order=3, tags=(4, 5))
+        ds = Measure(self.i_mesh, 1, order=3)
+        dp = Measure(self.i_mesh, 0, order=1, tags=(9, ))
 
-        u_basis = FunctionBasis(mixed_fs[0], dx)
-        p1_basis = FunctionBasis(mixed_fs[1], dx)
-        p0_basis = FunctionBasis(mixed_fs[2], dx)
-        u_i_basis = FunctionBasis(mixed_fs[0], ds_i)
-        u_bot_basis = FunctionBasis(mixed_fs[0], ds_bot)
+        u_basis = FunctionBasis(self.mixed_fs[0], dx)
+        p1_basis = FunctionBasis(self.mixed_fs[1], dx)
+        p0_basis = FunctionBasis(self.mixed_fs[2], dx)
+        u_i_basis = FunctionBasis(self.mixed_fs[0], ds_i)
+        u_bot_basis = FunctionBasis(self.mixed_fs[0], ds_bot)
+        x_basis = FunctionBasis(self.mixed_fs[3], ds)
+        k_basis = FunctionBasis(self.mixed_fs[4], ds)
+        x_cl_basis = FunctionBasis(self.mixed_fs[3], dp)
 
-        x_basis = FunctionBasis(mixed_fs[3], ds)
-        k_basis = FunctionBasis(mixed_fs[4], ds)
-        x_cl_basis = FunctionBasis(mixed_fs[3], dp)
-
-        # first get the interface parametrization
-        np.copyto(x_m, i_mesh.coord_map)
+        # save the interface parametrization
+        x_m = Function(self.mixed_fs[3])
+        np.copyto(x_m, self.i_mesh.coord_map) 
 
         # assemble the coupled system
-        A_wu = a_wu.assemble(u_basis, u_basis, dx, eta=eta)
-        B_wp1 = b_wp.assemble(u_basis, p1_basis, dx)
-        B_wp0 = b_wp.assemble(u_basis, p0_basis, dx)
-        A_wk = a_wk.assemble(u_i_basis, k_basis, ds_i)
-        S_wu = a_slip_wu.assemble(u_bot_basis, u_bot_basis, ds_bot, beta=beta)
+        A_wu = a_wu.assemble(u_basis, u_basis, None, None, eta=self.viscosity)
+        B_wp1 = b_wp.assemble(u_basis, p1_basis)
+        B_wp0 = b_wp.assemble(u_basis, p0_basis)
+        A_wk = a_wk.assemble(u_i_basis, k_basis)
+        S_wu = a_slip_wu.assemble(u_bot_basis, u_bot_basis, None, None, beta=self.slip_fric)
 
-        A_gx = a_gx.assemble(x_basis, x_basis, ds)
-        A_gk = a_gk.assemble(x_basis, k_basis, ds)
-        A_psiu = a_psiu.assemble(k_basis, u_i_basis, ds_i)
-        S_gx = a_slip_gx.assemble(x_cl_basis, x_cl_basis, dp)
-
-        A = bmat(((A_wu + S_wu, -B_wp1, -B_wp0, None, -1.0/phys.Ca*A_wk), 
+        A_gx = a_gx.assemble(x_basis, x_basis)
+        A_gk = a_gk.assemble(x_basis, k_basis)
+        A_psiu = a_psiu.assemble(k_basis, u_i_basis)
+        S_gx = a_slip_gx.assemble(x_cl_basis, x_cl_basis)
+        
+        phyp = self.phyp
+        A = bmat(((A_wu + S_wu, -B_wp1, -B_wp0, None, -1.0/phyp.Ca*A_wk), 
                 (B_wp1.T, None, None, None, None), 
                 (B_wp0.T, None, None, None, None), 
-                (None, None, None, A_gx + phys.beta_s*phys.Ca/solp.dt*S_gx, A_gk), 
+                (None, None, None, A_gx + phyp.beta_s*phyp.Ca/solp.dt*S_gx, A_gk), 
                 (-solp.dt*A_psiu, None, None, A_gk.T, None)), 
-                format="csr")
+                format="csc")
         
         # assemble the RHS
-        L_g = phys.cosY * l_g.assemble(x_cl_basis, dp)
-        u[:] = 0.0
-        p1[:] = 0.0
-        p0[:] = 0.0
-        L = group_fn(u, p1, p0, L_g + phys.beta_s*phys.Ca/solp.dt*(S_gx @ x_m), A_gk.T @ x_m)
+        L_g = phyp.cosY * l_g.assemble(x_cl_basis)
+        self.u[:] = 0.0
+        self.p1[:] = 0.0
+        self.p0[:] = 0.0
+        L = group_fn(self.u, self.p1, self.p0, \
+                     L_g + phyp.beta_s*phyp.Ca/solp.dt*(S_gx @ x_m), A_gk.T @ x_m)
 
         # Since the essential conditions are all homogeneous,
         # we don't need to homogeneize the system
         sol_vec = np.zeros_like(L)
         
         # solve the linear system
+        free_dof = self.free_dof
         sol_vec_free = spsolve(A[free_dof][:,free_dof], L[free_dof])
         sol_vec[free_dof] = sol_vec_free
-        split_fn(sol_vec, u, p1, p0, x, kappa)
+        split_fn(sol_vec, self.u, self.p1, self.p0, self.x, self.kappa)
 
         # some useful info ...
-        i_disp = x - x_m
-        print("displacement = {0:.2e}".format(np.linalg.norm(i_disp, np.inf)))
+        i_disp = self.x - x_m
+        print("t = {:.4f}, disp = {:.2e}".format(t, np.linalg.norm(i_disp, np.inf)))
 
         # solve the displacement on the substrate 
-        Y[:] = 0.0
-        Y0_m = mesh.coord_map[Y_bot_dof[::2]] # the x coordinate of the grid points on the substrate
-        cl_pos = x_m[cl_dof[::2]] # [0] for the left, [1] for the right
-        cl_disp = i_disp[cl_dof[::2]] # save as above
+        self.Y[:] = 0.0
+        Y0_m = self.mesh.coord_map[self.Y_bot_dof[::2]] # the x coordinate of the grid points on the substrate
+        cl_pos = x_m[self.cl_dof[::2]] # [0] for the left, [1] for the right
+        cl_disp = i_disp[self.cl_dof[::2]] # same as above
         assert cl_pos[0] < cl_pos[1]
-        Y[Y_bot_dof[::2]] = np.where(
+        self.Y[self.Y_bot_dof[::2]] = np.where(
             Y0_m <= cl_pos[0], (Y0_m + 1.0) / (cl_pos[0] + 1.0) * cl_disp[0], 
             np.where(Y0_m >= cl_pos[1], (1.0 - Y0_m) / (1.0 - cl_pos[1]) * cl_disp[1], 
-                     (cl_disp[0] * (cl_pos[1] - Y0_m) + cl_disp[1] * (Y0_m - cl_pos[0])) / (cl_pos[1] - cl_pos[0]))
+                    (cl_disp[0] * (cl_pos[1] - Y0_m) + cl_disp[1] * (Y0_m - cl_pos[0])) / (cl_pos[1] - cl_pos[0]))
         )
-        Y[Y_int_dof] = i_disp
+        self.Y[self.Y_int_dof] = i_disp
 
         # solve the linear elastic equation for the bulk mesh deformation 
-        Y_basis = FunctionBasis(Y_fs, dx)
-        A_el = a_el.assemble(Y_basis, Y_basis, dx)
-        L_el = -A_el @ Y
+        Y_basis = FunctionBasis(self.mesh.coord_fe, dx)
+        A_el = a_el.assemble(Y_basis, Y_basis)
+        L_el = -A_el @ self.Y
+        Y_free_dof = self.Y_free_dof
         sol_vec_free = spsolve(A_el[Y_free_dof][:,Y_free_dof], L_el[Y_free_dof])
-        Y[Y_free_dof] = sol_vec_free
+        self.Y[Y_free_dof] = sol_vec_free
 
         # move the mesh
-        Y += mesh.coord_map
-        np.copyto(mesh.coord_map, Y)
-        np.copyto(i_mesh.coord_map, x)
-    # end time loop
+        self.Y += self.mesh.coord_map
+        np.copyto(self.mesh.coord_map, self.Y)
+        np.copyto(self.i_mesh.coord_map, self.x)
 
-    print("Finished.")
-    pyplot.ioff()
-    pyplot.show()
+    def finish(self) -> None:
+        super().finish()
+        if self.args.vis:
+            pyplot.ioff()
+            pyplot.show()
+
+
+if __name__ == "__main__":
+    solp = SolverParameters(dt = 1.0/1024, Te = 1.0)
+    phyp = PhysicalParameters()
+    solver = TwoPhaseStokes(solp)
+    solver.prepare(phyp)
+    solver.run()
+    solver.finish()

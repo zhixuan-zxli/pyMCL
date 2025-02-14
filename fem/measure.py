@@ -162,7 +162,7 @@ class Measure:
             data.dx = np.cross(data.grad[:,0], data.grad[:,1], axis=0) # (Ne,Nq) or (3,Ne,Nq)
             if rdim == 3:
                 data.cn = data.dx
-                data.dx = np.linalg.norm(data.dx, ord=None, axis=0) #(Ne, Nq)
+                data.dx = np.linalg.norm(data.dx, ord=None, axis=0) # (Ne, Nq)
                 data.cn = data.cn / data.dx[np.newaxis]
             data.dx = data.dx[np.newaxis]
             data.inv_grad = np.zeros((tdim, rdim, Ne, Nq))
