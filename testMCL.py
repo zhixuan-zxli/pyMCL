@@ -40,7 +40,7 @@ class MCL_Runner(Runner):
         self.phyp = PhysicalParameters_MCL(
             eta_2=0.1, mu_1=1e-4, mu_2=1e-4, mu_cl=0.5, 
             gamma_1=0.0, gamma_3=1.0, gamma_2 = 0.0 + 1.0 * cos(np.pi/2), 
-            B=1e-3, Y=1e3, U_adv=-1.0
+            Cb=1e-3, Cs=1e3, U_adv=-1.0
         )
         with open(self._get_output_name("PhysicalParameters"), "wb") as f:
             pickle.dump(self.phyp, f)
@@ -163,8 +163,8 @@ class MCL_Runner(Runner):
 
         # calculate the energy
         dA = Measure(self.s_mesh, dim=1, order=5, coord_map=self.id_k) 
-        self.energy[self.step, 0] = self.phyp.Y * e_stretch.assemble(dA, w=self.w_k._interpolate(dA))
-        self.energy[self.step, 1] = 1.0/self.phyp.B * e_bend.assemble(dA, mom=self.mom._interpolate(dA))
+        self.energy[self.step, 0] = self.phyp.Cs * e_stretch.assemble(dA, w=self.w_k._interpolate(dA))
+        self.energy[self.step, 1] = 1.0/self.phyp.Cb * e_bend.assemble(dA, mom=self.mom._interpolate(dA))
         da_1 = Measure(self.s_mesh, dim=1, order=5, tags=(4,), coord_map=self.q_k)
         self.energy[self.step, 2] = self.phyp.gamma_1 * dx.assemble(da_1)
         da_2 = Measure(self.s_mesh, dim=1, order=5, tags=(5,), coord_map=self.q_k)
@@ -318,8 +318,8 @@ class MCL_Runner(Runner):
             (None,     None,    None,    None,     A_ZY,    A_ZK,   -A_ZM3,    None,   None),  # y
             (-solp.dt*A_XIK.T,  None, None, None,  A_ZK.T,  None,   None,      None,   None),  # k
             (None,     None,    None,    None,     phyp.mu_cl/solp.dt*A_ZM3.T, None,   phyp.gamma_3*A_M3M3, -phyp.mu_cl/solp.dt*A_M3Q, None),  # m3
-            (None,     None,    None,    -B_PIQ.T, None,    None,   phyp.gamma_3*A_M3Q.T, phyp.Y*C_PHIQ+C_PHIQ_SURF, -C_PHIM), # w
-            (None,     None,    None,    None,     None,    None,   None,      C_PHIM.T, 1.0/phyp.B*C_WM), # m
+            (None,     None,    None,    -B_PIQ.T, None,    None,   phyp.gamma_3*A_M3Q.T, phyp.Cs*C_PHIQ+C_PHIQ_SURF, -C_PHIM), # w
+            (None,     None,    None,    None,     None,    None,   None,      C_PHIM.T, 1.0/phyp.Cb*C_WM), # m
         ), format="csr")
         # collect the right-hand-side
         self.u[:] = 0.0; self.p1[:] = 0.0; self.p0[:] = 0.0

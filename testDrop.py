@@ -5,7 +5,7 @@ from math import cos
 from runner import *
 from fem import *
 from scipy.sparse import bmat
-from scikits.umfpack import spsolve
+from scipy.sparse.linalg import spsolve
 from matplotlib import pyplot
 from matplotlib.collections import LineCollection
 from colorama import Fore, Style
@@ -13,136 +13,179 @@ from colorama import Fore, Style
 @dataclass
 class PhysicalParameters:
     eta_2: float = 0.1
-    mu_1: float = 1e4
-    mu_2: float = 1e4
+    mu_1: float = 1e2
+    mu_2: float = 1e2
     mu_cl: float = 1.
     gamma_1: float = 0.
     gamma_3: float = 10.0
     gamma_2: float = 0. + 10.0 * cos(np.pi/2) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
-    B: float = 1e-2
-    Y: float = 1e2
-    pre: float = 0.2 # pre-stretched tension
+    Cb: float = 1e-2
+    Cs: float = 1e2
+    pre: float = 0.2 # the initial Jacobian is 1 + pre
 
+# ===========================================================
+# functionals for calculating the energy
 @Functional
 def dx(x: QuadData) -> np.ndarray:
     return x.dx
 
-@Functional
-def e_stretch(x: QuadData, w: QuadData) -> np.ndarray:
-    strain = w.grad[0,0] + 0.5 * w.grad[1,0]**2 # (Ne, Nq)
-    return 0.5 * strain[np.newaxis]**2 * x.dx
-
-@Functional
-def e_bend(x: QuadData, mom: QuadData) -> np.ndarray:
-    return 0.5 * mom**2 * x.dx
+# Willmore energy
 
 # ===========================================================
-# bilinear forms for the elastic sheet
+# forms for the sheet
 
 @BilinearForm
-def c_L2(w: QuadData, q: QuadData, x: QuadData) -> np.ndarray:
+def a_L2(w: QuadData, q: QuadData, x: QuadData, _) -> np.ndarray:
     return np.sum(w * q, axis=0, keepdims=True) * x.dx
 
 @LinearForm
-def l_dq(w: QuadData, x: QuadData, q_k: QuadData) -> np.ndarray:
-    return np.sum(w * q_k.grad[:,0], axis=0, keepdims=True) * x.dx
+def l_dq(w: QuadData, x: QuadData, q_m: QuadData) -> np.ndarray:
+    return np.sum(w * q_m.grad[:,0], axis=0, keepdims=True) * x.dx
 
 @BilinearForm
-def c_phim(phi: QuadData, m: QuadData, x: QuadData) -> np.ndarray:
-    # phi.grad: (2, 2, Nf, Nq)
-    # m.grad: (1, 2, Nf, Nq)
-    return (phi.grad[1,0] * m.grad[0,0])[np.newaxis] * x.dx
+def a_qq(eta: QuadData, q: QuadData, x: QuadData, _) -> np.ndarray:
+    return np.sum(eta.grad * q.grad, axis=(0,1))[np.newaxis] * x.dx
 
 @BilinearForm
-def c_phiq(phi: QuadData, w: QuadData, x: QuadData, w_k: QuadData) -> np.ndarray:
-    # Here w, w_k are the displacements
-    c1 = (w.grad[0,0] + 0.5 * w_k.grad[1,0] * w.grad[1,0]) * phi.grad[0,0]
-    c2 = (w_k.grad[0,0] + 0.5 * w_k.grad[1,0]**2) * w.grad[1,0] * phi.grad[1,0]
-    return (c1+c2)[np.newaxis] * x.dx
-    # return (w.grad[0,0] * phi.grad[0,0])[np.newaxis] * x.dx # linearly elastic sheet
+def a_phiq(phi: QuadData, q: QuadData, xi: QuadData, x: QuadData) -> np.ndarray:
+    assert xi is not x
+    nu = (x.dx**2 - 1) / 2 # (1, Ne, Nq)
+    return nu * np.sum(phi.grad[:,0] * phi, axis=0, keepdims=True) * xi.dx
 
 @BilinearForm
-def c_phiq_surf(phi: QuadData, w: QuadData, x: QuadData, gamma: np.ndarray) -> np.ndarray:
-    # Here w is the displacement; 
-    # gamma is the piecewise constant surface tension. 
-    # phi.grad, w.grad, id.grad: (2, 2, Nf, Nq)
-    return np.sum(phi.grad * w.grad, axis=(0,1))[np.newaxis] \
-        * gamma[np.newaxis, np.newaxis, :, np.newaxis] * x.dx
+def a_xikappa(xi: QuadData, kappa: QuadData, x: QuadData, _) -> np.ndarray:
+    tau = np.array((-x.cn[1], x.cn[0])) # (2, Ne, Nq)
+    grad_xi_tt = np.sum(xi.grad * tau[:,np.newaxis], axis=0)[np.newaxis] * tau[:,np.newaxis] # (2, 2, Ne, Nq)
+    r1 = np.sum((xi.grad - 2*grad_xi_tt) * kappa.grad, axis=(0,1)) # (Ne, Nq)
+    r2 = (xi.grad[0,0] + xi.grad[1,1]) * (kappa.grad[0,0] + kappa.grad[1,1]) / 2
+    return (r1 + r2)[np.newaxis] * x.dx
 
-# ===========================================================
-# Forms for the dynamics of the sheet
+@LinearForm
+def l_xi(xi: QuadData, x: QuadData, gamma: np.ndarray) -> np.ndarray:
+    # gamma: (Nf, )
+    return (gamma[:,np.newaxis] * (xi.grad[0,0] + xi.grad[1,1]))[np.newaxis] * x.dx
 
 @BilinearForm
-def b_pitau(pi: QuadData, tau: QuadData, x: QuadData, mu_i: np.ndarray) -> np.ndarray:
-    # tau: (2, Ne, Nq)
-    # mu_i: the slip coefficient
-    m = np.empty_like(x.cn); m[0] = -x.cn[1]; m[1] = x.cn[0]
-    Ptau =  np.sum(m * tau, axis=0, keepdims=True) # (1, Ne, Nq)
-    Ppi = np.sum(m * pi, axis=0, keepdims=True) # (1, Ne, Nq)
-    return Ptau * Ppi * (1.0/mu_i[np.newaxis, :, np.newaxis]) * x.dx
+def a_xisig(xi: QuadData, sigma: QuadData, x: QuadData, _) -> np.ndarray:
+    # xi.grad: (2, 2, Ne, Nq)
+    # sigma: (2, Ne, Nq)
+    tau = np.array((-x.cn[1], x.cn[0])) # (2, Ne, Nq)
+    ds_xi = np.sum(xi.grad * tau[np.newaxis], axis=1) # (2, Ne, Nq)
+    return np.sum(sigma * ds_xi, axis=0, keepdims=True) * x.dx
+
+# just use a_pim3
+# @BilinearForm
+# def a_xim3(xi: QuadData, m3: QuadData, x: QuadData, _) -> np.ndarray:
+#     return np.sum(xi * m3, axis=0, keepdims=True) * x.ds
+
+# the contact line condition
+@BilinearForm
+def a_m3sig(m3: QuadData, sigma: QuadData, _, x: QuadData, m1_hat: QuadData) -> np.ndarray:
+    # m3: (2, 2, 1)
+    # sigma: (2, 2, 1)
+    # m1_hat: (2, 2, 1)
+    nu = (x.dx**2 - 1) / 2 # (1, 2, 1)
+    j = np.sum(sigma * m1_hat, axis=0, keepdims=True) * (2+3*nu) / (2+4*nu) # (1, 2, 1)
+    r = np.sum(m3 * m1_hat,axis=0, keepdims=True)
+    return j * r * x.ds
 
 # ===========================================================
 # bilinear forms for the fluid and fluid interface
 
 @BilinearForm
-def a_xiu(xi: QuadData, u: QuadData, x: QuadData, eta) -> np.ndarray:
+def a_vu(v: QuadData, u: QuadData, x: QuadData, _, eta) -> np.ndarray:
     # eta: (Ne,)
     # grad: (2, 2, Ne, Nq)    
     z = np.zeros(x.shape[1:]) # (Ne, Nq)
     for i, j in (0,0), (0,1), (1,0), (1,1):
-        z += (u.grad[i,j] + u.grad[j,i]) * xi.grad[i,j]
+        z += (u.grad[i,j] + u.grad[j,i]) * v.grad[i,j]
     return (z * eta[:, np.newaxis])[np.newaxis] * x.dx
 
 @BilinearForm
-def a_xip(xi: QuadData, p: QuadData, x: QuadData) -> np.ndarray:
-    # w.grad: (2,2,Ne,Nq)
+def a_vp(v: QuadData, p: QuadData, x: QuadData, _) -> np.ndarray:
+    # v.grad: (2,2,Ne,Nq)
     # p: (1, 1, Nq)
-    z = (xi.grad[0,0] + xi.grad[1,1]) * p[0]
+    z = (v.grad[0,0] + v.grad[1,1]) * p[0]
     return z[np.newaxis] * x.dx
 
 @BilinearForm
-def a_xik(xi: QuadData, kappa: QuadData, x: QuadData) -> np.ndarray:
-    # kappa: (1, 1, Nq)
-    # w: (2, 1, Nq)
+def a_vu_nitsche(v: QuadData, u: QuadData, x: QuadData, _, eta: np.ndarray, mu: np.ndarray, alpha: float) -> np.ndarray:
+    # eta, mu: (Nf, )
     # x.fn: (2, Nf, Nq)
-    return np.sum(x.fn * xi, axis=0, keepdims=True) * kappa * x.ds # (2, Nf, Nq)
+    # alpha is the stabilization factor
+    tau = np.array((-x.fn[1], x.fn[0]))
+    n_Tu_n = 2 * eta[:, np.newaxis] * np.sum(np.sum(u.grad * x.fn[np.newaxis], axis=1) * x.fn, axis=0) # (Nf, Nq)
+    n_Tv_n = 2 * eta[:, np.newaxis] * np.sum(np.sum(v.grad * x.fn[np.newaxis], axis=1) * x.fn, axis=0) # (Nf, Nq)
+    u_n = np.sum(u * x.fn, axis=0) # (Nf, Nq)
+    u_t = np.sum(u * tau, axis=0) # (Nf, Nq)
+    v_n = np.sum(v * x.fn, axis=0) # (Nf, Nq)
+    v_t = np.sum(v * tau, axis=0) # (Nf, Nq)
+    return (-n_Tu_n * v_n + n_Tv_n * u_n + mu[:, np.newaxis] * u_t * v_t)[np.newaxis] * x.ds \
+        + (alpha * u_n * v_n)[np.newaxis]
 
 @BilinearForm
-def a_xitau(xi: QuadData, tau: QuadData, x: QuadData) -> np.ndarray:
-    # xi: (2, Nf, Nq)
-    # tau: (2, Nf, Nq)
-    return np.sum(xi * tau, axis=0, keepdims=True) * x.dx
+def a_vp_nitsche(v: QuadData, p: QuadData, x: QuadData, _) -> np.ndarray:
+    v_n = np.sum(v * x.fn, axis=0) # (Nf, Nq)
+    return (p[0] * v_n)[np.newaxis] * x.ds
 
 @BilinearForm
-def a_zy(z: QuadData, y: QuadData, x: QuadData) -> np.ndarray:
-    return np.sum(z.grad * y.grad, axis=(0,1))[np.newaxis] * x.dx
+def a_vq_nitsche_1(v: QuadData, q: QuadData, x: QuadData, _, eta: np.ndarray) -> np.ndarray:
+    # mu: (Nf, )
+    # q: (2, Nf, Nq)
+    # x.fn: (2, Nf, Nq)
+    n_Tv_n = 2 * eta[:, np.newaxis] * np.sum(np.sum(v.grad * x.fn[np.newaxis], axis=1) * x.fn, axis=0) # (Nf, Nq)
+    q_n = np.sum(q * x.fn, axis=0) # (Nf, Nq)
+    return (-n_Tv_n * q_n)[np.newaxis] * x.ds
 
 @BilinearForm
-def a_zk(z: QuadData, k: QuadData, x: QuadData) -> np.ndarray:
-    # k: (1, Nf, Nq)
-    return np.sum(z * x.cn, axis=0, keepdims=True) * k * x.dx 
+def a_vq_nitsche_2(v: QuadData, q: QuadData, x: QuadData, _, eta: np.ndarray, mu: np.ndarray, alpha: float) -> np.ndarray:
+    # mu: (Nf, )
+    # q: (2, Nf, Nq)
+    # x.fn: (2, Nf, Nq)
+    tau = np.array((-x.fn[1], x.fn[0]))
+    v_n = np.sum(v * x.fn, axis=0)
+    v_t = np.sum(v * tau, axis=0)
+    q_n = np.sum(q * x.fn, axis=0) # (Nf, Nq)
+    q_t = np.sum(q * tau, axis=0) # (Nf, Nq)
+    return (-mu[:, np.newaxis] * v_t * q_t)[np.newaxis] * x.ds \
+        - (alpha * q_n * v_n)[np.newaxis]
 
 @BilinearForm
-def a_zm3(z: QuadData, m3: QuadData, x: QuadData) -> np.ndarray:
+def a_rhoq_nitsche(rho: QuadData, q: QuadData, x: QuadData, _, eta: np.ndarray) -> np.ndarray:
+    q_n = np.sum(q * x.fn, axis=0)
+    return (rho[0] * q_n)[np.newaxis] * x.ds
+
+@BilinearForm
+def a_vomg(v: QuadData, omega: QuadData, x: QuadData, _) -> np.ndarray:
+    # omega: (1, 1, Nq)
+    # v: (2, Nf, Nq)
+    # x.fn: (2, Nf, Nq)
+    return np.sum(x.fn * v, axis=0, keepdims=True) * omega * x.ds # (2, Nf, Nq)
+
+@BilinearForm
+def a_pir(pi: QuadData, r: QuadData, x: QuadData, _) -> np.ndarray:
+    return np.sum(pi.grad * r.grad, axis=(0,1))[np.newaxis] * x.dx
+
+@BilinearForm
+def a_piomg(pi: QuadData, omega: QuadData, x: QuadData, _) -> np.ndarray:
+    return np.sum(pi * x.cn, axis=0, keepdims=True) * omega * x.dx
+
+@BilinearForm
+def a_pim3(pi: QuadData, m3: QuadData, x: QuadData, _) -> np.ndarray:
     # z, m3: (2, Nf, Nq=1)
-    return np.sum(z * m3, axis=0, keepdims=True) * x.ds
-
-@BilinearForm
-def a_m3m3(m3: QuadData, j: QuadData, x: QuadData, m1: QuadData) -> np.ndarray:
-    # all vectors: (2, Nf, Nq)
-    return np.sum(m3*m1, axis=0, keepdims=True) * np.sum(j*m1, axis=0, keepdims=True) * x.dx
+    return np.sum(pi * m3, axis=0, keepdims=True) * x.ds
 
 # ===========================================================
 # linear elasticity for the bulk mesh displacement
 @BilinearForm
-def a_el(Z: QuadData, Y: QuadData, x: QuadData) -> np.ndarray:
+def a_el(Z: QuadData, Y: QuadData, x: QuadData, _) -> np.ndarray:
     # grad: (2, 2, Ne, Nq)
     # x.dx: (1, Ne, Nq)
     lam_dx = x.dx + (x.dx.max() - x.dx.min()) # (1, Ne, Nq)
     r = np.zeros(x.shape[1:]) # (Ne,Nq)
-    tr = Y.grad[0,0] + Y.grad[1,1] # (Ne, Nq)
     for i, j in (0,0), (0,1), (1,0), (1,1):
-        r += (Y.grad[i,j] + Y.grad[j,i] + (i==j) * tr) * Z.grad[i,j]
+        r += (Y.grad[i,j] + Y.grad[j,i]) * Z.grad[i,j]
+    r += (Y.grad[0,0] + Y.grad[1,1]) * (Z.grad[0,0] + Z.grad[1,1])
     return r[np.newaxis] * lam_dx
 
 # ===========================================================
@@ -162,10 +205,14 @@ def lift_to_P2(P2_space: FunctionSpace, p1_func: Function) -> Function:
     return p2_func
 
 def down_to_P1(P1_space: FunctionSpace, p2_func: Function) -> Function:
+    assert P1_space.mesh.tdim == 1
+    assert P1_space.elem.rdim == p2_func.fe.elem.rdim
     p1_func = Function(P1_space)
     p1_func[:] = p2_func[:P1_space.num_dof]
     return p1_func
 
+# arrange the finite element vector as a finite difference vector, 
+# i.e. the nodes are arranged from left to right in space.
 def arrange_as_FD(P2_space: FunctionSpace, p2_func: Function) -> np.ndarray:
     assert P2_space.mesh.tdim == 1
     rdim = P2_space.elem.rdim
@@ -176,6 +223,7 @@ def arrange_as_FD(P2_space: FunctionSpace, p2_func: Function) -> np.ndarray:
         arr[1::rdim, d] = p2_func[P2_space.elem_dof[2*rdim+d]]
     return arr
 
+# arrange a finite difference vector as a finite element vector. 
 def arrange_as_FE(P2_space: FunctionSpace, arr: np.ndarray) -> Function:
     assert P2_space.mesh.tdim == 1
     rdim = P2_space.elem.rdim
@@ -193,11 +241,11 @@ class Drop_Runner(Runner):
 
     def prepare(self) -> None:
         super().prepare()
-
         self.phyp = PhysicalParameters()
         with open(self._get_output_name("PhysicalParameters"), "wb") as f:
             pickle.dump(self.phyp, f)
         
+        # load the bulk mesh and build the submeshes
         # physical groups from GMSH
         # group_name = {"fluid_1": 1, "fluid_2": 2, "interface": 3, "dry": 4, "wet": 5, \
         #              "right": 6, "top": 7, "left": 8, "cl": 9, "clamp": 10}
@@ -210,6 +258,10 @@ class Drop_Runner(Runner):
         setMeshMapping(self.i_mesh)
         self.s_mesh = self.mesh.view(1, tags=(4, 5)) # sheet reference mesh
         setMeshMapping(self.s_mesh)
+        self.s_1_mesh = self.mesh.view(1, tags=(5, )) # sheet reference mesh for Sigma_1
+        setMeshMapping(self.s_1_mesh)
+        self.s_2_mesh = self.mesh.view(1, tags=(4, )) # sheet reference mesh for Sigma_2
+        setMeshMapping(self.s_2_mesh)
         self.cl_mesh = self.mesh.view(0, tags=(9, )) # contact line mesh
         setMeshMapping(self.cl_mesh)
 
@@ -218,71 +270,90 @@ class Drop_Runner(Runner):
         self.slip_fric = np.where(self.s_mesh.cell_tag[1] == 5, self.phyp.mu_1, self.phyp.mu_2)
         self.surf_tens = np.where(self.s_mesh.cell_tag[1] == 5, self.phyp.gamma_1, self.phyp.gamma_2)
 
-        # =================================================================
         # set up the function spaces
         self.U_sp = FunctionSpace(self.mesh, VectorElement(TriP2, 2))
         self.P1_sp = FunctionSpace(self.mesh, TriP1)
         self.P0_sp = FunctionSpace(self.mesh, TriDG0)
-        self.Y_sp = self.i_mesh.coord_fe # type: FunctionSpace # should be VectorElement(LineP1, 2)
-        self.K_sp = FunctionSpace(self.i_mesh, LineP1)
-        self.Q_sp = FunctionSpace(self.s_mesh, VectorElement(LineP2, 2)) # for sheet deformation
+        self.R_sp = self.i_mesh.coord_fe # type: FunctionSpace # should be VectorElement(LineP1, 2)
+        self.OMG_sp = FunctionSpace(self.i_mesh, LineP1)
+        self.Q_sp = FunctionSpace(self.s_mesh, VectorElement(LineP2, 2)) # for sheet deformation, for the mean curvature vector
         self.Q_P1_sp = self.s_mesh.coord_fe # type: FunctionSpace
-        self.TAU_sp = FunctionSpace(self.s_mesh, VectorElement(LineDG0, 2)) # for the stress
-        self.MOM_sp = FunctionSpace(self.s_mesh, LineP2)
+        self.SIG_1_sp = FunctionSpace(self.s_1_mesh, VectorElement(LineP2, 2)) # for the stress in Sigma_1
+        self.SIG_2_sp = FunctionSpace(self.s_2_mesh, VectorElement(LineP2, 2)) # for the stress in Sigma_2
         self.M3_sp = FunctionSpace(self.cl_mesh, VectorElement(NodeElement, 2))
         assert self.M3_sp.dof_loc[0,0] < self.M3_sp.dof_loc[2,0]
 
-        # extract the useful DOFs
-        self.BMM_int_dof = np.unique(self.mesh.coord_fe.getFacetDof(tags=(3,)))
-        self.BMM_sh_dof = np.unique(self.mesh.coord_fe.getFacetDof(tags=(4,5)))
-        self.BMM_fix_dof = np.unique(self.mesh.coord_fe.getFacetDof(tags=(3,4,5,6,7,8)))
-        self.el_free_dof = group_dof((self.mesh.coord_fe,), (self.BMM_fix_dof,))
-        #
-        self.cl_dof_Y = np.unique(self.Y_sp.getFacetDof(tags=(9,)))
-        self.cl_dof_Q2 = np.unique(self.Q_sp.getFacetDof(tags=(9,)))
-        self.cl_dof_Q1 = np.unique(self.Q_P1_sp.getFacetDof(tags=(9,)))
-        assert self.Q_P1_sp.dof_loc[self.cl_dof_Q1[0],0] < self.Q_P1_sp.dof_loc[self.cl_dof_Q1[2],0]
-        #
-        u_noslip_dof = np.unique(self.U_sp.getFacetDof(tags=(7,)))
+        # extract the DOFs for the bulk mesh mapping
+        Y_fs = self.mesh.coord_fe
+        _int_dof = binsearchkw(Y_fs.dof_loc[::2].round(10), self.R_sp.dof_loc[::2].round(10)) # the ordering here matches the one in R_sp
+        assert np.all(_int_dof != -1)
+        self.BMM_int_dof = np.stack((_int_dof*2, _int_dof*2+1), axis=1).reshape(-1)
+        self.BMM_sh_dof = np.where(Y_fs.dof_loc[:, 1] < 1e-12)[0]
+        self.BMM_bound_dof = np.where((Y_fs.dof_loc[:,0] < -1+1e-12) | (Y_fs.dof_loc[:,0] > 1-1e-12) | (Y_fs.dof_loc[:,1] > 1-1e-12))[0]
+        BMM_fix_dof = np.unique(np.concatenate((self.BMM_int_dof, self.BMM_sh_dof, self.BMM_bound_dof)))
+        self.BMM_free_dof = group_dof((Y_fs,), (BMM_fix_dof,))
+
+        # extract the DOFs at the contact line
+        cl_pos = self.cl_mesh.point[:,0]
+        self.cl_dof_R = np.where((self.R_sp.dof_loc[:,1] < 1e-12) & ((np.abs(self.R_sp.dof_loc[:,0] - cl_pos[0]) < 1e-12) | (np.abs(self.R_sp.dof_loc[:,0] - cl_pos[1]) < 1e-12)))[0]
+        assert self.cl_dof_R.size == 4
+        self.cl_dof_Q = np.where((self.Q_sp.dof_loc[:,1] < 1e-12) & ((np.abs(self.Q_sp.dof_loc[:,0] - cl_pos[0]) < 1e-12) | (np.abs(self.Q_sp.dof_loc[:,0] - cl_pos[1]) < 1e-12)))[0]
+        assert self.cl_dof_Q.size == 4
+        self.cl_dof_Q_P1 = np.where((self.Q_P1_sp.dof_loc[:,1] < 1e-12) & ((np.abs(self.Q_P1_sp.dof_loc[:,0] - cl_pos[0]) < 1e-12) | (np.abs(self.Q_P1_sp.dof_loc[:,0] - cl_pos[1]) < 1e-12)))[0]
+        # assert self.Q_P1_sp.dof_loc[self.cl_dof_Q_P1[0],0] < self.Q_P1_sp.dof_loc[self.cl_dof_Q_P1[2],0]
+        # ID_1_fs = self.s_1_mesh.coord_fe
+        # self.cl_dof_ID_1 = np.where((ID_1_fs.dof_loc[:,1] < 1e-12) & ((np.abs(ID_1_fs.dof_loc[:,0] - cl_pos[0]) < 1e-12) | (np.abs(ID_1_fs.dof_loc[:,0] - cl_pos[1]) < 1e-12)))[0]
+        # assert self.cl_dof_ID_1.size == 4
+        # ID_2_fs = self.s_2_mesh.coord_fe
+        # self.cl_dof_ID_2 = np.where((ID_2_fs.dof_loc[:,1] < 1e-12) & ((np.abs(ID_2_fs.dof_loc[:,0] - cl_pos[0]) < 1e-12) | (np.abs(ID_2_fs.dof_loc[:,0] - cl_pos[1]) < 1e-12)))[0]
+        # assert self.cl_dof_ID_2 == 4
+        
+        # extract the DOFs for the dry and wet part
+        _dry_dof = binsearchkw(self.s_mesh.coord_fe.dof_loc[::2].round(10), self.s_2_mesh.coord_fe.dof_loc[::2].round(10))
+        assert np.all(_dry_dof != -1)
+        self.dry_dof = np.stack((_dry_dof*2, _dry_dof*2+1), axis=1).reshape(-1)
+        _wet_dof = binsearchkw(self.s_mesh.coord_fe.dof_loc[::2].round(10), self.s_1_mesh.coord_fe.dof_loc[::2].round(10))
+        assert np.all(_wet_dof != -1)
+        self.wet_dof = np.stack((_wet_dof*2, _wet_dof*2+1), axis=1).reshape(-1)
+
+        # extract the useful DOFs for the velocity and the sheet deformation
+        u_noslip_dof = np.where(self.U_sp.dof_loc[:,1] > 1-1e-12)[0]
         p_fix_dof = np.array((0,), dtype=np.int32) # np.arange(self.P0_sp.num_dof, dtype=np.int32)
-        q_clamp_dof = np.unique(self.Q_sp.getFacetDof(tags=(10,)))
-        # q_clamp_dof = np.unique(np.concatenate((self.Q_sp.getFacetDof(tags=(10,)).reshape(-1), np.arange(1, self.Q_sp.num_dof, 2)))) # for no-bending
-        mom_fix_dof = np.unique(self.MOM_sp.getFacetDof(tags=(10,)))
-        # mom_fix_dof = np.arange(self.MOM_sp.num_dof) # for no-bending
+        q_clamp_dof = np.where((self.Q_sp.dof_loc[:,1] < 1e-12) & (np.abs(self.Q_sp.dof_loc[:,0]) > 1-1e-12))[0]
+        # q_fix_dof = np.arange(self.Q_sp.num_dof)
         self.free_dof = group_dof(
-            (self.U_sp, self.P1_sp, self.P0_sp, self.TAU_sp, self.Y_sp, self.K_sp, self.M3_sp, self.Q_sp, self.MOM_sp), 
-            (u_noslip_dof, None, p_fix_dof, None, None, None, None, q_clamp_dof, mom_fix_dof)
+            (self.U_sp, self.P1_sp, self.P0_sp, self.R_sp, self.OMG_sp, self.Q_sp, self.Q_sp, self.SIG_1_sp, self.SIG_2_sp, self.M3_sp), 
+            (u_noslip_dof, None, p_fix_dof, None, None, q_clamp_dof, q_clamp_dof, None, None, None)
         )
 
-        # =================================================================
-        # declare the solution functions
+        # allocate the solution functions
         self.u = Function(self.U_sp)
         self.p1 = Function(self.P1_sp)
         self.p0 = Function(self.P0_sp)
-        self.y = Function(self.Y_sp)
-        self.y_k = Function(self.Y_sp)
-        self.kappa = Function(self.K_sp)
-        # self.w = Function(self.Q_sp)   # the displacement
-        self.w_k = Function(self.Q_sp) # the displacement
-        self.tau = Function(self.TAU_sp)
-        self.mom = Function(self.MOM_sp)
+        self.r = Function(self.R_sp)
+        self.r_m = Function(self.R_sp)
+        self.omega = Function(self.OMG_sp)
+        self.q = None # the deformation map
+        self.q_m = Function(self.Q_sp) # the deformation map
+        self.kappa = Function(self.Q_sp) # the mean curvature vector
+        self.sm_1 = Function(self.SIG_1_sp) # the stress in Sigma_1
+        self.sm_2 = Function(self.SIG_2_sp) # the stress in Sigma_2
         self.m3 = Function(self.M3_sp)
-        self.m1_k = Function(self.M3_sp) # the projected m1
-        self.id_k = Function(self.s_mesh.coord_fe)
+        self.m1_hat = Function(self.M3_sp)
+        self.id_m = Function(self.s_mesh.coord_fe) # the mesh mapping of the reference sheet
+        self.id_1_m = Function(self.s_1_mesh.coord_fe)
+        self.id_2_m = Function(self.s_2_mesh.coord_fe)
 
-        # initialize the pre-strechted condition
-        self.w = lift_to_P2(self.Q_sp, self.s_mesh.coord_map) * self.phyp.pre / (1. + self.phyp.pre) # the initial condition for w
-        self.w_bc = Function(self.Q_sp) # the boundary condition for w
-        self.w_bc[q_clamp_dof] = self.w[q_clamp_dof]
+        # redefine the mesh mapping for the sheet to fulfill the pre-stretch condition
+        self.q = lift_to_P2(self.Q_sp, self.s_mesh.coord_map)
         self.s_mesh.coord_map[:] *= 1. / (1. + self.phyp.pre)
-        # so that the displacement is the identity of the original mesh map
         
-        # mark the CL node for finite difference arrangement
-        _temp = -np.ones_like(self.w, dtype=int)
-        _temp[self.cl_dof_Q2] = (0, 1, 2, 3)
-        self.cl_dof_fd = arrange_as_FD(self.Q_sp, _temp)
+        # mark the CL nodes for finite difference arrangement
+        _temp = -np.ones_like(self.q, dtype=np.int_)
+        _temp[self.cl_dof_Q] = (0, 1, 2, 3)
+        self.cl_dof_Q_fd = arrange_as_FD(self.Q_sp, _temp)
 
-        # initialize the arrays for storing the energies
+        # initialize the arrays for storing the energy history
         self.energy = np.zeros((self.num_steps+1, 5))
         # ^ the columns are stretching energy, bending energy, surface energy for Sigma_1, 2, 3. 
         self.phycl_hist = np.zeros((self.num_steps+1, 4)) # history of physical CL
@@ -291,12 +362,9 @@ class Drop_Runner(Runner):
         # read checkpoints from file
         if self.args.resume:
             self.mesh.coord_map[:] = self.resume_file["bulk_coord_map"]
-            self.i_mesh.coord_map[:] = self.resume_file["y_k"]
-            self.s_mesh.coord_map[:] = self.resume_file["id_k"]
-            self.w[:] = self.resume_file["w_k"]
-            self.m3[:] = self.resume_file["m3"]
-            self.m1_k[:] = self.resume_file["m1"]
-            self.mom[:] = self.resume_file["mom"]
+            self.i_mesh.coord_map[:] = self.resume_file["r_m"]
+            self.s_mesh.coord_map[:] = self.resume_file["id_m"]
+            self.q[:] = self.resume_file["q_m"]
             self.energy[:self.step+1] = self.resume_file["energy"]
             self.phycl_hist[:self.step+1] = self.resume_file["phycl_hist"]
             self.refcl_hist[:self.step+1] = self.resume_file["refcl_hist"]
@@ -310,29 +378,27 @@ class Drop_Runner(Runner):
             self.bulk_triangles = self.mesh.coord_fe.elem_dof[::2,:].T//2
 
     def pre_step(self) -> bool:
-        # retrieve the mesh mapping; 
-        # they will be needed in the measures. 
-        self.y_k[:] = self.i_mesh.coord_map
-        self.id_k[:] = self.s_mesh.coord_map 
-        self.w_k[:] = self.w
-        self.id_k_lift = lift_to_P2(self.Q_sp, self.id_k) # type: Function
-        self.q_k = self.w_k + self.id_k_lift # type: Function
-        self.q_k_down = down_to_P1(self.Q_P1_sp, self.q_k) # type: Function
+        # retrieve the mesh mapping which will be needed in the measures. 
+        self.r_m[:] = self.i_mesh.coord_map
+        self.id_m[:] = self.s_mesh.coord_map 
+        self.id_1_m[:] = self.id_m[self.wet_dof]
+        self.id_2_m[:] = self.id_m[self.dry_dof]
+        self.q_m[:] = self.q
+        self.q_m_down = down_to_P1(self.Q_P1_sp, self.q_m)
 
         # record the CL locations
-        refcl = self.id_k.view(np.ndarray)[self.cl_dof_Q1]
-        phycl = self.w_k.view(np.ndarray)[self.cl_dof_Q2]
-        phycl += refcl
-        self.phycl_hist[self.step] = phycl
+        refcl = self.id_m.view(np.ndarray)[self.cl_dof_Q_P1]
         self.refcl_hist[self.step] = refcl
+        phycl = self.q.view(np.ndarray)[self.cl_dof_Q]
+        self.phycl_hist[self.step] = phycl
 
         # calculate the energy
-        dA = Measure(self.s_mesh, dim=1, order=5, coord_map=self.id_k) 
-        self.energy[self.step, 0] = self.phyp.Y * e_stretch.assemble(dA, w=self.w_k._interpolate(dA))
-        self.energy[self.step, 1] = 1.0/self.phyp.B * e_bend.assemble(dA, mom=self.mom._interpolate(dA))
-        da_1 = Measure(self.s_mesh, dim=1, order=5, tags=(5,), coord_map=self.q_k)
+        # dA = Measure(self.s_mesh, dim=1, order=5, coord_map=self.id_k) 
+        # self.energy[self.step, 0] = self.phyp.Cs * e_stretch.assemble(dA, w=self.w_k._interpolate(dA))
+        # self.energy[self.step, 1] = 1.0/self.phyp.Cb * e_bend.assemble(dA, mom=self.mom._interpolate(dA))
+        da_1 = Measure(self.s_mesh, dim=1, order=5, tags=(5,), coord_map=self.q_m)
         self.energy[self.step, 2] = self.phyp.gamma_1 * dx.assemble(da_1)
-        da_2 = Measure(self.s_mesh, dim=1, order=5, tags=(4,), coord_map=self.q_k)
+        da_2 = Measure(self.s_mesh, dim=1, order=5, tags=(4,), coord_map=self.q_m)
         self.energy[self.step, 3] = self.phyp.gamma_2 * dx.assemble(da_2)
         ds = Measure(self.i_mesh, dim=1, order=3)
         self.energy[self.step, 4] = self.phyp.gamma_3 * dx.assemble(ds)
@@ -345,37 +411,29 @@ class Drop_Runner(Runner):
             # tpc = self.ax.tripcolor(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], press, triangles=self.bulk_triangles, vmin=-40, vmax=40)
             # self.ax.triplot(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], triangles=self.bulk_triangles, linewidth=0.5)
             # plot the velocity
-            _u = self.u.view(np.ndarray); _n = self.mesh.coord_map.size; # _mag = np.sqrt(np.sum((_u[:_n]**2).reshape(-1, 2), axis=1))
-            qv = self.ax.quiver(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], _u[:_n:2], _u[1:_n:2], color="tab:blue") #, _mag, cmap=pyplot.get_cmap("Spectral"))
+            _u = self.u.view(np.ndarray); _n = self.mesh.coord_map.size; 
+            self.ax.quiver(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], _u[:_n:2], _u[1:_n:2], color="tab:blue") #, _mag, cmap=pyplot.get_cmap("Spectral"))
             # plot the interface
-            Y_sp = self.y_k.fe # type: FunctionSpace
-            _y_k = self.y_k.view(np.ndarray)
-            p0 = _y_k[Y_sp.elem_dof[:2]].T # (Ne, 2)
-            p1 = _y_k[Y_sp.elem_dof[2:]].T # (Ne, 2)
-            segs = np.concatenate((p0[:,np.newaxis], p1[:,np.newaxis]), axis=1)
-            self.ax.add_collection(LineCollection(segments=segs, colors="tab:red"))
+            _r_m = self.r_m.view(np.ndarray)
+            segments = _r_m[self.i_mesh.coord_fe.elem_dof].reshape(2, 2, -1).transpose(2, 0, 1)
+            self.ax.add_collection(LineCollection(segments=segments, colors="tab:blue"))
             # plot the sheet
-            Q_P1_sp = self.Q_P1_sp
-            _q_k_down = self.q_k_down.view(np.ndarray)
-            p0 = _q_k_down[Q_P1_sp.elem_dof[:2]].T # (Ne, 2)
-            p1 = _q_k_down[Q_P1_sp.elem_dof[2:]].T # (Ne, 2)
-            segs = np.concatenate((p0[:,np.newaxis], p1[:,np.newaxis]), axis=1)
-            self.ax.add_collection(LineCollection(segments=segs, colors="tab:orange"))
+            _q_m_down = self.q_m_down.view(np.ndarray)
+            segments = _q_m_down[self.s_mesh.coord_fe.elem_dof].reshape(2, 2, -1).transpose(2, 0, 1)
+            self.ax.add_collection(LineCollection(segments=segments, colors="tab:orange"))
             # plot the frame
             self.ax.plot((-1.0, -1.0, 1.0, 1.0), (0.0, 1.0, 1.0, 0.0), 'k-')
-            #
             self.ax.set_xlim(-1.0, 1.0); self.ax.set_ylim(-0.15, 1.0)
             pyplot.title("t={:.5f}".format(t))
             pyplot.draw()
             pyplot.pause(1e-4)
             # output image files
             if self.step % self.solp.stride_frame == 0:
-                filename = self._get_output_name("{:04}.png".format(self.step))
+                filename = self._get_output_name("{:05}.png".format(self.step))
                 pyplot.savefig(filename, dpi=300.0)
         if self.step % self.solp.stride_checkpoint == 0:
-            filename = self._get_output_name("{:04}.npz".format(self.step))
-            np.savez(filename, bulk_coord_map=self.mesh.coord_map, y_k=self.y_k, id_k=self.id_k, \
-                     w_k=self.w_k, m3=self.m3, m1=self.m1_k, mom=self.mom,  \
+            filename = self._get_output_name("{:05}.npz".format(self.step))
+            np.savez(filename, bulk_coord_map=self.mesh.coord_map, r_m=self.r_m, id_m=self.id_m, q_m=self.q_m, \
                      phycl_hist=self.phycl_hist[:self.step+1], \
                      refcl_hist=self.refcl_hist[:self.step+1], \
                      energy=self.energy[:self.step+1])
@@ -389,195 +447,195 @@ class Drop_Runner(Runner):
         # Step 1. Calculate the conormal at the contact line. 
         
         # project the discontinuous deformation gradient onto P1 to find the conormal vector m1
-        dA = Measure(self.s_mesh, dim=1, order=5, coord_map=self.id_k) # the reference sheet mesh at the last time step
-        q_P1_k_basis = FunctionBasis(self.Q_P1_sp, dA)
-        C_L2 = c_L2.assemble(q_P1_k_basis, q_P1_k_basis, dA)
-        L_DQ = l_dq.assemble(q_P1_k_basis, dA, q_k = self.q_k._interpolate(dA))
-        dq_k = Function(self.Q_P1_sp)
-        dq_k[:] = spsolve(C_L2, L_DQ)
+        d_xi = Measure(self.s_mesh, dim=1, order=5, coord_map=self.id_m) # the reference sheet mesh at the last time step
+        q_P1_basis = FunctionBasis(self.Q_P1_sp, d_xi)
+        A_L2 = a_L2.assemble(q_P1_basis, q_P1_basis)
+        L_DQ = l_dq.assemble(q_P1_basis, None, q_m = self.q_m._interpolate(d_xi))
+        dq = Function(self.Q_P1_sp)
+        dq[:] = spsolve(A_L2, L_DQ)
 
         # extract the conormal at the contact line
-        dq_k_at_cl = dq_k.view(np.ndarray)[self.cl_dof_Q1].reshape(-1, 2) # type: np.ndarray # (-1, 2)
-        dq_k_at_cl /= np.linalg.norm(dq_k_at_cl, ord=None, axis=1, keepdims=True) # (2, 2)
-        dq_k_at_cl[0] = -dq_k_at_cl[0]
-        self.m1_k[:] = dq_k_at_cl.reshape(-1)
+        dq_at_cl = dq.view(np.ndarray)[self.cl_dof_Q_P1].reshape(-1, 2) # type: np.ndarray # (-1, 2)
+        dq_at_cl /= np.linalg.norm(dq_at_cl, ord=None, axis=1, keepdims=True) # (2, 2)
+        dq_at_cl[0] = -dq_at_cl[0]
+        self.m1_hat[:] = dq_at_cl.reshape(-1)
 
-        # =================================================================
-        # Step 2. Solve the fluid, the fluid-fluid interface, and the sheet deformation. 
+        # # =================================================================
+        # # Step 2. Solve the fluid, the fluid-fluid interface, and the sheet deformation. 
         
-        # set up the measures
-        dx = Measure(self.mesh, dim=2, order=3)
-        ds_4u = Measure(self.mesh, dim=1, order=5, tags=(3,)) # the fluid interface restricted from the bulk mesh
-        da_4u = Measure(self.mesh, dim=1, order=5, tags=(4,5)) # the deformed sheet restricted from the bulk mesh
+        # # set up the measures
+        # dx = Measure(self.mesh, dim=2, order=3)
+        # ds_4u = Measure(self.mesh, dim=1, order=5, tags=(3,)) # the fluid interface restricted from the bulk mesh
+        # da_4u = Measure(self.mesh, dim=1, order=5, tags=(4,5)) # the deformed sheet restricted from the bulk mesh
 
-        ds = Measure(self.i_mesh, dim=1, order=5)
-        da = Measure(self.s_mesh, dim=1, order=5, coord_map=self.q_k_down) # the deformed sheet surface measure
-        # dA = Measure(self.s_mesh, dim=1, order=5, coord_map=self.id_k)   # the reference sheet mesh at the last time step; defined already
+        # ds = Measure(self.i_mesh, dim=1, order=5)
+        # da = Measure(self.s_mesh, dim=1, order=5, coord_map=self.q_k_down) # the deformed sheet surface measure
+        # # dA = Measure(self.s_mesh, dim=1, order=5, coord_map=self.id_k)   # the reference sheet mesh at the last time step; defined already
 
-        dp_i = Measure(self.i_mesh, dim=0, order=1, tags=(9,)) # the CL restricted from the fluid interface
-        dp_s = Measure(self.s_mesh, dim=0, order=1, tags=(9,)) # the CL on the reference sheet mesh
-        dp = Measure(self.cl_mesh, dim=0, order=1)
+        # dp_i = Measure(self.i_mesh, dim=0, order=1, tags=(9,)) # the CL restricted from the fluid interface
+        # dp_s = Measure(self.s_mesh, dim=0, order=1, tags=(9,)) # the CL on the reference sheet mesh
+        # dp = Measure(self.cl_mesh, dim=0, order=1)
 
-        # =================================================================
-        # set up the function bases:
-        # fluid domain
-        u_basis = FunctionBasis(self.U_sp, dx)
-        p1_basis = FunctionBasis(self.P1_sp, dx)
-        p0_basis = FunctionBasis(self.P0_sp, dx)
-        # interface domain
-        y_basis = FunctionBasis(self.Y_sp, ds)
-        u_i_basis = FunctionBasis(self.U_sp, ds_4u)
-        k_basis = FunctionBasis(self.K_sp, ds)
-        # sheet domain
-        u_da_basis = FunctionBasis(self.U_sp, da_4u)
-        tau_basis = FunctionBasis(self.TAU_sp, da)
-        q_da_basis = FunctionBasis(self.Q_sp, da)
-        q_basis = FunctionBasis(self.Q_sp, dA)
-        mom_basis = FunctionBasis(self.MOM_sp, dA)
-        # CL from sheet
-        y_cl_basis = FunctionBasis(self.Y_sp, dp_i)
-        q_cl_basis = FunctionBasis(self.Q_sp, dp_s)
-        m3_basis = FunctionBasis(self.M3_sp, dp)
+        # # =================================================================
+        # # set up the function bases:
+        # # fluid domain
+        # u_basis = FunctionBasis(self.U_sp, dx)
+        # p1_basis = FunctionBasis(self.P1_sp, dx)
+        # p0_basis = FunctionBasis(self.P0_sp, dx)
+        # # interface domain
+        # y_basis = FunctionBasis(self.Y_sp, ds)
+        # u_i_basis = FunctionBasis(self.U_sp, ds_4u)
+        # k_basis = FunctionBasis(self.K_sp, ds)
+        # # sheet domain
+        # u_da_basis = FunctionBasis(self.U_sp, da_4u)
+        # tau_basis = FunctionBasis(self.TAU_sp, da)
+        # q_da_basis = FunctionBasis(self.Q_sp, da)
+        # q_basis = FunctionBasis(self.Q_sp, dA)
+        # mom_basis = FunctionBasis(self.MOM_sp, dA)
+        # # CL from sheet
+        # y_cl_basis = FunctionBasis(self.Y_sp, dp_i)
+        # q_cl_basis = FunctionBasis(self.Q_sp, dp_s)
+        # m3_basis = FunctionBasis(self.M3_sp, dp)
         
-        # =================================================================
-        # assemble by blocks
-        A_XIU = a_xiu.assemble(u_basis, u_basis, dx, eta=self.viscosity)
-        A_XIP1 = a_xip.assemble(u_basis, p1_basis, dx)
-        A_XIP0 = a_xip.assemble(u_basis, p0_basis, dx)
-        A_XIK = a_xik.assemble(u_i_basis, k_basis, ds_4u)
-        A_XITAU = a_xitau.assemble(u_da_basis, tau_basis, da)
+        # # =================================================================
+        # # assemble by blocks
+        # A_XIU = a_xiu.assemble(u_basis, u_basis, dx, eta=self.viscosity)
+        # A_XIP1 = a_xip.assemble(u_basis, p1_basis, dx)
+        # A_XIP0 = a_xip.assemble(u_basis, p0_basis, dx)
+        # A_XIK = a_xik.assemble(u_i_basis, k_basis, ds_4u)
+        # A_XITAU = a_xitau.assemble(u_da_basis, tau_basis, da)
 
-        A_ZY = a_zy.assemble(y_basis, y_basis, ds)
-        A_ZK = a_zk.assemble(y_basis, k_basis, ds)
-        A_ZM3 = a_zm3.assemble(y_cl_basis, m3_basis, dp_i)
+        # A_ZY = a_zy.assemble(y_basis, y_basis, ds)
+        # A_ZK = a_zk.assemble(y_basis, k_basis, ds)
+        # A_ZM3 = a_zm3.assemble(y_cl_basis, m3_basis, dp_i)
         
-        A_M3M3 = a_m3m3.assemble(m3_basis, m3_basis, dp, m1 = self.m1_k._interpolate(dp))
-        A_M3Q = a_zm3.assemble(m3_basis, q_cl_basis, dp_s)
+        # A_M3M3 = a_m3m3.assemble(m3_basis, m3_basis, dp, m1 = self.m1_k._interpolate(dp))
+        # A_M3Q = a_zm3.assemble(m3_basis, q_cl_basis, dp_s)
 
-        B_PIQ = c_L2.assemble(tau_basis, q_da_basis, da)
-        B_PIU = c_L2.assemble(tau_basis, u_da_basis, da)
-        B_PITAU = b_pitau.assemble(tau_basis, tau_basis, da, mu_i=self.slip_fric)
+        # B_PIQ = c_L2.assemble(tau_basis, q_da_basis, da)
+        # B_PIU = c_L2.assemble(tau_basis, u_da_basis, da)
+        # B_PITAU = b_pitau.assemble(tau_basis, tau_basis, da, mu_i=self.slip_fric)
 
-        C_PHIM = c_phim.assemble(q_basis, mom_basis, dA)
-        C_PHIQ = c_phiq.assemble(q_basis, q_basis, dA, w_k = self.w_k._interpolate(dA))
-        C_PHIQ_SURF = c_phiq_surf.assemble(q_da_basis, q_da_basis, da, gamma=self.surf_tens)
-        C_WM = c_L2.assemble(mom_basis, mom_basis, dA)
+        # C_PHIM = c_phim.assemble(q_basis, mom_basis, dA)
+        # C_PHIQ = c_phiq.assemble(q_basis, q_basis, dA, w_k = self.w_k._interpolate(dA))
+        # C_PHIQ_SURF = c_phiq_surf.assemble(q_da_basis, q_da_basis, da, gamma=self.surf_tens)
+        # C_WM = c_L2.assemble(mom_basis, mom_basis, dA)
 
-        # collect the block matrices
-        #    u,        p1,      p0,      tau,      y,       k,      m3,        w,      m
-        A = bmat((
-            (A_XIU,    -A_XIP1, -A_XIP0, A_XITAU,  None,    -phyp.gamma_3*A_XIK, None, None,   None),  # u
-            (A_XIP1.T, None,    None,    None,     None,    None,   None,      None,   None),  # p1
-            (A_XIP0.T, None,    None,    None,     None,    None,   None,      None,   None),  # p0
-            (-solp.dt*B_PIU, None, None, solp.dt*B_PITAU,   None, None, None,  B_PIQ,  None),  # tau
-            (None,     None,    None,    None,     A_ZY,    A_ZK,   -A_ZM3,    None,   None),  # y
-            (-solp.dt*A_XIK.T,  None, None, None,  A_ZK.T,  None,   None,      None,   None),  # k
-            (None,     None,    None,    None,     phyp.mu_cl/solp.dt*A_ZM3.T, None,   phyp.gamma_3*A_M3M3, -phyp.mu_cl/solp.dt*A_M3Q, None),  # m3
-            (None,     None,    None,    -B_PIQ.T, None,    None,   phyp.gamma_3*A_M3Q.T, phyp.Y*C_PHIQ+C_PHIQ_SURF, -C_PHIM), # w
-            (None,     None,    None,    None,     None,    None,   None,      C_PHIM.T, 1.0/phyp.B*C_WM), # m
-        ), format="csr")
-        # collect the right-hand-side
-        self.u[:] = 0.0; self.p1[:] = 0.0; self.p0[:] = 0.0
-        self.tau[:] = B_PIQ @ self.w_k
-        self.y[:] = 0.0; self.kappa[:] = A_ZK.T @ self.y_k
-        self.m3[:] = (phyp.gamma_2 - phyp.gamma_1) * A_M3M3 @ self.m1_k \
-            + phyp.mu_cl/solp.dt * (A_ZM3.T @ self.y_k - A_M3Q @ self.w_k)
-        self.w[:] = -C_PHIQ_SURF @ self.id_k_lift
-        self.mom[:] = 0.0
-        L = group_fn(self.u, self.p1, self.p0, self.tau, self.y, \
-                     self.kappa, self.m3, self.w, self.mom)
+        # # collect the block matrices
+        # #    u,        p1,      p0,      tau,      y,       k,      m3,        w,      m
+        # A = bmat((
+        #     (A_XIU,    -A_XIP1, -A_XIP0, A_XITAU,  None,    -phyp.gamma_3*A_XIK, None, None,   None),  # u
+        #     (A_XIP1.T, None,    None,    None,     None,    None,   None,      None,   None),  # p1
+        #     (A_XIP0.T, None,    None,    None,     None,    None,   None,      None,   None),  # p0
+        #     (-solp.dt*B_PIU, None, None, solp.dt*B_PITAU,   None, None, None,  B_PIQ,  None),  # tau
+        #     (None,     None,    None,    None,     A_ZY,    A_ZK,   -A_ZM3,    None,   None),  # y
+        #     (-solp.dt*A_XIK.T,  None, None, None,  A_ZK.T,  None,   None,      None,   None),  # k
+        #     (None,     None,    None,    None,     phyp.mu_cl/solp.dt*A_ZM3.T, None,   phyp.gamma_3*A_M3M3, -phyp.mu_cl/solp.dt*A_M3Q, None),  # m3
+        #     (None,     None,    None,    -B_PIQ.T, None,    None,   phyp.gamma_3*A_M3Q.T, phyp.Cs*C_PHIQ+C_PHIQ_SURF, -C_PHIM), # w
+        #     (None,     None,    None,    None,     None,    None,   None,      C_PHIM.T, 1.0/phyp.Cb*C_WM), # m
+        # ), format="csr")
+        # # collect the right-hand-side
+        # self.u[:] = 0.0; self.p1[:] = 0.0; self.p0[:] = 0.0
+        # self.tau[:] = B_PIQ @ self.w_k
+        # self.y[:] = 0.0; self.kappa[:] = A_ZK.T @ self.y_k
+        # self.m3[:] = (phyp.gamma_2 - phyp.gamma_1) * A_M3M3 @ self.m1_k \
+        #     + phyp.mu_cl/solp.dt * (A_ZM3.T @ self.y_k - A_M3Q @ self.w_k)
+        # self.w[:] = -C_PHIQ_SURF @ self.id_k_lift
+        # self.mom[:] = 0.0
+        # L = group_fn(self.u, self.p1, self.p0, self.tau, self.y, \
+        #              self.kappa, self.m3, self.w, self.mom)
 
-        # homogeneize the right-hand-side
-        self.tau[:] = 0.
-        self.kappa[:] = 0.
-        self.m3[:] = 0.
-        sol_full = group_fn(self.u, self.p1, self.p0, self.tau, self.y, \
-                        self.kappa, self.m3, self.w_bc, self.mom)
-        L = L - A @ sol_full
+        # # homogeneize the right-hand-side
+        # self.tau[:] = 0.
+        # self.kappa[:] = 0.
+        # self.m3[:] = 0.
+        # sol_full = group_fn(self.u, self.p1, self.p0, self.tau, self.y, \
+        #                 self.kappa, self.m3, self.w_bc, self.mom)
+        # L = L - A @ sol_full
 
-        # solve the coupled system
-        free_dof = self.free_dof
-        sol_free = spsolve(A[free_dof][:,free_dof], L[free_dof])
-        # sol_full = np.zeros_like(L)
-        sol_full[free_dof] = sol_free
-        split_fn(sol_full, \
-                 self.u, self.p1, self.p0, self.tau, self.y, \
-                 self.kappa, self.m3, self.w, self.mom)
-        q_star = self.w + self.id_k_lift
+        # # solve the coupled system
+        # free_dof = self.free_dof
+        # sol_free = spsolve(A[free_dof][:,free_dof], L[free_dof])
+        # # sol_full = np.zeros_like(L)
+        # sol_full[free_dof] = sol_free
+        # split_fn(sol_full, \
+        #          self.u, self.p1, self.p0, self.tau, self.y, \
+        #          self.kappa, self.m3, self.w, self.mom)
+        # q_star = self.w + self.id_k_lift
 
-        # =================================================================
-        # Step 3. Convert to FD form and find the upwind derivatives. 
-        dq_fd = arrange_as_FD(self.Q_sp, lift_to_P2(self.Q_sp, dq_k)) # the projected dq
-        q_fd = arrange_as_FD(self.Q_sp, self.q_k) # (x, 2)
-        id_fd = arrange_as_FD(self.Q_sp, self.id_k_lift)[:,0] # (x,)
-        dq_plus = np.zeros_like(q_fd)
-        dq_minus = np.zeros_like(q_fd)
-        dq_plus[:-1:2] = (-3*q_fd[:-1:2] + 4*q_fd[1::2] - q_fd[2::2]) / (id_fd[2::2] - id_fd[:-1:2])[:,np.newaxis]
-        dq_minus[2::2] = (q_fd[:-1:2] - 4*q_fd[1::2] + 3*q_fd[2::2]) / (id_fd[2::2] - id_fd[:-1:2])[:,np.newaxis]
-        dq_plus[1::2] = (q_fd[2::2] - q_fd[:-1:2]) / (id_fd[2::2] - id_fd[:-1:2])[:,np.newaxis]
-        dq_minus[1::2] = dq_plus[1::2]
+        # # =================================================================
+        # # Step 3. Convert to FD form and find the upwind derivatives. 
+        # dq_fd = arrange_as_FD(self.Q_sp, lift_to_P2(self.Q_sp, dq_k)) # the projected dq
+        # q_fd = arrange_as_FD(self.Q_sp, self.q_k) # (x, 2)
+        # id_fd = arrange_as_FD(self.Q_sp, self.id_k_lift)[:,0] # (x,)
+        # dq_plus = np.zeros_like(q_fd)
+        # dq_minus = np.zeros_like(q_fd)
+        # dq_plus[:-1:2] = (-3*q_fd[:-1:2] + 4*q_fd[1::2] - q_fd[2::2]) / (id_fd[2::2] - id_fd[:-1:2])[:,np.newaxis]
+        # dq_minus[2::2] = (q_fd[:-1:2] - 4*q_fd[1::2] + 3*q_fd[2::2]) / (id_fd[2::2] - id_fd[:-1:2])[:,np.newaxis]
+        # dq_plus[1::2] = (q_fd[2::2] - q_fd[:-1:2]) / (id_fd[2::2] - id_fd[:-1:2])[:,np.newaxis]
+        # dq_minus[1::2] = dq_plus[1::2]
 
-        dq_plus_cl = np.extract(self.cl_dof_fd >= 0, dq_plus).reshape(-1, 2)
-        dq_minus_cl = np.extract(self.cl_dof_fd >= 0, dq_minus).reshape(-1, 2)        
+        # dq_plus_cl = np.extract(self.cl_dof_fd >= 0, dq_plus).reshape(-1, 2)
+        # dq_minus_cl = np.extract(self.cl_dof_fd >= 0, dq_minus).reshape(-1, 2)        
 
-        # =================================================================
-        # Step 4. Solve for the reference CL velocity and update the reference mesh. 
+        # # =================================================================
+        # # Step 4. Solve for the reference CL velocity and update the reference mesh. 
 
-        # find the reference CL velocity
-        slip_cl = (self.y.view(np.ndarray)[self.cl_dof_Y] \
-            - q_star.view(np.ndarray)[self.cl_dof_Q2]) / solp.dt # type: np.ndarray # (4,)
-        slip_cl = slip_cl.reshape(2, 2)
-        m1_k_ = self.m1_k.view(np.ndarray).reshape(2, 2)
-        dq_uw_cl = np.where((slip_cl[:,0] < 0)[:,np.newaxis], dq_minus_cl, dq_plus_cl) # (2,2)
-        eta_cl = np.sum(slip_cl*m1_k_, axis=1) / np.sum(dq_uw_cl*m1_k_, axis=1) # (2,)
+        # # find the reference CL velocity
+        # slip_cl = (self.y.view(np.ndarray)[self.cl_dof_Y] \
+        #     - q_star.view(np.ndarray)[self.cl_dof_Q2]) / solp.dt # type: np.ndarray # (4,)
+        # slip_cl = slip_cl.reshape(2, 2)
+        # m1_k_ = self.m1_k.view(np.ndarray).reshape(2, 2)
+        # dq_uw_cl = np.where((slip_cl[:,0] < 0)[:,np.newaxis], dq_minus_cl, dq_plus_cl) # (2,2)
+        # eta_cl = np.sum(slip_cl*m1_k_, axis=1) / np.sum(dq_uw_cl*m1_k_, axis=1) # (2,)
 
-        # find the advected sheet
-        refcl = self.refcl_hist[self.step] # (4,)
-        eta = np.where(
-            id_fd <= refcl[0], (id_fd - id_fd[0]) / (refcl[0] - id_fd[0]) * eta_cl[0], 
-            np.where(id_fd > refcl[2], (id_fd[-1] - id_fd) / (id_fd[-1] - refcl[2]) * eta_cl[1], 
-                    (eta_cl[0] * (refcl[2] - id_fd) + eta_cl[1] * (id_fd - refcl[0])) / (refcl[2] - refcl[0]))
-        )
-        dq_fd /= np.linalg.norm(dq_fd, axis=1, keepdims=True)
-        adv = np.where((eta < 0)[:,np.newaxis], dq_minus, dq_plus) * eta[:,np.newaxis] # (x, 2)
-        q_fd = arrange_as_FD(self.Q_sp, q_star) + solp.dt * np.sum(dq_fd * adv, axis=1, keepdims=True) * dq_fd
+        # # find the advected sheet
+        # refcl = self.refcl_hist[self.step] # (4,)
+        # eta = np.where(
+        #     id_fd <= refcl[0], (id_fd - id_fd[0]) / (refcl[0] - id_fd[0]) * eta_cl[0], 
+        #     np.where(id_fd > refcl[2], (id_fd[-1] - id_fd) / (id_fd[-1] - refcl[2]) * eta_cl[1], 
+        #             (eta_cl[0] * (refcl[2] - id_fd) + eta_cl[1] * (id_fd - refcl[0])) / (refcl[2] - refcl[0]))
+        # )
+        # dq_fd /= np.linalg.norm(dq_fd, axis=1, keepdims=True)
+        # adv = np.where((eta < 0)[:,np.newaxis], dq_minus, dq_plus) * eta[:,np.newaxis] # (x, 2)
+        # q_fd = arrange_as_FD(self.Q_sp, q_star) + solp.dt * np.sum(dq_fd * adv, axis=1, keepdims=True) * dq_fd
         
-        eta = arrange_as_FE(self.Q_sp, np.vstack((eta, np.zeros_like(eta))).T)
-        self.s_mesh.coord_map += down_to_P1(self.Q_P1_sp, eta) * solp.dt
-        q = arrange_as_FE(self.Q_sp, q_fd)
-        self.w = q - lift_to_P2(self.Q_sp, self.s_mesh.coord_map)
+        # eta = arrange_as_FE(self.Q_sp, np.vstack((eta, np.zeros_like(eta))).T)
+        # self.s_mesh.coord_map += down_to_P1(self.Q_P1_sp, eta) * solp.dt
+        # q = arrange_as_FE(self.Q_sp, q_fd)
+        # self.w = q - lift_to_P2(self.Q_sp, self.s_mesh.coord_map)
 
-        # check the matching of the physical CL
-        cl_diff = q.view(np.ndarray)[self.cl_dof_Q2] - self.y.view(np.ndarray)[self.cl_dof_Y]
-        assert np.linalg.norm(cl_diff, ord=np.inf) < 1e-12
+        # # check the matching of the physical CL
+        # cl_diff = q.view(np.ndarray)[self.cl_dof_Q2] - self.y.view(np.ndarray)[self.cl_dof_Y]
+        # assert np.linalg.norm(cl_diff, ord=np.inf) < 1e-12
         
-        # =================================================================
-        # Step 5. Displace the bulk mesh and update all the meshes. 
+        # # =================================================================
+        # # Step 5. Displace the bulk mesh and update all the meshes. 
 
-        # update the interface mesh
-        self.i_mesh.coord_map[:] = self.y
+        # # update the interface mesh
+        # self.i_mesh.coord_map[:] = self.y
 
-        # # no need to update the CL mesh as the coordinates are never used
+        # # # no need to update the CL mesh as the coordinates are never used
 
-        # solve for the bulk mesh displacement
-        BMM_basis = FunctionBasis(self.mesh.coord_fe, dx) # for bulk mesh mapping
-        A_EL = a_el.assemble(BMM_basis, BMM_basis, dx)
-        # attach the displacement of the interface and the sheet
-        bulk_disp = Function(self.mesh.coord_fe)
-        bulk_disp[self.BMM_int_dof] = self.y - self.y_k
-        bulk_disp[self.BMM_sh_dof] = down_to_P1(self.Q_P1_sp, q - self.q_k)
-        L_EL = Function(self.mesh.coord_fe)
-        L_EL[:] = -A_EL @ bulk_disp # homogeneize the boundary conditions
+        # # solve for the bulk mesh displacement
+        # BMM_basis = FunctionBasis(self.mesh.coord_fe, dx) # for bulk mesh mapping
+        # A_EL = a_el.assemble(BMM_basis, BMM_basis, dx)
+        # # attach the displacement of the interface and the sheet
+        # bulk_disp = Function(self.mesh.coord_fe)
+        # bulk_disp[self.BMM_int_dof] = self.y - self.y_k
+        # bulk_disp[self.BMM_sh_dof] = down_to_P1(self.Q_P1_sp, q - self.q_k)
+        # L_EL = Function(self.mesh.coord_fe)
+        # L_EL[:] = -A_EL @ bulk_disp # homogeneize the boundary conditions
 
-        el_free_dof = self.el_free_dof
-        bulk_disp[el_free_dof] = spsolve(A_EL[el_free_dof][:,el_free_dof], L_EL[el_free_dof])
-        self.mesh.coord_map += bulk_disp
+        # el_free_dof = self.el_free_dof
+        # bulk_disp[el_free_dof] = spsolve(A_EL[el_free_dof][:,el_free_dof], L_EL[el_free_dof])
+        # self.mesh.coord_map += bulk_disp
 
-        print(Fore.GREEN + "\nt = {:.5f}, ".format((self.step+1) * self.solp.dt) + Style.RESET_ALL, end="")
-        print("i-disp = {:.2e}, s-disp = {:.2e}, ".format(
-            np.linalg.norm(self.y-self.y_k, ord=np.inf), np.linalg.norm(q-self.q_k, ord=np.inf)), end="")
-        print("eta = {:+.2e}, {:+.2e}, ".format(eta_cl[0], eta_cl[1]), end="")
-        print("|m| = ({:.4f}, {:.4f}), ".format(np.sqrt(self.m3[0]**2+self.m3[1]**2), np.sqrt(self.m3[2]**2+self.m3[3]**2)), end="")
+        # print(Fore.GREEN + "\nt = {:.5f}, ".format((self.step+1) * self.solp.dt) + Style.RESET_ALL, end="")
+        # print("i-disp = {:.2e}, s-disp = {:.2e}, ".format(
+        #     np.linalg.norm(self.y-self.y_k, ord=np.inf), np.linalg.norm(q-self.q_k, ord=np.inf)), end="")
+        # print("eta = {:+.2e}, {:+.2e}, ".format(eta_cl[0], eta_cl[1]), end="")
+        # print("|m| = ({:.4f}, {:.4f}), ".format(np.sqrt(self.m3[0]**2+self.m3[1]**2), np.sqrt(self.m3[2]**2+self.m3[3]**2)), end="")
 
     def finish(self) -> None:
         super().finish()
