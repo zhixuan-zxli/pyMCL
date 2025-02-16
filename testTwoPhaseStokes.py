@@ -5,7 +5,6 @@ from scipy.sparse import bmat
 from scipy.sparse.linalg import spsolve
 from runner import *
 from matplotlib import pyplot
-from tools.binsearchkw import binsearchkw
 
 # physical groups from GMSH
 # group_name = {"fluid_1": 1, "fluid_2": 2, "interface": 3, "dry": 4, "wet": 5, \
@@ -146,10 +145,7 @@ class TwoPhaseStokes(Runner):
             
         Y_fs = self.mesh.coord_fe # type: FunctionSpace
         self.Y_bot_dof = np.where(Y_fs.dof_loc[:,1] < 1e-12)[0]
-        _Y_int_dof = binsearchkw(Y_fs.dof_loc[::2].round(decimals=10), self.i_mesh.coord_fe.dof_loc[::2].round(decimals=10))
-        assert np.all(_Y_int_dof != -1)
-        # _Y_int_dof.sort()
-        self.Y_int_dof = np.stack((_Y_int_dof*2, _Y_int_dof*2+1), axis=1).reshape(-1)
+        self.Y_int_dof = Y_fs.getDofByLocation(self.i_mesh.coord_fe.dof_loc[::2])
         Y_bound_dof = np.where((Y_fs.dof_loc[:,1] > 1-1e-12) | (Y_fs.dof_loc[:,0] < -1+1e-12) | (Y_fs.dof_loc[:,0] > 1-1e-12))[0]
         Y_fix_dof = np.unique(np.concatenate((self.Y_bot_dof, self.Y_int_dof, Y_bound_dof)))
 

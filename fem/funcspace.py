@@ -1,9 +1,10 @@
 from typing import Optional
 from warnings import warn
 import numpy as np
-from .mesh import Mesh, INTERIOR_FACET_TAG
+from .mesh import Mesh
 from .refdom import ref_doms
-from .element import Element
+from .element import Element, VectorElement
+from tools.binsearchkw import binsearchkw
 
 class FunctionSpace:
     """
@@ -73,6 +74,26 @@ class FunctionSpace:
         assert elem.num_local_dof == self.elem_dof.shape[0]
         assert offset == self.dof_loc.shape[0]
         self.num_dof = offset
+
+    def getDofByLocation(self, loc: np.ndarray, round_dec: int = 10) -> np.ndarray:
+        """
+        Get the dof indices by the dof locations. 
+        loc: (n, gdim), without repeating locations for a vector element. 
+        return: (n * nc, ), where nc is the number of componenets for a vector element. 
+        """
+        nc = 1 if not isinstance(self.elem, VectorElement) else self.elem.rdim
+        # get the cached sorted dof locations
+        if not hasattr(self, '_sorted_dof_loc'):
+            self._sorted_indices = np.lexsort(self.dof_loc[::nc, ::-1].T)
+            self._sorted_dof_loc = self.dof_loc[self._sorted_indices*nc]
+        dof = binsearchkw(self._sorted_dof_loc.round(decimals=round_dec), loc.round(decimals=round_dec))
+        assert np.all(dof != -1), "Some dof locations are not found. "
+        dof = self._sorted_indices[dof] * nc
+        if nc > 1:
+            dof = np.repeat(dof, nc)
+            for d in range(nc):
+                dof[d::nc] += d
+        return dof
     
 def _calculate_dof_locations(mesh: Mesh, sub_ent: np.ndarray, dof_loc: np.ndarray) -> np.ndarray:
     # sub_ent: (num_elem, num_sub_entities, tdim+1)
