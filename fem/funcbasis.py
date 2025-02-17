@@ -38,7 +38,7 @@ class FunctionBasis:
         #
         elif mea.dim == tdim-1:
             for i in range(num_local_dof):
-                u, du = self.fs.elem._eval(i, self.mea.quad_tab.reshape(-1, tdim).T)
+                u, du = self.fs.elem._eval(i, self.mea.quad_tab.reshape(-1, tdim+1).T)
                 # u: (rdim, n*num_facets * num_quad)
                 # du: (rdim, tdim, n*num_facets * num_quad)
                 data = QuadData(u.reshape(rdim, -1, Nq)) # (rdim, n*num_facets, num_quad)

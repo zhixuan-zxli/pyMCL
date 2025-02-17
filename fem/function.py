@@ -108,7 +108,7 @@ class Function(np.ndarray):
             for i in range(elem_dof.shape[0]):
                 nodal = self.view(np.ndarray)[elem_dof[i, mea.elem_ix]] # (n*num_facets, )
                 # interpolate function values
-                basis_data, grad_data = self.fe.elem._eval(i, mea.quad_tab.reshape(-1, tdim).T)  # quad_tab is of shape (n * num_facets, num_quad, tdim)
+                basis_data, grad_data = self.fe.elem._eval(i, mea.quad_tab.reshape(-1, tdim+1).T)  # quad_tab is of shape (n * num_facets, num_quad, tdim+1)
                 basis_data = basis_data.reshape(rdim, -1, num_quad) # (rdim, n*num_facets, num_quad)
                 data += nodal[np.newaxis,:,np.newaxis] * basis_data # (rdim, n*num_facets, num_quad)
                 # interpolate the gradients

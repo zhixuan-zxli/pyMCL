@@ -14,7 +14,7 @@ class Measure:
     # facet_ix: np.ndarray # the facet indices of a surface measure
     facet_id: np.ndarray # the facet within an element, if for a surface measure
 
-    quad_tab: np.ndarray # (num_quad, tdim) if volume measure, or (num_facets, num_quad, tdim) if surface measure
+    quad_tab: np.ndarray # (num_quad, tdim+1) if volume measure, or (num_facets, num_quad, tdim+1) if surface measure
     quad_w: np.ndarray # (num_quad, )
     x: Any # type: QuadData # geometric quantities provided
     
@@ -72,7 +72,7 @@ class Measure:
             quad_locs = quad_locs.reshape(self.quad_w.size, -1, mesh.gdim) # (num_quad, num_facets, gdim)
             quad_locs = np.tile(quad_locs, (1, n, 1)) # (num_quad, n*num_facets, gdim) # Why tile for interior facets?
             # transform to local barycentric coordinates
-            self.quad_tab = self._global_to_local(quad_locs) # (n*num_facets, num_quad, tdim)
+            self.quad_tab = self._global_to_local(quad_locs) # (n*num_facets, num_quad, tdim+1)
         else:
             raise RuntimeError("This measure is neither a volume measure nor a surface measure.")
         #
@@ -82,28 +82,30 @@ class Measure:
         """
         Transform the global coordinates to local coordinates within elements. 
         quad_locs: (num_quad, num_facets, gdim)
-        return: (num_facets, num_quad, tdim)
+        return: (num_facets, num_quad, tdim+1)
         """
         tdim = self.mesh.tdim
         num_quad, num_facets = quad_locs.shape[:2]
-        local_x = np.zeros((num_facets, num_quad, tdim))
+        local_x = np.zeros((num_facets, num_quad, tdim+1))
         elem_cell = self.mesh.cell[tdim]
         verts = tuple(self.mesh.point[elem_cell[self.elem_ix, j]] for j in range(tdim+1)) # (tdim+1, num_facets, gdim)
         if tdim == 1:
             denom = np.linalg.norm(verts[1] - verts[0], axis=1)
             for i, loc in enumerate(quad_locs): # loc: (num_facets, gdim)
-                local_x[:,i,0] = np.linalg.norm(loc - verts[0], axis=1) / denom
+                local_x[:,i,0] = np.linalg.norm(loc - verts[1], axis=1) / denom
+                local_x[:,i,1] = 1 - local_x[:,i,0]
         elif tdim == 2:
             def _a(q0, q1, q2):
                 c = np.cross(q1-q0, q2-q0, axis=1)
                 return np.linalg.norm(c, axis=1) if c.ndim == 2 else c
             denom = _a(verts[0], verts[1], verts[2])
             for i, loc in enumerate(quad_locs):
-                local_x[:,i,0] = _a(verts[0], loc, verts[2]) / denom
-                local_x[:,i,1] = _a(verts[0], verts[1], loc) / denom
+                local_x[:,i,0] = _a(loc, verts[1], verts[2]) / denom
+                local_x[:,i,1] = _a(verts[0], loc, verts[2]) / denom
+                local_x[:,i,2] = 1 - local_x[:,i,0] - local_x[:,i,1]
         else:
             raise NotImplementedError
-        assert local_x.min() > -1e-3 and local_x.sum(axis=2).max() < 1.0+1e-3
+        assert local_x.min() > -1e-3
         return local_x
 
 

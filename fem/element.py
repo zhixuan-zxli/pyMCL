@@ -13,13 +13,13 @@ class Element:
     dof_loc: tuple[np.ndarray] 
     # of length tdim+1; the t-th array is (num_dof_loc[t], t+1)
     # Caution: these are not the coordinates in the standard simplex; 
-    # they are the linear combination coefficients of the nodes. 
+    # they are the barycentric coordinates (linear combination coefficients of the nodes)! 
     num_local_dof: int
     
     @staticmethod
     def _eval(basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]:
         """
-        qpts: (tdim, num_of_quad_pts)
+        qpts: (tdim+1, num_of_quad_pts), the barycentric coordinates of the quadrature points
         return the basis function value of shape (rdim, Nq) and gradient of shape (rdim, tdim, Nq)
         """
         raise NotImplementedError # will be implemented by subclasses
@@ -71,7 +71,7 @@ class LineP1(LineElement):
 
     @staticmethod
     def _eval(basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]: 
-        x = qpts[0]
+        x = qpts[1]
         if basis_id == 0:
             basis = 1.0 - x
             grad = -np.ones_like(x)
@@ -97,7 +97,7 @@ class LineP2(LineElement):
 
     @staticmethod
     def _eval(basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]: 
-        x = qpts[0]
+        x = qpts[1]
         if basis_id == 0:
             basis = 2 * (x-0.5) * (x-1.0)
             grad = 4.0*x - 3.0
@@ -158,8 +158,8 @@ class TriP1(TriElement):
 
     @staticmethod
     def _eval(basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]:
-        x = qpts[0]
-        y = qpts[1]
+        x = qpts[1]
+        y = qpts[2]
         if basis_id == 0:
             basis = 1.0 - x - y
             grad = np.vstack((-np.ones_like(x), -np.ones_like(y)))
@@ -191,8 +191,8 @@ class TriP2(TriElement):
     @staticmethod
     def _eval(basis_id: int, qpts: np.ndarray) -> tuple[np.ndarray]:
         assert basis_id < TriP2.num_local_dof
-        x = qpts[0]
-        y = qpts[1]
+        x = qpts[1]
+        y = qpts[2]
         if basis_id == 0:
             basis = 2.0*x**2 - 3.0*x + 1.0 + 2.0*y**2 - 3.0*y + 4.0*x*y
             grad = np.vstack((4.0*x+4.0*y-3.0, 4.0*x+4.0*y-3.0))
