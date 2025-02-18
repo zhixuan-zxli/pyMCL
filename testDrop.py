@@ -88,10 +88,7 @@ def a_m3sig(m3: QuadData, sigma: QuadData, _, x: QuadData, q_m: QuadData, m1_hat
     # m1_hat: (2, 2, 1)
     # x: (2, 2, 1)
     nu = (np.sum(q_m.grad[:,0]**2, axis=0, keepdims=True) - 1) / 2 # (1, 2, 1)
-    n = np.where(x[0] > 0.0, 1.0, -1.0) # (2, 1)
-    j = np.sum(sigma * (m1_hat * n[np.newaxis]), axis=0, keepdims=True) * (2+3*nu) / (2+4*nu) # (1, 2, 1)
-    r = np.sum(m3 * m1_hat,axis=0, keepdims=True)
-    return j * r * x.ds
+    return np.sum(sigma * m3, axis=0, keepdims=True) * (2+3*nu) / (2+4*nu) * x.ds
 
 # ===========================================================
 # bilinear forms for the fluid and fluid interface
@@ -290,9 +287,9 @@ class Drop_Runner(Runner):
         assert self.M3_sp.dof_loc[0,0] < self.M3_sp.dof_loc[2,0]
 
         # extract the DOFs for the bulk mesh mapping
-        Y_sp = self.mesh.coord_fe
+        Y_sp = self.mesh.coord_fe # type: FunctionSpace
         self.BMM_int_dof = Y_sp.getDofByLocation(self.R_sp.dof_loc[::2])
-        self.BMM_sh_dof = np.where(Y_sp.dof_loc[:, 1] < 1e-12)[0]
+        self.BMM_sh_dof = Y_sp.getDofByLocation(self.Q_P1_sp.dof_loc[::2])
         self.BMM_bound_dof = np.where((Y_sp.dof_loc[:,0] < -1+1e-12) | (Y_sp.dof_loc[:,0] > 1-1e-12) | (Y_sp.dof_loc[:,1] > 1-1e-12))[0]
         BMM_fix_dof = np.unique(np.concatenate((self.BMM_int_dof, self.BMM_sh_dof, self.BMM_bound_dof)))
         self.BMM_free_dof = group_dof((Y_sp,), (BMM_fix_dof,))
@@ -303,7 +300,7 @@ class Drop_Runner(Runner):
         assert self.cl_dof_R.size == 4
         self.cl_dof_Q = np.where((self.Q_sp.dof_loc[:,1] < 1e-12) & ((np.abs(self.Q_sp.dof_loc[:,0] - cl_pos[0]) < 1e-12) | (np.abs(self.Q_sp.dof_loc[:,0] - cl_pos[1]) < 1e-12)))[0]
         assert self.cl_dof_Q.size == 4
-        self.cl_dof_Q_P1 = np.where((self.Q_P1_sp.dof_loc[:,1] < 1e-12) & ((np.abs(self.Q_P1_sp.dof_loc[:,0] - cl_pos[0]) < 1e-12) | (np.abs(self.Q_P1_sp.dof_loc[:,0] - cl_pos[1]) < 1e-12)))[0]
+        # self.cl_dof_Q_P1 = np.where((self.Q_P1_sp.dof_loc[:,1] < 1e-12) & ((np.abs(self.Q_P1_sp.dof_loc[:,0] - cl_pos[0]) < 1e-12) | (np.abs(self.Q_P1_sp.dof_loc[:,0] - cl_pos[1]) < 1e-12)))[0]
         
         # extract the DOFs for the dry and wet part
         self.dry_dof = self.Q_sp.getDofByLocation(self.SIG_2_sp.dof_loc[::2])
@@ -315,10 +312,15 @@ class Drop_Runner(Runner):
         u_noslip_dof = np.where(self.U_sp.dof_loc[:,1] > 1-1e-12)[0]
         p_fix_dof = np.array((0,), dtype=np.int32) # np.arange(self.P0_sp.num_dof, dtype=np.int32)
         self.q_clamp_dof = np.where(np.abs(self.Q_sp.dof_loc[:,0]) > 1-1e-12)[0]
-        # q_fix_dof = np.arange(self.Q_sp.num_dof)
+        q_all_dof = np.arange(self.Q_sp.num_dof)
+        q_vert_dof = np.arange(self.Q_sp.num_dof//2) * 2 + 1
+        q_fix_dof = np.unique(np.concatenate((self.q_clamp_dof, q_vert_dof)))
+        sig1_vert_dof = np.arange(self.SIG_1_sp.num_dof//2) * 2 + 1
+        sig2_vert_dof = np.arange(self.SIG_2_sp.num_dof//2) * 2 + 1
         self.free_dof = group_dof(
             (self.U_sp, self.P1_sp, self.P0_sp, self.R_sp, self.OMG_sp, self.Q_sp, self.SIG_1_sp, self.SIG_2_sp, self.Q_sp, self.M3_sp), 
-            (u_noslip_dof, None, p_fix_dof, None, None, self.q_clamp_dof, None, None, self.q_clamp_dof, None)
+            (u_noslip_dof, None, p_fix_dof, None, None, q_fix_dof, sig1_vert_dof, sig2_vert_dof, q_all_dof, None) # for zero sheet displacement
+            # (u_noslip_dof, None, p_fix_dof, None, None, self.q_clamp_dof, None, None, self.q_clamp_dof, None)
         )
 
         # allocate the solution functions
@@ -346,9 +348,9 @@ class Drop_Runner(Runner):
         self.s_mesh.coord_map[:] *= 1. / (1. + self.phyp.pre)
         
         # mark the CL nodes for finite difference arrangement
-        _temp = -np.ones_like(self.q, dtype=np.int_)
-        _temp[self.cl_dof_Q] = (0, 1, 2, 3)
-        self.cl_dof_Q_fd = arrange_as_FD(self.Q_sp, _temp)
+        _temp = np.zeros_like(self.q, dtype=np.int_)
+        _temp[self.cl_dof_Q] = (1, 0, 1, 0)
+        self.cl_dof_fd = np.where(arrange_as_FD(self.Q_sp, _temp)[0])[0] # shape (2, )
 
         # initialize the arrays for storing the energy history
         self.energy = np.zeros((self.num_steps+1, 5))
@@ -443,24 +445,7 @@ class Drop_Runner(Runner):
     def main_step(self) -> None:
         phyp = self.phyp # just for convenience
         # =================================================================
-        # Step 1. Calculate the conormal at the contact line. 
-        
-        # project the discontinuous deformation gradient onto P1 to find the conormal vector m1
-        d_xi = Measure(self.s_mesh, dim=1, order=5, coord_map=self.id_m) # the reference sheet mesh at the last time step
-        q_P1_basis = FunctionBasis(self.Q_P1_sp, d_xi)
-        A_L2 = a_L2.assemble(q_P1_basis, q_P1_basis)
-        L_DQ = l_dq.assemble(q_P1_basis, None, q_m = self.q_m._interpolate(d_xi))
-        dq = Function(self.Q_P1_sp)
-        dq[:] = spsolve(A_L2, L_DQ)
-
-        # extract the conormal at the contact line
-        dq_at_cl = dq.view(np.ndarray)[self.cl_dof_Q_P1].reshape(-1, 2) # type: np.ndarray # (-1, 2)
-        dq_at_cl /= np.linalg.norm(dq_at_cl, ord=None, axis=1, keepdims=True) # (2, 2)
-        dq_at_cl[0] = -dq_at_cl[0]
-        self.m1_hat[:] = dq_at_cl.reshape(-1)
-
-        # =================================================================
-        # Step 2. Solve the fluid, the fluid-fluid interface, and the sheet deformation. 
+        # Step 1. Solve the fluid, the fluid-fluid interface, and the sheet deformation. 
         
         # set up the measures
         dx = Measure(self.mesh, dim=2, order=3)
@@ -469,6 +454,7 @@ class Drop_Runner(Runner):
 
         ds = Measure(self.i_mesh, dim=1, order=5)
         da = Measure(self.s_mesh, dim=1, order=5, coord_map=self.q_m) # the deformed sheet surface measure
+        # d_xi = Measure(self.s_mesh, dim=1, order=5, coord_map=self.id_m) # the reference sheet mesh at the last time step
         da_1 = Measure(self.s_mesh, dim=1, order=5, tags=(5,), coord_map=self.q_m)
         da_2 = Measure(self.s_mesh, dim=1, order=5, tags=(4,), coord_map=self.q_m)
         d_xi_1 = Measure(self.s_mesh, dim=1, order=5, tags=(5,), coord_map=self.id_m) # restriction of da on Sigma_1
@@ -516,7 +502,6 @@ class Drop_Runner(Runner):
         sig1_cl_basis = FunctionBasis(self.SIG_1_sp, dp_sm1)
         sig2_cl_basis = FunctionBasis(self.SIG_2_sp, dp_sm2)
         
-        # =================================================================
         # assemble by blocks
         stab = 10.0 # the stablization constant in Nitsche method
         # for the Stokes equation
@@ -595,80 +580,77 @@ class Drop_Runner(Runner):
         sol_free = spsolve(A[free_dof][:,free_dof], L[free_dof])
         sol_full[free_dof] = sol_free
         split_fn(sol_full, self.u, self.p1, self.p0, self.r, self.omega, self.q, self.sm_1, self.sm_2, self.kappa, self.m3)
-        pass
-        # # =================================================================
-        # # Step 3. Convert to FD form and find the upwind derivatives. 
-        # dq_fd = arrange_as_FD(self.Q_sp, lift_to_P2(self.Q_sp, dq_k)) # the projected dq
-        # q_fd = arrange_as_FD(self.Q_sp, self.q_k) # (x, 2)
-        # id_fd = arrange_as_FD(self.Q_sp, self.id_k_lift)[:,0] # (x,)
-        # dq_plus = np.zeros_like(q_fd)
-        # dq_minus = np.zeros_like(q_fd)
-        # dq_plus[:-1:2] = (-3*q_fd[:-1:2] + 4*q_fd[1::2] - q_fd[2::2]) / (id_fd[2::2] - id_fd[:-1:2])[:,np.newaxis]
-        # dq_minus[2::2] = (q_fd[:-1:2] - 4*q_fd[1::2] + 3*q_fd[2::2]) / (id_fd[2::2] - id_fd[:-1:2])[:,np.newaxis]
-        # dq_plus[1::2] = (q_fd[2::2] - q_fd[:-1:2]) / (id_fd[2::2] - id_fd[:-1:2])[:,np.newaxis]
-        # dq_minus[1::2] = dq_plus[1::2]
-
-        # dq_plus_cl = np.extract(self.cl_dof_fd >= 0, dq_plus).reshape(-1, 2)
-        # dq_minus_cl = np.extract(self.cl_dof_fd >= 0, dq_minus).reshape(-1, 2)        
-
-        # # =================================================================
-        # # Step 4. Solve for the reference CL velocity and update the reference mesh. 
-
-        # # find the reference CL velocity
-        # slip_cl = (self.y.view(np.ndarray)[self.cl_dof_Y] \
-        #     - q_star.view(np.ndarray)[self.cl_dof_Q2]) / solp.dt # type: np.ndarray # (4,)
-        # slip_cl = slip_cl.reshape(2, 2)
-        # m1_k_ = self.m1_k.view(np.ndarray).reshape(2, 2)
-        # dq_uw_cl = np.where((slip_cl[:,0] < 0)[:,np.newaxis], dq_minus_cl, dq_plus_cl) # (2,2)
-        # eta_cl = np.sum(slip_cl*m1_k_, axis=1) / np.sum(dq_uw_cl*m1_k_, axis=1) # (2,)
-
-        # # find the advected sheet
-        # refcl = self.refcl_hist[self.step] # (4,)
-        # eta = np.where(
-        #     id_fd <= refcl[0], (id_fd - id_fd[0]) / (refcl[0] - id_fd[0]) * eta_cl[0], 
-        #     np.where(id_fd > refcl[2], (id_fd[-1] - id_fd) / (id_fd[-1] - refcl[2]) * eta_cl[1], 
-        #             (eta_cl[0] * (refcl[2] - id_fd) + eta_cl[1] * (id_fd - refcl[0])) / (refcl[2] - refcl[0]))
-        # )
-        # dq_fd /= np.linalg.norm(dq_fd, axis=1, keepdims=True)
-        # adv = np.where((eta < 0)[:,np.newaxis], dq_minus, dq_plus) * eta[:,np.newaxis] # (x, 2)
-        # q_fd = arrange_as_FD(self.Q_sp, q_star) + solp.dt * np.sum(dq_fd * adv, axis=1, keepdims=True) * dq_fd
         
-        # eta = arrange_as_FE(self.Q_sp, np.vstack((eta, np.zeros_like(eta))).T)
-        # self.s_mesh.coord_map += down_to_P1(self.Q_P1_sp, eta) * solp.dt
-        # q = arrange_as_FE(self.Q_sp, q_fd)
-        # self.w = q - lift_to_P2(self.Q_sp, self.s_mesh.coord_map)
+        # =================================================================
+        # Step 2. Convert to FD form and find the derivatives using finite difference 
+        q_fd = arrange_as_FD(self.Q_sp, self.q) # (n, 2)
+        xi_fd = arrange_as_FD(self.Q_sp, lift_to_P2(self.Q_sp, self.s_mesh.coord_map))[:,0] # (n,)
+        ref_cl = xi_fd[self.cl_dof_fd] # (2,)
+        # find the first derivative to the right and to the left
+        dq_plus = np.zeros_like(q_fd)
+        dq_plus[:-2] = (q_fd[1:-1] - q_fd[:-2]) * (1/(xi_fd[1:-1]-xi_fd[:-2]) + 1/(xi_fd[2:]-xi_fd[:-2])) + \
+            (q_fd[2:] - q_fd[1:-1]) * (1/(xi_fd[2:]-xi_fd[:-2]) - 1/(xi_fd[2:]-xi_fd[1:-1]))
+        dq_minus = np.zeros_like(q_fd)
+        dq_minus[2:] = (q_fd[1:-1] - q_fd[2:]) * (1/(xi_fd[1:-1]-xi_fd[2:]) + 1/(xi_fd[:-2]-xi_fd[2:])) + \
+            (q_fd[:-2] - q_fd[1:-1]) * (1/(xi_fd[:-2]-xi_fd[2:]) - 1/(xi_fd[:-2]-xi_fd[1:-1]))
+        # check whether they are close ...
 
-        # # check the matching of the physical CL
-        # cl_diff = q.view(np.ndarray)[self.cl_dof_Q2] - self.y.view(np.ndarray)[self.cl_dof_Y]
-        # assert np.linalg.norm(cl_diff, ord=np.inf) < 1e-12
+        slip_cl = (self.r.view(np.ndarray)[self.cl_dof_R] - self.q.view(np.ndarray)[self.cl_dof_Q]) # type: np.ndarray # (4,)
+        slip_cl = slip_cl.reshape(2, 2)
+        # find the reference CL velocity
+        d_chi = (0.0, 0.0)
+        if slip_cl[0,0] > 0:
+            d_chi[0] = np.dot(slip_cl[0], dq_plus[self.cl_dof_fd[0]]) / np.sum(dq_plus[self.cl_dof_fd[0]]**2, axis=1, keepdims=True)
+        else:
+            d_chi[0] = np.dot(slip_cl[0], dq_minus[self.cl_dof_fd[0]]) / np.sum(dq_minus[self.cl_dof_fd[0]]**2, axis=1, keepdims=True)
+        if slip_cl[1,0] > 0:
+            d_chi[1] = np.dot(slip_cl[1], dq_plus[self.cl_dof_fd[1]]) / np.sum(dq_plus[self.cl_dof_fd[1]]**2, axis=1, keepdims=True)
+        else:
+            d_chi[1] = np.dot(slip_cl[1], dq_minus[self.cl_dof_fd[1]]) / np.sum(dq_minus[self.cl_dof_fd[1]]**2, axis=1, keepdims=True)
+        # adjust the reference mesh mapping
+        d_xi = np.where(
+            xi_fd <= ref_cl[0], (xi_fd - xi_fd[0]) / (ref_cl[0] - xi_fd[0]) * d_chi[0], 
+            np.where(xi_fd > ref_cl[1], (xi_fd[-1] - xi_fd) / (xi_fd[-1] - ref_cl[1]) * d_chi[1], 
+                    (d_chi[0] * (ref_cl[1] - xi_fd) + d_chi[1] * (xi_fd - ref_cl[0])) / (ref_cl[1] - ref_cl[0]))
+        ) # (n, ) # check!
+
+        # advect the deformation map using a Lax-Wendroff scheme
+        q_next = q_fd.copy()
+        q_next[1:-1] -= d_xi[1:-1] * ((q_fd[1:-1]-q_fd[:-2])*(1/(xi_fd[1:-1]-xi_fd[:-2])-1/(xi_fd[2:]-xi_fd[:-2])) + (q_fd[2:]-q_fd[1:-1])*(1/(xi_fd[2:]-xi_fd[1:-1])-1/(xi_fd[2:]-xi_fd[2:])))
+        q_next[1:-1] += d_xi[1:-1]**2 * ((q_fd[2:]-q_fd[1:-1])/(xi_fd[2:]-xi_fd[1:-1]) - (q_fd[1:-1]-q_fd[:-2])/(xi_fd[1:-1]-xi_fd[:-2])) / (xi_fd[2:]-xi_fd[:-2])
+        q_next[self.cl_dof_fd] = self.r.view(np.ndarray)[self.cl_dof_R] # check it!
         
-        # # =================================================================
-        # # Step 5. Displace the bulk mesh and update all the meshes. 
+        # now overwrite the mesh mapping and the deformation
+        self.s_mesh.coord_map += down_to_P1(self.Q_P1_sp, arrange_as_FE(self.Q_sp, np.stack((d_xi, np.zeros_like(d_xi)), axis=0)))
+        self.q[:] = arrange_as_FE(self.Q_sp, q_next)
+        
+        # =================================================================
+        # Step 5. Displace the bulk mesh and update all the meshes. 
 
-        # # update the interface mesh
-        # self.i_mesh.coord_map[:] = self.y
+        # update the interface mesh
+        self.i_mesh.coord_map[:] = self.r
 
-        # # # no need to update the CL mesh as the coordinates are never used
+        # we will not update the CL mesh coordinate
 
-        # # solve for the bulk mesh displacement
-        # BMM_basis = FunctionBasis(self.mesh.coord_fe, dx) # for bulk mesh mapping
-        # A_EL = a_el.assemble(BMM_basis, BMM_basis, dx)
-        # # attach the displacement of the interface and the sheet
-        # bulk_disp = Function(self.mesh.coord_fe)
-        # bulk_disp[self.BMM_int_dof] = self.y - self.y_k
-        # bulk_disp[self.BMM_sh_dof] = down_to_P1(self.Q_P1_sp, q - self.q_k)
-        # L_EL = Function(self.mesh.coord_fe)
-        # L_EL[:] = -A_EL @ bulk_disp # homogeneize the boundary conditions
+        # solve for the bulk mesh displacement
+        BMM_basis = FunctionBasis(self.mesh.coord_fe, dx) # for bulk mesh mapping
+        A_EL = a_el.assemble(BMM_basis, BMM_basis, dx)
+        # impose the displacement of the interface and the sheet
+        sol_vec = Function(self.mesh.coord_fe)
+        sol_vec[self.BMM_int_dof] = self.r - self.r_m
+        sol_vec[self.BMM_sh_dof] = down_to_P1(self.Q_P1_sp, self.q - self.q_m)
+        L_EL = Function(self.mesh.coord_fe)   
+        L_EL[:] = -A_EL @ sol_vec # homogeneize the boundary conditions
 
-        # el_free_dof = self.el_free_dof
-        # bulk_disp[el_free_dof] = spsolve(A_EL[el_free_dof][:,el_free_dof], L_EL[el_free_dof])
-        # self.mesh.coord_map += bulk_disp
+        el_free_dof = self.el_free_dof
+        sol_vec[el_free_dof] = spsolve(A_EL[el_free_dof][:,el_free_dof], L_EL[el_free_dof])
+        self.mesh.coord_map += sol_vec
 
-        # print(Fore.GREEN + "\nt = {:.5f}, ".format((self.step+1) * self.solp.dt) + Style.RESET_ALL, end="")
-        # print("i-disp = {:.2e}, s-disp = {:.2e}, ".format(
-        #     np.linalg.norm(self.y-self.y_k, ord=np.inf), np.linalg.norm(q-self.q_k, ord=np.inf)), end="")
-        # print("eta = {:+.2e}, {:+.2e}, ".format(eta_cl[0], eta_cl[1]), end="")
-        # print("|m| = ({:.4f}, {:.4f}), ".format(np.sqrt(self.m3[0]**2+self.m3[1]**2), np.sqrt(self.m3[2]**2+self.m3[3]**2)), end="")
+        print(Fore.GREEN + "\nt = {:.5f}, ".format((self.step+1) * self.solp.dt) + Style.RESET_ALL, end="")
+        print("i-disp = {:.2e}, s-disp = {:.2e}, ".format(
+            np.linalg.norm(self.r-self.r_m, ord=np.inf), np.linalg.norm(self.q-self.q_m, ord=np.inf)), end="")
+        print("d_chi = {:+.2e}, {:+.2e}, ".format(d_chi[0], d_chi[1]), end="")
+        print("|m| = ({:.4f}, {:.4f}), ".format(np.sqrt(self.m3[0]**2+self.m3[1]**2), np.sqrt(self.m3[2]**2+self.m3[3]**2)), end="")
 
     def finish(self) -> None:
         super().finish()
