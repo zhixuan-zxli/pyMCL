@@ -344,6 +344,7 @@ class Drop_Runner(Runner):
             (u_noslip_dof, None, p_fix_dof, None, None, q_fix_dof, sig1_vert_dof, sig2_vert_dof, q_all_dof, None) # for zero sheet displacement
             # (u_noslip_dof, None, p_fix_dof, None, None, self.q_clamp_dof, None, None, self.q_clamp_dof, None)
         )
+        print("Number of free dofs = {}".format(self.free_dof.sum()))
 
         # allocate the solution functions
         self.u = Function(self.U_sp)
@@ -526,19 +527,19 @@ class Drop_Runner(Runner):
         sig2_cl_basis = FunctionBasis(self.SIG_2_sp, dp_sm2)
         
         # assemble by blocks
-        stab = 10.0 # the stablization constant in Nitsche method
+        alpha_stab = 10.0 # the stablization constant in Nitsche method
         # for the Stokes equation
         A_VU = a_vu.assemble(u_basis, u_basis, None, None, eta=self.viscosity)
         A_VP1 = a_vp.assemble(u_basis, p1_basis)
         A_VP0 = a_vp.assemble(u_basis, p0_basis)
         # for the Nitsche method
         A_VU_NIT = a_vu_nitsche.assemble(u_da_basis, u_da_basis, None, None, \
-                    eta = self.viscosity_bound, mu = self.slip_fric, alpha = stab, x2 = da.x)
+                    eta = self.viscosity_bound, mu = self.slip_fric, alpha = alpha_stab, x2 = da.x)
         A_VP1_NIT = a_vp_nitsche.assemble(u_da_basis, p1_da_basis, x2=da.x)
         A_VP0_NIT = a_vp_nitsche.assemble(u_da_basis, p0_da_basis, x2=da.x)
         A_VQ_NIT_N = a_vq_nitsche_n.assemble(u_da_basis, q_da_basis, None, None, eta=self.viscosity_bound)
         A_VQ_NIT_T = a_vq_nitsche_t.assemble(u_da_basis, q_da_basis, None, None, mu=self.slip_fric)
-        A_VQ_NIT_S = a_vq_nitsche_s.assemble(u_da_basis, q_da_basis, None, None, alpha=stab)
+        A_VQ_NIT_S = a_vq_nitsche_s.assemble(u_da_basis, q_da_basis, None, None, alpha=alpha_stab)
         A_RHO1Q_NIT = a_rhoq_nitsche.assemble(p1_da_basis, q_da_basis)
         A_RHO0Q_NIT = a_rhoq_nitsche.assemble(p0_da_basis, q_da_basis)
         # for the fluid interface

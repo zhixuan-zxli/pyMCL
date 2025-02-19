@@ -84,9 +84,10 @@ class FunctionSpace:
         nc = 1 if not isinstance(self.elem, VectorElement) else self.elem.rdim
         # get the cached sorted dof locations
         if not hasattr(self, '_sorted_dof_loc'):
-            self._sorted_indices = np.lexsort(self.dof_loc[::nc, ::-1].T)
-            self._sorted_dof_loc = self.dof_loc[self._sorted_indices*nc]
-        dof = binsearchkw(self._sorted_dof_loc.round(decimals=round_dec), loc.round(decimals=round_dec))
+            rounded = self.dof_loc[::nc].round(decimals=round_dec)
+            self._sorted_indices = np.lexsort(rounded[:,::-1].T)
+            self._sorted_dof_loc = rounded[self._sorted_indices]
+        dof = binsearchkw(self._sorted_dof_loc, loc.round(decimals=round_dec))
         assert np.all(dof != -1), "Some dof locations are not found. "
         dof = self._sorted_indices[dof] * nc
         if nc > 1:
