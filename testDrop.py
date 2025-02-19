@@ -17,8 +17,8 @@ class PhysicalParameters:
     mu_2: float = 1e2
     mu_cl: float = 1.
     gamma_1: float = 0.
-    gamma_3: float = 1.0
-    gamma_2: float = 0. + 1.0 * cos(np.pi/2) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
+    gamma_3: float = 10.0
+    gamma_2: float = 0. + 10.0 * cos(np.pi/2) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
     Cb: float = 1e-2
     Cs: float = 1e1
     pre: float = 0.2 # the initial Jacobian is 1 + pre
@@ -121,7 +121,6 @@ def a_vp(v: QuadData, p: QuadData, x: QuadData, _) -> np.ndarray:
 @BilinearForm
 def a_vu_nitsche(v: QuadData, u: QuadData, x: QuadData, _, eta: np.ndarray, mu: np.ndarray, alpha: float, x2: QuadData) -> np.ndarray:
     # eta, mu: (Nf, )
-    # x.fn: (2, Nf, Nq)
     # alpha is the stabilization factor
     assert x2.shape == x.shape
     tau = np.array((-x2.cn[1], x2.cn[0]))
@@ -141,15 +140,21 @@ def a_vp_nitsche(v: QuadData, p: QuadData, x: QuadData, _, x2: QuadData) -> np.n
     return (p[0] * v_n)[np.newaxis] * x2.dx
 
 @BilinearForm
-def a_vq_nitsche_1(v: QuadData, q: QuadData, _, x: QuadData, eta: np.ndarray, mu: np.ndarray) -> np.ndarray:
+def a_vq_nitsche_n(v: QuadData, q: QuadData, _, x: QuadData, eta: np.ndarray) -> np.ndarray:
+    # q: (2, Nf, Nq)
+    # x.cn: (2, Nf, Nq)
+    n_Tv_n = 2 * eta[:, np.newaxis] * np.sum(np.sum(v.grad * x.cn[np.newaxis], axis=1) * x.cn, axis=0) # (Nf, Nq)
+    q_n = np.sum(q * x.cn, axis=0) # (Nf, Nq)
+    return (-n_Tv_n*q_n)[np.newaxis] * x.dx
+
+@BilinearForm
+def a_vq_nitsche_t(v: QuadData, q: QuadData, _, x: QuadData, mu: np.ndarray) -> np.ndarray:
     # q: (2, Nf, Nq)
     # x.cn: (2, Nf, Nq)
     tau = np.array((-x.cn[1], x.cn[0]))
-    n_Tv_n = 2 * eta[:, np.newaxis] * np.sum(np.sum(v.grad * x.cn[np.newaxis], axis=1) * x.cn, axis=0) # (Nf, Nq)
-    q_n = np.sum(q * x.cn, axis=0) # (Nf, Nq)
     v_t = np.sum(v * tau, axis=0)
     q_t = np.sum(q * tau, axis=0) # (Nf, Nq)
-    return (-n_Tv_n*q_n - mu[:, np.newaxis]*v_t*q_t)[np.newaxis] * x.dx
+    return (-mu[:, np.newaxis]*v_t*q_t)[np.newaxis] * x.dx
 
 @BilinearForm
 def a_vq_nitsche_s(v: QuadData, q: QuadData, _, x: QuadData, alpha: float) -> np.ndarray:
@@ -520,7 +525,8 @@ class Drop_Runner(Runner):
                     eta = self.viscosity_bound, mu = self.slip_fric, alpha = stab, x2 = da.x)
         A_VP1_NIT = a_vp_nitsche.assemble(u_da_basis, p1_da_basis, x2=da.x)
         A_VP0_NIT = a_vp_nitsche.assemble(u_da_basis, p0_da_basis, x2=da.x)
-        A_VQ_NIT_1 = a_vq_nitsche_1.assemble(u_da_basis, q_da_basis, None, None, eta=self.viscosity_bound, mu=self.slip_fric)
+        A_VQ_NIT_N = a_vq_nitsche_n.assemble(u_da_basis, q_da_basis, None, None, eta=self.viscosity_bound)
+        A_VQ_NIT_T = a_vq_nitsche_t.assemble(u_da_basis, q_da_basis, None, None, mu=self.slip_fric)
         A_VQ_NIT_S = a_vq_nitsche_s.assemble(u_da_basis, q_da_basis, None, None, alpha=stab)
         A_RHO1Q_NIT = a_rhoq_nitsche.assemble(p1_da_basis, q_da_basis)
         A_RHO0Q_NIT = a_rhoq_nitsche.assemble(p0_da_basis, q_da_basis)
@@ -539,7 +545,7 @@ class Drop_Runner(Runner):
         # for the mechanics of the sheet
         A_XIK = a_xikappa.assemble(q_da_basis, q_da_basis)
         A_XIQ = a_xiq.assemble(q_da_basis, q_da_basis, None, None, mu=self.viscosity_bound)
-        L_XI = l_xi.assemble(q_da_basis, None, gamma = self.surf_tens)
+        L_XI = l_xi.assemble(q_da_basis, None, gamma=self.surf_tens)
         A_XISM1 = a_xisig.assemble(q_1_da_basis, sig1_da_basis)
         A_XISM2 = a_xisig.assemble(q_2_da_basis, sig2_da_basis)
         A_XIM3 = a_pim3.assemble(q_cl_basis, m3_basis)
@@ -551,19 +557,19 @@ class Drop_Runner(Runner):
         dt = solp.dt
         #    u,             p1,               p0,               r,          omega,                q,                            sigma1,    sigma2,    kappa,     m3
         A = bmat((
-            (A_VU+A_VU_NIT, -A_VP1+A_VP1_NIT, -A_VP0+A_VP0_NIT, None,       -phyp.gamma_3*A_VOMG, (A_VQ_NIT_1+A_VQ_NIT_S)/dt,   None,      None,      None,      None),    # v
+            (A_VU+A_VU_NIT, -A_VP1+A_VP1_NIT, -A_VP0+A_VP0_NIT, None,       -phyp.gamma_3*A_VOMG, (A_VQ_NIT_N+A_VQ_NIT_T+A_VQ_NIT_S)/dt, None, None,  None,      None),    # v
             (A_VP1.T-A_VP1_NIT.T,  None,      None,             None,       None,                 A_RHO1Q_NIT/dt,               None,      None,      None,      None),    # rho_1
             (A_VP0.T-A_VP0_NIT.T,  None,      None,             None,       None,                 A_RHO0Q_NIT/dt,               None,      None,      None,      None),    # rho_0
             (None,          None,             None,             A_PIR,      A_PIOMG,              None,                         None,      None,      None,      A_PIM3),  # pi
             (-dt*A_VOMG.T,  None,             None,             A_PIOMG.T,  None,                 None,                         None,      None,      None,      None),    # delta
-            (-A_VQ_NIT_1.T, -A_RHO1Q_NIT.T,   -A_RHO0Q_NIT.T,   None,       None,                 A_XIQ/dt,                     A_XISM1,   A_XISM2,   phyp.Cb*A_XIK, -phyp.gamma_3*A_XIM3),# xi
+            (A_VQ_NIT_N.T-A_VQ_NIT_T.T, A_RHO1Q_NIT.T, A_RHO0Q_NIT.T, None, None,                 A_XIQ/dt,                     A_XISM1,   A_XISM2,   phyp.Cb*A_XIK, -phyp.gamma_3*A_XIM3),# xi
             (None,          None,             None,             None,       None,                 -phyp.Cs*A_PHI1Q,             A_PHISIG1, None,      None,      None),    # phi_1
             (None,          None,             None,             None,       None,                 -phyp.Cs*A_PHI2Q,             None,      A_PHISIG2, None,      None),    # phi_2
             (None,          None,             None,             None,       None,                 A_ETAQ,                       None,      None,      A_ETAK,    None),    # eta
             (None,          None,             None,             -phyp.mu_cl/dt*A_PIM3.T, None,    phyp.mu_cl/dt*A_XIM3.T,       A_M3SM1,   -A_M3SM2,  None,      None),    # m3
         ), format="csc")
         # collect the right-hand side
-        self.u[:] = (A_VQ_NIT_1 @ self.q_m + A_VQ_NIT_S @ self.q_m) / dt
+        self.u[:] = (A_VQ_NIT_N @ self.q_m + A_VQ_NIT_T @ self.q_m + A_VQ_NIT_S @ self.q_m) / dt
         self.p1[:] = A_RHO1Q_NIT @ self.q_m / dt
         self.p0[:] = A_RHO0Q_NIT @ self.q_m / dt
         self.r[:] = 0.0
@@ -578,6 +584,7 @@ class Drop_Runner(Runner):
         self.p1[:] = 0.0
         self.p0[:] = 0.0
         self.omega[:] = 0.0
+        self.q[:] = 0.0
         self.q[self.q_clamp_dof] = (-1.0, 0.0, 1.0, 0.0)
         sol_full = group_fn(self.u, self.p1, self.p0, self.r, self.omega, self.q, self.sm_1, self.sm_2, self.kappa, self.m3)
         L = L - A @ sol_full
@@ -601,7 +608,7 @@ class Drop_Runner(Runner):
             (q_fd[:-2] - q_fd[1:-1]) * (1/(xi_fd[:-2]-xi_fd[2:]) - 1/(xi_fd[:-2]-xi_fd[1:-1]))
         # check whether they are close ...
 
-        slip_cl = (self.r.view(np.ndarray)[self.cl_dof_R] - self.q.view(np.ndarray)[self.cl_dof_Q]) # type: np.ndarray # (4,)
+        slip_cl = self.r.view(np.ndarray)[self.cl_dof_R] - self.q.view(np.ndarray)[self.cl_dof_Q] # type: np.ndarray # (4,)
         slip_cl = slip_cl.reshape(2, 2)
         # find the reference CL velocity
         d_chi = [0.0, 0.0]
@@ -654,8 +661,8 @@ class Drop_Runner(Runner):
 
         print(Fore.GREEN + "\nt = {:.5f}, ".format((self.step+1) * self.solp.dt) + Style.RESET_ALL, end="")
         print("i-disp = {:.2e}, s-disp = {:.2e}, ".format(
-            np.linalg.norm(self.r-self.r_m, ord=np.inf), np.linalg.norm(self.q-self.q_m, ord=np.inf)), end="")
-        print("d_chi = {:+.2e}, {:+.2e}, ".format(d_chi[0], d_chi[1]), end="")
+            np.linalg.norm(self.r-self.r_m, ord=np.inf)/dt, np.linalg.norm(self.q-self.q_m, ord=np.inf)/dt), end="")
+        print("d_chi = {:+.2e}, {:+.2e}, ".format(d_chi[0]/dt, d_chi[1]/dt), end="")
         print("|m| = ({:.4f}, {:.4f}), ".format(np.sqrt(self.m3[0]**2+self.m3[1]**2), np.sqrt(self.m3[2]**2+self.m3[3]**2)), end="")
 
     def finish(self) -> None:
