@@ -29,7 +29,16 @@ class PhysicalParameters:
 def dx(x: QuadData) -> np.ndarray:
     return x.dx
 
-# Willmore energy
+# stretching energy
+@Functional
+def e_stretch(xi: QuadData, q_m: QuadData) -> np.ndarray:
+    # q_m.grad: (2, 2, Ne, Nq)
+    nu = (np.sum(q_m.grad[:,0]**2, axis=0, keepdims=True) - 1) / 2 # (1, Ne, Nq)
+    return 0.5 * nu**2 * xi.dx
+
+@Functional
+def e_L2(x: QuadData, kappa: QuadData) -> np.ndarray:
+    return 0.5 * np.sum(kappa**2, axis=0, keepdims=True) * x.dx
 
 # ===========================================================
 # forms for the sheet
@@ -376,6 +385,7 @@ class Drop_Runner(Runner):
             self.i_mesh.coord_map[:] = self.resume_file["r_m"]
             self.s_mesh.coord_map[:] = self.resume_file["id_m"]
             self.q[:] = self.resume_file["q_m"]
+            self.kappa[:] = self.resume_file["kappa"]
             self.energy[:self.step+1] = self.resume_file["energy"]
             self.phycl_hist[:self.step+1] = self.resume_file["phycl_hist"]
             self.refcl_hist[:self.step+1] = self.resume_file["refcl_hist"]
@@ -406,9 +416,10 @@ class Drop_Runner(Runner):
         self.phycl_hist[self.step] = phycl
 
         # calculate the energy
-        # dA = Measure(self.s_mesh, dim=1, order=5, coord_map=self.id_k) 
-        # self.energy[self.step, 0] = self.phyp.Cs * e_stretch.assemble(dA, w=self.w_k._interpolate(dA))
-        # self.energy[self.step, 1] = 1.0/self.phyp.Cb * e_bend.assemble(dA, mom=self.mom._interpolate(dA))
+        d_xi = Measure(self.s_mesh, dim=1, order=5, coord_map=self.id_m) # the reference sheet mesh at the last time step
+        self.energy[self.step, 0] = self.phyp.Cs * e_stretch.assemble(d_xi, q_m=self.q_m._interpolate(d_xi))
+        da = Measure(self.s_mesh, dim=1, order=5, coord_map=self.q_m) # the deformed sheet surface measure
+        self.energy[self.step, 1] = self.phyp.Cb * e_L2.assemble(da, kappa=self.kappa._interpolate(da))
         da_1 = Measure(self.s_mesh, dim=1, order=5, tags=(5,), coord_map=self.q_m)
         self.energy[self.step, 2] = self.phyp.gamma_1 * dx.assemble(da_1)
         da_2 = Measure(self.s_mesh, dim=1, order=5, tags=(4,), coord_map=self.q_m)
@@ -434,6 +445,7 @@ class Drop_Runner(Runner):
             _q_m_down = self.q_m_down.view(np.ndarray)
             segments = _q_m_down[self.s_mesh.coord_fe.elem_dof].reshape(2, 2, -1).transpose(2, 0, 1)
             self.ax.add_collection(LineCollection(segments=segments, colors="tab:orange"))
+            self.ax.plot(self.q[::2], self.q[1::2], "k+")
             # plot the frame
             self.ax.plot((-1.0, -1.0, 1.0, 1.0), (0.0, 1.0, 1.0, 0.0), 'k-')
             self.ax.set_xlim(-1.0, 1.0); self.ax.set_ylim(-0.15, 1.0)
@@ -446,7 +458,7 @@ class Drop_Runner(Runner):
                 pyplot.savefig(filename, dpi=300.0)
         if self.step % self.solp.stride_checkpoint == 0:
             filename = self._get_output_name("{:05}.npz".format(self.step))
-            np.savez(filename, bulk_coord_map=self.mesh.coord_map, r_m=self.r_m, id_m=self.id_m, q_m=self.q_m, \
+            np.savez(filename, bulk_coord_map=self.mesh.coord_map, r_m=self.r_m, id_m=self.id_m, q_m=self.q_m, kappa=self.kappa, \
                      phycl_hist=self.phycl_hist[:self.step+1], \
                      refcl_hist=self.refcl_hist[:self.step+1], \
                      energy=self.energy[:self.step+1])
@@ -466,7 +478,6 @@ class Drop_Runner(Runner):
 
         ds = Measure(self.i_mesh, dim=1, order=5)
         da = Measure(self.s_mesh, dim=1, order=5, coord_map=self.q_m) # the deformed sheet surface measure
-        # d_xi = Measure(self.s_mesh, dim=1, order=5, coord_map=self.id_m) # the reference sheet mesh at the last time step
         da_1 = Measure(self.s_mesh, dim=1, order=5, tags=(5,), coord_map=self.q_m)
         da_2 = Measure(self.s_mesh, dim=1, order=5, tags=(4,), coord_map=self.q_m)
         d_xi_1 = Measure(self.s_mesh, dim=1, order=5, tags=(5,), coord_map=self.id_m) # restriction of da on Sigma_1
@@ -674,7 +685,7 @@ class Drop_Runner(Runner):
 # ===========================================================
 
 if __name__ == "__main__":
-    solp = SolverParameters(dt=1.0/8192/4, Te=1.0)
+    solp = SolverParameters(dt=1.0/(1024*4), Te=1.0)
     runner = Drop_Runner(solp)
     runner.prepare()
     runner.run()

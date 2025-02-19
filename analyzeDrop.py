@@ -1,12 +1,13 @@
 import numpy as np
 from matplotlib import pyplot
 from fem import *
+from testDrop import arrange_as_FD
 
 mesh_name = "mesh/drop-a120.msh"
-cp_group = "result/MCL-adv-s{}t{}/{:04d}.npz"
-base_step = 256
-base_dt = 1.0/256
-ref_level = ((2,2), (2,3), (2,4), (2,5)) # (spatial, time) for each pair
+cp_group = "result/drop-spread-Y90-flat-s{}t{}/{:05d}.npz"
+base_step = 4096
+base_dt = 1.0/4096
+ref_level = ((0,0), ) # (spatial, time) for each pair
 num_hier = len(ref_level)
 
 @Functional
@@ -14,23 +15,6 @@ def xdy_ydx(x: QuadData) -> np.ndarray:
     # x: (2, Ne, Nq)
     # x.grad: (2, 1, Ne, Nq)
     return 0.5 * (x[0] * x.grad[1,0] - x[1] * x.grad[0,0])[np.newaxis]
-
-def lift_to_P2(P2_space: FunctionSpace, p1_func: Function) -> Function:
-    p2_func = Function(P2_space)
-    p2_func[:p1_func.size] = p1_func
-    rdim = P2_space.elem.rdim
-    assert rdim == p1_func.fe.elem.rdim
-    if P2_space.mesh.tdim == 1:
-        for d in range(rdim):
-            p2_func[P2_space.elem_dof[2*rdim+d]] = 0.5 * (p1_func[P2_space.elem_dof[d]] + p1_func[P2_space.elem_dof[rdim+d]])
-    else:
-        raise NotImplementedError
-    return p2_func
-
-def down_to_P1(P1_space: FunctionSpace, p2_func: Function) -> Function:
-    p1_func = Function(P1_space)
-    p1_func[:] = p2_func[:P1_space.num_dof]
-    return p1_func
 
 def error_between_interface(y_coarse: Function, y_fine: Function) -> float:
     elem_dof = y_fine.fe.elem_dof
@@ -66,8 +50,8 @@ if __name__ == "__main__":
     }
     # print("\n * Showing t = {}".format(cp_base_num * base_dt))
     marker_styles = ("bo", "m+", "rx", "y*")
-    ax = pyplot.subplot()
-    ax.axis("equal")
+    fig, ax_prof = pyplot.subplots()
+    ax_prof.axis("equal")
 
     for k in range(num_hier):
         # prepare the mesh
@@ -85,7 +69,7 @@ if __name__ == "__main__":
         s_mesh = mesh.view(1, tags=(4, 5)) # sheet reference mesh
         setMeshMapping(s_mesh)
 
-        Y_sp = i_mesh.coord_fe # type: FunctionSpace
+        R_sp = i_mesh.coord_fe # type: FunctionSpace
         Q_P1_sp = s_mesh.coord_fe # type: FunctionSpace
         Q_sp = FunctionSpace(s_mesh, VectorElement(LineP2, 2)) # for deformation and also for the fluid stress
 
@@ -100,48 +84,48 @@ if __name__ == "__main__":
         if k == num_hier-1:
             t_span = np.arange(energy.shape[0]) * base_dt / 2**ref_level[k][1]
             # pyplot.figure()
-            # pyplot.plot(t_span, np.sum(energy, axis=1), '-', label="total")
-            # pyplot.legend()
-            # pyplot.title(cp_file)
-            # # plot the contact line motion
-            # pyplot.figure()
-            # pyplot.plot(t_span, refcl_hist[:,0], '-', label="ref left")
-            # pyplot.plot(t_span, refcl_hist[:,2], '-', label="ref right")
-            # pyplot.plot(t_span, phycl_hist[:,0], '-', label="phy left")
-            # pyplot.plot(t_span, phycl_hist[:,2], '-', label="phy right")
-            # pyplot.legend()
-            pass
+            fig, ax = pyplot.subplots()
+            ax.plot(t_span, np.sum(energy, axis=1), '-', label="total")
+            ax.legend()
+            ax.set_title(cp_file)
+            # plot the contact line motion
+            fig, ax = pyplot.subplots()
+            ax.plot(t_span, refcl_hist[:,0], '-', label="ref left")
+            ax.plot(t_span, refcl_hist[:,2], '-', label="ref right")
+            ax.plot(t_span, phycl_hist[:,0], '-', label="phy left")
+            ax.plot(t_span, phycl_hist[:,2], '-', label="phy right")
+            ax.legend()
+            ax.set_title(cp_file)
+            # pass
 
         # extract the interface parametrization
-        y_k = Function(Y_sp)
-        y_k[:] = cp["y_k"]
+        r_m = Function(R_sp)
+        r_m[:] = cp["r_m"]
 
         # calculate the volume
-        vol = xdy_ydx.assemble(Measure(i_mesh, dim=1, order=3, coord_map=y_k))
-        q_k = Function(Q_sp)
-        q_k[:] = cp["w_k"]
-        id_k = Function(Q_P1_sp)
-        id_k[:] = cp["id_k"]
-        q_k += lift_to_P2(Q_sp, id_k)
-        vol += xdy_ydx.assemble(Measure(s_mesh, dim=1, order=5, tags=(5,), coord_map=q_k)) # type: float
-        q_k_down = down_to_P1(Q_P1_sp, q_k)
+        vol = xdy_ydx.assemble(Measure(i_mesh, dim=1, order=3, coord_map=r_m))
+        q_m = Function(Q_sp)
+        q_m[:] = cp["q_m"]
+        vol += xdy_ydx.assemble(Measure(s_mesh, dim=1, order=5, tags=(5,), coord_map=q_m)) # type: float
         # print("volume at level {} = {}".format(k, vol))
+        q_fd = arrange_as_FD(Q_sp, q_m) # (n, 2)
 
-        ax.plot(y_k[::2], y_k[1::2], marker_styles[k], label=str(k))
-        ax.plot(q_k[::2], q_k[1::2], marker_styles[k], label=str(k))
+        ax_prof.plot(r_m[::2], r_m[1::2], marker_styles[k], label=str(k))
+        ax_prof.plot(q_m[::2], q_m[1::2], marker_styles[k], label=str(k))
 
         if k > 0:
-            error_table["y"][k-1] = error_between_interface(y_k_prev, y_k)
-            error_table["q"][k-1] = error_between_interface(q_k_prev, q_k_down)
+            error_table["y"][k-1] = error_between_interface(r_m_prev, r_m)
+            q_err = q_fd[::2] - q_fd_prev
+            error_table["q"][k-1] = np.linalg.norm(q_err, axis=1, ord=None).max()
             error_table["vol"][k-1] = np.abs(vol - vol_prev)
             # error_table["id"][k-1] = np.linalg.norm(id_k - id_k_prev, ord=np.inf)
         # keep the results for the next level
-        y_k_prev = y_k.view(np.ndarray).copy() # type: np.ndarray
-        q_k_prev = q_k_down.view(np.ndarray).copy() # type: np.ndarray
+        r_m_prev = r_m.view(np.ndarray).copy() # type: np.ndarray
+        q_fd_prev = q_fd.view(np.ndarray).copy() # type: np.ndarray
         vol_prev = vol
 
     print(f"base_step = {base_step}")
     if num_hier >= 2:
         printConvergenceTable(table_header, error_table)
-    ax.legend()
+    ax_prof.legend()
     pyplot.show()
