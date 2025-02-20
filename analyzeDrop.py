@@ -3,11 +3,11 @@ from matplotlib import pyplot
 from fem import *
 from testDrop import arrange_as_FD
 
-mesh_name = "mesh/drop-a120.msh"
+mesh_name = "mesh/drop-a120-coarse.msh"
 cp_group = "result/drop-spread-Y90-flat-s{}t{}/{:05d}.npz"
 base_step = 4096
 base_dt = 1.0/4096
-ref_level = ((0,0), ) # (spatial, time) for each pair
+ref_level = ((0,0), (1,3)) # (spatial, time) for each pair
 num_hier = len(ref_level)
 
 @Functional

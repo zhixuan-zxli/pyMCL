@@ -271,7 +271,7 @@ class Drop_Runner(Runner):
         # load the bulk mesh and build the submeshes
         # physical groups from GMSH
         # group_name = {"fluid_1": 1, "fluid_2": 2, "interface": 3, "dry": 4, "wet": 5, \
-        #              "right": 6, "top": 7, "left": 8, "cl": 9, "clamp": 10}
+        #              "right": 6, "top": 7, "sym": 8, "cl": 9, "clamp": 10, "isym": 11, "s_sym": 12}
         self.mesh = Mesh()
         self.mesh.load(self.args.mesh_name)
         for _ in range(self.args.spaceref):
@@ -300,29 +300,30 @@ class Drop_Runner(Runner):
         self.P0_sp = FunctionSpace(self.mesh, TriDG0)
         self.R_sp = self.i_mesh.coord_fe # type: FunctionSpace # should be VectorElement(LineP1, 2)
         self.OMG_sp = FunctionSpace(self.i_mesh, LineP1)
-        self.Q_sp = FunctionSpace(self.s_mesh, VectorElement(LineP2, 2)) # for sheet deformation, for the mean curvature vector
+        self.Q_sp = FunctionSpace(self.s_mesh, VectorElement(LineP2, 2)) # for the sheet deformation and the mean curvature vector
         self.Q_P1_sp = self.s_mesh.coord_fe # type: FunctionSpace
         self.SIG_1_sp = FunctionSpace(self.s_1_mesh, VectorElement(LineP2, 2)) # for the stress in Sigma_1
         self.SIG_2_sp = FunctionSpace(self.s_2_mesh, VectorElement(LineP2, 2)) # for the stress in Sigma_2
         self.M3_sp = FunctionSpace(self.cl_mesh, VectorElement(NodeElement, 2))
-        assert self.M3_sp.dof_loc[0,0] < self.M3_sp.dof_loc[2,0]
+        # assert self.M3_sp.dof_loc[0,0] < self.M3_sp.dof_loc[2,0]
 
         # extract the DOFs for the bulk mesh mapping
         Y_sp = self.mesh.coord_fe # type: FunctionSpace
         self.BMM_int_dof = Y_sp.getDofByLocation(self.R_sp.dof_loc[::2])
         self.BMM_sh_dof = Y_sp.getDofByLocation(self.Q_P1_sp.dof_loc[::2])
-        self.BMM_bound_dof = np.where((Y_sp.dof_loc[:,0] < -1+1e-12) | (Y_sp.dof_loc[:,0] > 1-1e-12) | (Y_sp.dof_loc[:,1] > 1-1e-12))[0]
-        BMM_fix_dof = np.unique(np.concatenate((self.BMM_int_dof, self.BMM_sh_dof, self.BMM_bound_dof)))
+        self.BMM_sym_dof = np.where(Y_sp.dof_loc[:,0] < 1e-12)[0]
+        self.BMM_bound_dof = np.where((Y_sp.dof_loc[:,0] > 1-1e-12) | (Y_sp.dof_loc[:,1] > 1-1e-12))[0]
+        BMM_fix_dof = np.unique(np.concatenate((self.BMM_int_dof, self.BMM_sh_dof, self.BMM_bound_dof, self.BMM_sym_dof[::2])))
         self.BMM_free_dof = group_dof((Y_sp,), (BMM_fix_dof,))
 
         # extract the DOFs at the contact line
-        cl_pos = self.cl_mesh.point[:,0]
-        self.cl_dof_R = np.where((self.R_sp.dof_loc[:,1] < 1e-12) & ((np.abs(self.R_sp.dof_loc[:,0] - cl_pos[0]) < 1e-12) | (np.abs(self.R_sp.dof_loc[:,0] - cl_pos[1]) < 1e-12)))[0]
-        assert self.cl_dof_R.size == 4
-        self.cl_dof_Q = np.where((self.Q_sp.dof_loc[:,1] < 1e-12) & ((np.abs(self.Q_sp.dof_loc[:,0] - cl_pos[0]) < 1e-12) | (np.abs(self.Q_sp.dof_loc[:,0] - cl_pos[1]) < 1e-12)))[0]
-        assert self.cl_dof_Q.size == 4
-        self.cl_dof_Q_P1 = np.where((self.Q_P1_sp.dof_loc[:,1] < 1e-12) & ((np.abs(self.Q_P1_sp.dof_loc[:,0] - cl_pos[0]) < 1e-12) | (np.abs(self.Q_P1_sp.dof_loc[:,0] - cl_pos[1]) < 1e-12)))[0]
-        assert self.cl_dof_Q_P1.size == 4
+        cl_pos = self.cl_mesh.point.copy() # shape (1, 2)
+        self.cl_dof_R = np.where(np.linalg.norm(self.R_sp.dof_loc - cl_pos, axis=1) < 1e-12)[0]
+        assert self.cl_dof_R.size == 2 
+        self.cl_dof_Q = np.where(np.linalg.norm(self.Q_sp.dof_loc - cl_pos, axis=1) < 1e-12)[0]
+        assert self.cl_dof_Q.size == 2 
+        self.cl_dof_Q_P1 = np.where(np.linalg.norm(self.Q_P1_sp.dof_loc - cl_pos, axis=1) < 1e-12)[0]
+        assert self.cl_dof_Q_P1.size == 2
 
         # extract the DOFs for the dry and wet part
         self.dry_dof = self.Q_sp.getDofByLocation(self.SIG_2_sp.dof_loc[::2])
@@ -332,16 +333,19 @@ class Drop_Runner(Runner):
 
         # extract the useful DOFs for the velocity and the sheet deformation
         u_noslip_dof = np.where(self.U_sp.dof_loc[:,1] > 1-1e-12)[0]
+        u_sym_dof = np.where(self.U_sp.dof_loc[:,0] < 1e-12)[0]
+        u_fix_dof = np.unique(np.concatenate((u_noslip_dof, u_sym_dof[::2])))
         p_fix_dof = np.array((0,), dtype=np.int32) # np.arange(self.P0_sp.num_dof, dtype=np.int32)
-        self.q_clamp_dof = np.where(np.abs(self.Q_sp.dof_loc[:,0]) > 1-1e-12)[0]
+        r_sym_dof = np.where(self.R_sp.dof_loc[:,0] < 1e-12)[0] # should be (2, )
+        self.q_clamp_dof = np.where(self.Q_sp.dof_loc[:,0] > 1-1e-12)[0]
+        self.q_sym_dof = np.where(self.Q_sp.dof_loc[:,0] < 1e-12)[0]
         q_all_dof = np.arange(self.Q_sp.num_dof)
-        q_vert_dof = np.arange(self.Q_sp.num_dof//2) * 2 + 1
-        q_fix_dof = np.unique(np.concatenate((self.q_clamp_dof, q_vert_dof)))
+        q_fix_dof = np.unique(np.concatenate((self.q_clamp_dof, self.q_sym_dof[0:1], q_all_dof[1::2])))
         sig1_vert_dof = np.arange(self.SIG_1_sp.num_dof//2) * 2 + 1
         sig2_vert_dof = np.arange(self.SIG_2_sp.num_dof//2) * 2 + 1
         self.free_dof = group_dof(
             (self.U_sp, self.P1_sp, self.P0_sp, self.R_sp, self.OMG_sp, self.Q_sp, self.SIG_1_sp, self.SIG_2_sp, self.Q_sp, self.M3_sp), 
-            (u_noslip_dof, None, p_fix_dof, None, None, q_fix_dof, sig1_vert_dof, sig2_vert_dof, q_all_dof, None) # for zero sheet displacement
+            (u_fix_dof, None, p_fix_dof, r_sym_dof[0], None, q_fix_dof, sig1_vert_dof, sig2_vert_dof, q_all_dof, None) # for zero sheet displacement
             # (u_noslip_dof, None, p_fix_dof, None, None, self.q_clamp_dof, None, None, self.q_clamp_dof, None)
         )
         print("Number of free dofs = {}".format(self.free_dof.sum()))
@@ -371,14 +375,14 @@ class Drop_Runner(Runner):
         
         # mark the CL nodes for finite difference arrangement
         _temp = np.zeros_like(self.q, dtype=np.int_)
-        _temp[self.cl_dof_Q] = (1, 0, 1, 0)
-        self.cl_dof_fd = np.where(arrange_as_FD(self.Q_sp, _temp)[:,0])[0] # shape (2, )
+        _temp[self.cl_dof_Q] = (1, 0)
+        self.cl_dof_fd = np.where(arrange_as_FD(self.Q_sp, _temp)[:,0])[0] # shape (1, )
 
         # initialize the arrays for storing the energy history
         self.energy = np.zeros((self.num_steps+1, 5))
         # ^ the columns are stretching energy, bending energy, surface energy for Sigma_1, 2, 3. 
-        self.phycl_hist = np.zeros((self.num_steps+1, 4)) # history of physical CL
-        self.refcl_hist = np.zeros((self.num_steps+1, 4)) # history of reference CL
+        self.phycl_hist = np.zeros((self.num_steps+1, 2)) # history of physical CL
+        self.refcl_hist = np.zeros((self.num_steps+1, 2)) # history of reference CL
 
         # read checkpoints from file
         if self.args.resume:
@@ -448,8 +452,8 @@ class Drop_Runner(Runner):
             self.ax.add_collection(LineCollection(segments=segments, colors="tab:orange"))
             self.ax.plot(self.q[::2], self.q[1::2], "k+")
             # plot the frame
-            self.ax.plot((-1.0, -1.0, 1.0, 1.0), (0.0, 1.0, 1.0, 0.0), 'k-')
-            self.ax.set_xlim(-1.0, 1.0); self.ax.set_ylim(-0.15, 1.0)
+            self.ax.plot((0.0, 1.0, 1.0), (1.0, 1.0, 0.0), 'k-')
+            self.ax.set_xlim(0.0, 1.0); self.ax.set_ylim(-0.15, 1.0)
             pyplot.title("t={:.5f}".format(t))
             pyplot.draw()
             pyplot.pause(1e-4)
@@ -597,7 +601,7 @@ class Drop_Runner(Runner):
         self.p0[:] = 0.0
         self.omega[:] = 0.0
         self.q[:] = 0.0
-        self.q[self.q_clamp_dof] = (-1.0, 0.0, 1.0, 0.0)
+        self.q[self.q_clamp_dof] = (1.0, 0.0)
         sol_full = group_fn(self.u, self.p1, self.p0, self.r, self.omega, self.q, self.sm_1, self.sm_2, self.kappa, self.m3)
         L = L - A @ sol_full
         # solve the coupled system
@@ -610,7 +614,8 @@ class Drop_Runner(Runner):
         # Step 2. Convert to FD form and find the derivatives using finite difference 
         q_fd = arrange_as_FD(self.Q_sp, self.q) # (n, 2)
         xi_fd = arrange_as_FD(self.Q_sp, lift_to_P2(self.Q_sp, self.s_mesh.coord_map))[:,0][:, np.newaxis] # (n, 1)
-        ref_cl = xi_fd[self.cl_dof_fd] # (2,)
+        assert np.all(xi_fd[1:,0] - xi_fd[:-1,0] > 0), "The mesh mapping is not strictly increasing!"
+        ref_cl = xi_fd[self.cl_dof_fd] # (1,)
         # find the first derivative to the right and to the left
         dq_plus = np.zeros_like(q_fd)
         dq_plus[:-2] = (q_fd[1:-1] - q_fd[:-2]) * (1/(xi_fd[1:-1]-xi_fd[:-2]) + 1/(xi_fd[2:]-xi_fd[:-2])) + \
@@ -620,30 +625,24 @@ class Drop_Runner(Runner):
             (q_fd[:-2] - q_fd[1:-1]) * (1/(xi_fd[:-2]-xi_fd[2:]) - 1/(xi_fd[:-2]-xi_fd[1:-1]))
         # check whether they are close ...
 
-        slip_cl = self.r.view(np.ndarray)[self.cl_dof_R] - self.q.view(np.ndarray)[self.cl_dof_Q] # type: np.ndarray # (4,)
-        slip_cl = slip_cl.reshape(2, 2)
+        slip_cl = self.r.view(np.ndarray)[self.cl_dof_R] - self.q.view(np.ndarray)[self.cl_dof_Q] # type: np.ndarray # (2,)
+        # slip_cl = slip_cl.reshape(2, 2)
         # find the reference CL velocity
-        d_chi = [0.0, 0.0]
-        if slip_cl[0,0] > 0:
-            d_chi[0] = np.dot(slip_cl[0], dq_plus[self.cl_dof_fd[0]]) / np.sum(dq_plus[self.cl_dof_fd[0]]**2)
+        d_chi = 0.0
+        if slip_cl[0] > 0:
+            d_chi = np.dot(slip_cl, dq_plus[self.cl_dof_fd[0]]) / np.sum(dq_plus[self.cl_dof_fd[0]]**2)
         else:
-            d_chi[0] = np.dot(slip_cl[0], dq_minus[self.cl_dof_fd[0]]) / np.sum(dq_minus[self.cl_dof_fd[0]]**2)
-        if slip_cl[1,0] > 0:
-            d_chi[1] = np.dot(slip_cl[1], dq_plus[self.cl_dof_fd[1]]) / np.sum(dq_plus[self.cl_dof_fd[1]]**2)
-        else:
-            d_chi[1] = np.dot(slip_cl[1], dq_minus[self.cl_dof_fd[1]]) / np.sum(dq_minus[self.cl_dof_fd[1]]**2)
+            d_chi = np.dot(slip_cl, dq_minus[self.cl_dof_fd[0]]) / np.sum(dq_minus[self.cl_dof_fd[0]]**2)
         # adjust the reference mesh mapping
         d_xi = np.where(
-            xi_fd <= ref_cl[0], (xi_fd - xi_fd[0]) / (ref_cl[0] - xi_fd[0]) * d_chi[0], 
-            np.where(xi_fd > ref_cl[1], (xi_fd[-1] - xi_fd) / (xi_fd[-1] - ref_cl[1]) * d_chi[1], 
-                    (d_chi[0] * (ref_cl[1] - xi_fd) + d_chi[1] * (xi_fd - ref_cl[0])) / (ref_cl[1] - ref_cl[0]))
+            xi_fd <= ref_cl[0], xi_fd / ref_cl[0] * d_chi, (xi_fd[-1]-xi_fd) / (xi_fd[-1]-ref_cl[0]) * d_chi
         ) # (n, ) # check!
 
         # advect the deformation map using a Lax-Wendroff scheme
         q_next = q_fd.copy()
         q_next[1:-1] += d_xi[1:-1] * ((q_fd[1:-1]-q_fd[:-2])*(1/(xi_fd[1:-1]-xi_fd[:-2])-1/(xi_fd[2:]-xi_fd[:-2])) + (q_fd[2:]-q_fd[1:-1])*(1/(xi_fd[2:]-xi_fd[1:-1])-1/(xi_fd[2:]-xi_fd[:-2])))
         q_next[1:-1] += d_xi[1:-1]**2 * ((q_fd[2:]-q_fd[1:-1])/(xi_fd[2:]-xi_fd[1:-1]) - (q_fd[1:-1]-q_fd[:-2])/(xi_fd[1:-1]-xi_fd[:-2])) / (xi_fd[2:]-xi_fd[:-2])
-        q_next[self.cl_dof_fd] = self.r.view(np.ndarray)[self.cl_dof_R].reshape(2,2) # check it!
+        q_next[self.cl_dof_fd] = self.r.view(np.ndarray)[self.cl_dof_R] # check it!
         
         # now overwrite the mesh mapping and the deformation
         self.s_mesh.coord_map += down_to_P1(self.Q_P1_sp, arrange_as_FE(self.Q_sp, np.concatenate((d_xi, np.zeros_like(d_xi)), axis=1)))
@@ -674,8 +673,8 @@ class Drop_Runner(Runner):
         print(Fore.GREEN + "\nt = {:.5f}, ".format((self.step+1) * self.solp.dt) + Style.RESET_ALL, end="")
         print("i-disp = {:.2e}, s-disp = {:.2e}, ".format(
             np.linalg.norm(self.r-self.r_m, ord=np.inf)/dt, np.linalg.norm(self.q-self.q_m, ord=np.inf)/dt), end="")
-        print("d_chi = {:+.2e}, {:+.2e}, ".format(d_chi[0]/dt, d_chi[1]/dt), end="")
-        print("|m| = ({:.4f}, {:.4f}), ".format(np.sqrt(self.m3[0]**2+self.m3[1]**2), np.sqrt(self.m3[2]**2+self.m3[3]**2)), end="")
+        print("d_chi = {:+.2e}, slip_cl = ({:+.2e},{:+.2e}), ".format(d_chi/dt, slip_cl[0]/dt, slip_cl[1]/dt), end="")
+        print("|m| = {:.4f}, ".format(np.linalg.norm(self.m3)), end="")
 
     def finish(self) -> None:
         super().finish()
@@ -686,7 +685,7 @@ class Drop_Runner(Runner):
 # ===========================================================
 
 if __name__ == "__main__":
-    solp = SolverParameters(dt=1.0/(1024*4), Te=1.0)
+    solp = SolverParameters(dt=1.0/(8192), Te=1.0)
     runner = Drop_Runner(solp)
     runner.prepare()
     runner.run()
