@@ -296,7 +296,7 @@ class TwoPhaseStokes(Runner):
 
 
 if __name__ == "__main__":
-    solp = SolverParameters(dt = 1.0/1024, Te = 1.0)
+    solp = SolverParameters(dt = 1.0/256, Te = 1.0)
     phyp = PhysicalParameters()
     solver = TwoPhaseStokes(solp)
     solver.prepare(phyp)

@@ -4,7 +4,7 @@ import gmsh
 
 def build_drop_mesh(bbox: np.ndarray, markers: np.ndarray, field_params: np.ndarray) -> None:
     """
-    Build the drop mesh, given the interface markers. 
+    Build the right half of the drop mesh, given the interface markers. 
     bbox    [in, 2 x 2]  [[x_lo, y_lo], [x_hi, y_hi]]
     markers [in, Np x 2] with the orientation where the outward normal is pointing to fluid 2. 
     field_params  [in] (2,4) (size_min, size_max, dist_min, dist_max) for the f-f interface and the contact line, respecitvely. 
@@ -20,17 +20,17 @@ def build_drop_mesh(bbox: np.ndarray, markers: np.ndarray, field_params: np.ndar
     pts_marker = [gmsh.model.geo.addPoint(markers[i,0], markers[i,1], 0) for i in range(num_markers)]
 
     # add the line segments
-    e_dry_l = gmsh.model.geo.addLine(pts_ll, pts_marker[-1])
-    e_wet = gmsh.model.geo.addLine(pts_marker[-1], pts_marker[0])
-    e_dry_r = gmsh.model.geo.addLine(pts_marker[0], pts_lr)
+    e_wet = gmsh.model.geo.addLine(pts_ll, pts_marker[0])
+    e_dry = gmsh.model.geo.addLine(pts_marker[0], pts_lr)
     e_right = gmsh.model.geo.addLine(pts_lr, pts_ur)
     e_top = gmsh.model.geo.addLine(pts_ur, pts_ul)
-    e_left = gmsh.model.geo.addLine(pts_ul, pts_ll)
+    e_left_top = gmsh.model.geo.addLine(pts_ul, pts_marker[-1])
+    e_left_bot = gmsh.model.geo.addLine(pts_marker[-1], pts_ll)
     e_marker = [gmsh.model.geo.addLine(pts_marker[i], pts_marker[i+1]) for i in range(num_markers-1)]
     # add the line loop
-    loop_1 = gmsh.model.geo.addCurveLoop([e_wet] + e_marker)
+    loop_1 = gmsh.model.geo.addCurveLoop([e_left_bot, e_wet] + e_marker)
     fluid_1 = gmsh.model.geo.addPlaneSurface([loop_1])
-    loop_2 = gmsh.model.geo.addCurveLoop([e_dry_l] + [-e for e in reversed(e_marker)] + [e_dry_r, e_right, e_top, e_left])
+    loop_2 = gmsh.model.geo.addCurveLoop([-e for e in reversed(e_marker)] + [e_dry, e_right, e_top, e_left_top])
     fluid_2 = gmsh.model.geo.addPlaneSurface([loop_2])
     gmsh.model.geo.synchronize()
 
@@ -47,7 +47,7 @@ def build_drop_mesh(bbox: np.ndarray, markers: np.ndarray, field_params: np.ndar
     gmsh.model.mesh.field.setNumber(2, "DistMax", field_params[0,3])
 
     gmsh.model.mesh.field.add("Distance", 3)
-    gmsh.model.mesh.field.setNumbers(3, "PointsList", [pts_marker[0], pts_marker[-1]])
+    gmsh.model.mesh.field.setNumbers(3, "PointsList", [pts_marker[0]])
 
     gmsh.model.mesh.field.add("Threshold", 4)
     gmsh.model.mesh.field.setNumber(4, "InField", 3)
@@ -72,20 +72,22 @@ def build_drop_mesh(bbox: np.ndarray, markers: np.ndarray, field_params: np.ndar
     gmsh.model.setPhysicalName(2, gmsh.model.addPhysicalGroup(2, [fluid_1]), "fluid_1")
     gmsh.model.setPhysicalName(2, gmsh.model.addPhysicalGroup(2, [fluid_2]), "fluid_2")
     gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, e_marker), "interface")
-    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [e_dry_l, e_dry_r]), "dry")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [e_dry]), "dry")
     gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [e_wet]), "wet")
     gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [e_right]), "right")
     gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [e_top]), "top")
-    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [e_left]), "left")
-    gmsh.model.setPhysicalName(0, gmsh.model.addPhysicalGroup(0, [pts_marker[0], pts_marker[-1]]), "cl")
-    gmsh.model.setPhysicalName(0, gmsh.model.addPhysicalGroup(0, [pts_ll, pts_lr]), "clamp")
+    gmsh.model.setPhysicalName(1, gmsh.model.addPhysicalGroup(1, [e_left_top, e_left_bot]), "sym")
+    gmsh.model.setPhysicalName(0, gmsh.model.addPhysicalGroup(0, [pts_marker[0]]), "cl")
+    gmsh.model.setPhysicalName(0, gmsh.model.addPhysicalGroup(0, [pts_lr]), "clamp")
+    gmsh.model.setPhysicalName(0, gmsh.model.addPhysicalGroup(0, [pts_marker[-1]]), "i_sym")
+    gmsh.model.setPhysicalName(0, gmsh.model.addPhysicalGroup(0, [pts_ll]), "s_sym")
     # # add periodicity
     # translation = [1, 0, 0, bbox[1,0] - bbox[0,0], 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
     # gmsh.model.mesh.setPeriodic(1, [e_right], [e_left], translation)
 
     # generate and save the mesh
     gmsh.model.mesh.generate(dim=2)
-    gmsh.write("mesh/drop.msh")
+    gmsh.write("mesh/half_drop.msh")
     gmsh.finalize()
 
 def build_unit_square(h: float) -> None:
@@ -223,19 +225,19 @@ if __name__ == "__main__":
         build_dumbbell_mesh(radius=1.0, distance=1.6, mesh_size=0.2)
     elif argv[1] == "modulated_circle":
         build_modulated_circle_mesh(amplitude=0.1, num_periods=10, num_points=129)
-    elif argv[1] == "drop":
-        bbox = np.array([[-1,0], [1,1]], dtype=np.float64)
+    elif argv[1] == "half_drop":
+        bbox = np.array([[0,0], [1,1]], dtype=np.float64)
         theta_0 = np.pi*2/3 # change this
         print("Theta_0 = {} degrees".format(theta_0*180/np.pi))
         vol_0 = np.pi/8 # the volume of the droplet
         h_min, h_max = 0.05, 0.5
         R = np.sqrt(vol_0 / (theta_0 - 0.5 * np.sin(2*theta_0)))
         arcl = 2*R*theta_0
-        num_segs = np.ceil(arcl / h_min)
-        theta = np.arange(num_segs+1) / num_segs * (2*theta_0) + np.pi/2 - theta_0 # the theta span
+        num_segs = np.ceil(arcl / 2 / h_min)
+        theta = np.arange(num_segs+1) / num_segs * theta_0 + np.pi/2 - theta_0 # the theta span
         markers = np.vstack((R * np.cos(theta), R * (np.sin(theta) - np.cos(theta_0))))
-        markers[1,0] = 0.0; markers[1,-1] = 0.0 # attach on the substrate
-        build_drop_mesh(bbox, markers.T, np.array(((h_min, h_max, 0.0, 0.5), (0.05, 0.4, 0.05, 0.5))))
+        markers[1,0] = 0.0; markers[0,-1] = 0.0 # attach on the substrate
+        build_drop_mesh(bbox, markers.T, np.array(((h_min, h_max, 0.0, 0.5), (0.05, 0.5, 0.05, 0.5))))
     elif argv[1] == "unit_square":
         build_unit_square(0.1)
     else:
