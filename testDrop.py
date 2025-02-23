@@ -13,12 +13,12 @@ from colorama import Fore, Style
 @dataclass
 class PhysicalParameters:
     eta_2: float = 0.1
-    mu_1: float = 1e1
-    mu_2: float = 1e1
+    mu_1: float = 1e2
+    mu_2: float = 1e2
     mu_cl: float = 1.
     gamma_1: float = 0.
-    gamma_3: float = 1.0
-    gamma_2: float = 0. + 1.0 * cos(np.pi/2) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
+    gamma_3: float = 10.0
+    gamma_2: float = 0. + 10.0 * cos(np.pi/2) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
     Cb: float = 1e-2
     Cs: float = 1e1
     pre: float = 0.2 # the initial Jacobian is 1 + pre
@@ -546,7 +546,7 @@ class Drop_Runner(Runner):
         split_fn(sol_full, self.u, self.p1, self.p0, self.r, self.omega, self.q, self.kappa, self.m3)
 
         # q is the deformation velocity, and update to get the deformation map
-        self.ax.plot(self.q_m[::2], self.q[::2], 'ro')
+        # self.ax.plot(self.q_m[::2], self.q[::2], 'ro')
         self.q[:] = self.q_m + dt * self.q
         
         # =================================================================
@@ -628,7 +628,7 @@ class Drop_Runner(Runner):
 # ===========================================================
 
 if __name__ == "__main__":
-    solp = SolverParameters(dt=1.0/(1024), Te=1.0)
+    solp = SolverParameters(dt=1.0/(256), Te=1.0)
     runner = Drop_Runner(solp)
     runner.prepare()
     runner.run()

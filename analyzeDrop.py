@@ -3,11 +3,11 @@ from matplotlib import pyplot
 from fem import *
 from testDrop import arrange_as_FD
 
-mesh_name = "mesh/drop-a120-coarse.msh"
-cp_group = "result/drop-spread-Y90-flat-s{}t{}/{:05d}.npz"
-base_step = 4096
-base_dt = 1.0/4096
-ref_level = ((0,0), (1,3)) # (spatial, time) for each pair
+mesh_name = "mesh/half_drop-a120.msh"
+cp_group = "result/drop-spread-Y90-st-s{}t{}/{:05d}.npz"
+base_step = 256
+base_dt = 1.0/256
+ref_level = ((0,0), ) # (spatial, time) for each pair
 num_hier = len(ref_level)
 
 @Functional
@@ -90,10 +90,8 @@ if __name__ == "__main__":
             ax.set_title(cp_file)
             # plot the contact line motion
             fig, ax = pyplot.subplots()
-            ax.plot(t_span, refcl_hist[:,0], '-', label="ref left")
-            ax.plot(t_span, refcl_hist[:,2], '-', label="ref right")
-            ax.plot(t_span, phycl_hist[:,0], '-', label="phy left")
-            ax.plot(t_span, phycl_hist[:,2], '-', label="phy right")
+            ax.plot(t_span, refcl_hist[:,0], '-', label="ref cl")
+            ax.plot(t_span, phycl_hist[:,0], '-', label="phy cl")
             ax.legend()
             ax.set_title(cp_file)
             # pass
