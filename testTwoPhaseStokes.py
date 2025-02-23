@@ -7,10 +7,6 @@ from scipy.sparse.linalg import spsolve
 from runner import *
 from matplotlib import pyplot
 
-# physical groups from GMSH
-# group_name = {"fluid_1": 1, "fluid_2": 2, "interface": 3, "dry": 4, "wet": 5, \
-#              "right": 6, "top": 7, "left": 8, "cl": 9}
-
 @BilinearForm
 def a_wu(w, u, x, _, eta) -> np.ndarray:
     # eta: (Ne,)
@@ -88,8 +84,9 @@ class PhysicalParameters:
     eta_1: float = 1.0
     eta_2: float = 0.1
     beta_1: float = 1e1
-    beta_s: float = 1.
-    Ca: float = 0.01
+    beta_2: float = 1.0
+    beta_s: float = 1.0
+    Ca: float = 0.1
     cosY: float = cos(np.pi/2)
 
 @dataclass
@@ -106,7 +103,7 @@ class TwoPhaseStokes(Runner):
         # load the meshes
         # physical groups from GMSH
         # group_name = {"fluid_1": 1, "fluid_2": 2, "interface": 3, "dry": 4, "wet": 5, \
-        #              "right": 6, "top": 7, "left": 8, "cl": 9, "clamp": 10}
+        #              "right": 6, "top": 7, "sym": 8, "cl": 9, "clamp": 10, "isym": 11, "s_sym": 12}
         self.mesh = Mesh()
         self.mesh.load(self.args.mesh_name)
         for _ in range(self.args.spaceref):
@@ -119,39 +116,38 @@ class TwoPhaseStokes(Runner):
         self.viscosity = np.where(self.mesh.cell_tag[2] == 1, phyp.eta_1, phyp.eta_2)
         bot_flag = (self.mesh.cell_tag[1] == 5) | (self.mesh.cell_tag[1] == 4)
         bot_tag = self.mesh.cell_tag[1][bot_flag]
-        self.slip_fric = np.where(bot_tag == 5, phyp.beta_1, phyp.beta_1)
-
-        def periodic_constraint(x: np.ndarray) -> np.ndarray:
-            flag = np.abs(x[:,0] - 1.0) < 1e-12
-            x[flag, 0] -= 2.0
+        self.slip_fric = np.where(bot_tag == 5, phyp.beta_1, phyp.beta_2)
 
         # set up the function spaces
         self.mixed_fs = (
-            FunctionSpace(self.mesh, VectorElement(TriP2, num_copy=2), constraint=periodic_constraint), # U
-            FunctionSpace(self.mesh, TriP1, constraint=periodic_constraint), # P1
-            FunctionSpace(self.mesh, TriDG0, constraint=periodic_constraint), # P0
+            FunctionSpace(self.mesh, VectorElement(TriP2, num_copy=2)), # U
+            FunctionSpace(self.mesh, TriP1), # P1
+            FunctionSpace(self.mesh, TriDG0), # P0
             self.i_mesh.coord_fe, # X
             FunctionSpace(self.i_mesh, LineP1), # K
             RealFunctionSpace(num_dof=1)
         )
 
         # extract the useful DOFs
-        self.top_dof = np.where(self.mixed_fs[0].dof_loc[:,1] > 1-1e-12)[0]
-        self.bot_dof = np.where(self.mixed_fs[0].dof_loc[:,1] < 1e-12)[0]
-        cl_pos = self.i_mesh.point[self.i_mesh.point_tag == 9, 0]
-        assert cl_pos.size == 2
-        flag = (self.mixed_fs[3].dof_loc[:,1] < 1e-12) & \
-            ((np.abs(self.mixed_fs[3].dof_loc[:,0] - cl_pos[0]) < 1e-12) | (np.abs(self.mixed_fs[3].dof_loc[:,0] - cl_pos[1]) < 1e-12))
-        self.cl_dof = np.where(flag)[0]
-        assert self.cl_dof.size == 4
+        top_dof = np.where(self.mixed_fs[0].dof_loc[:,1] > 1-1e-12)[0]
+        bot_dof = np.where(self.mixed_fs[0].dof_loc[:,1] < 1e-12)[0]
+        sym_dof = np.where(self.mixed_fs[0].dof_loc[:,0] < 1e-12)[0]
+        u_fix_dof = np.unique(np.concatenate((top_dof, bot_dof[1::2], sym_dof[::2])))
+        # cl_pos = self.i_mesh.point[self.i_mesh.point_tag == 9]
+        # assert cl_pos.size == 2
+        self.cl_dof = np.where(self.mixed_fs[3].dof_loc[:,1] < 1e-12)[0]
+        assert self.cl_dof.size == 2
+        self.r_sym_dof = np.where(self.mixed_fs[3].dof_loc[:,0] < 1e-12)[0]
+        r_fix_dof = np.unique(np.concatenate((self.cl_dof[1::2], self.r_sym_dof[::2])))
 
-        self.free_dof = group_dof(self.mixed_fs, (np.concatenate((self.top_dof, self.bot_dof[1::2])), None, np.array((0,)), self.cl_dof[1::2], None, None))
+        self.free_dof = group_dof(self.mixed_fs, (u_fix_dof, None, np.array((0,)), r_fix_dof, None, np.array((0, ))))
             
         Y_fs = self.mesh.coord_fe # type: FunctionSpace
         self.Y_bot_dof = np.where(Y_fs.dof_loc[:,1] < 1e-12)[0]
         self.Y_int_dof = Y_fs.getDofByLocation(self.i_mesh.coord_fe.dof_loc[::2])
-        Y_bound_dof = np.where((Y_fs.dof_loc[:,1] > 1-1e-12) | (Y_fs.dof_loc[:,0] < -1+1e-12) | (Y_fs.dof_loc[:,0] > 1-1e-12))[0]
-        Y_fix_dof = np.unique(np.concatenate((self.Y_bot_dof, self.Y_int_dof, Y_bound_dof)))
+        Y_bound_dof = np.where((Y_fs.dof_loc[:,1] > 1-1e-12) | (Y_fs.dof_loc[:,0] > 1-1e-12))[0]
+        Y_sym_dof = np.where(Y_fs.dof_loc[:,0] < 1e-12)[0]
+        Y_fix_dof = np.unique(np.concatenate((self.Y_bot_dof, self.Y_int_dof, Y_bound_dof, Y_sym_dof[::2])))
 
         self.Y_free_dof = group_dof((Y_fs, ), (Y_fix_dof, ))
 
@@ -273,13 +269,11 @@ class TwoPhaseStokes(Runner):
         # solve the displacement on the substrate 
         self.Y[:] = 0.0
         Y0_m = self.mesh.coord_map[self.Y_bot_dof[::2]] # the x coordinate of the grid points on the substrate
-        cl_pos = x_m[self.cl_dof[::2]] # [0] for the left, [1] for the right
-        cl_disp = i_disp[self.cl_dof[::2]] # same as above
-        assert cl_pos[0] < cl_pos[1]
+        cl_pos = x_m[self.cl_dof[0]] 
+        cl_disp = i_disp[self.cl_dof[0]] # same as above
         self.Y[self.Y_bot_dof[::2]] = np.where(
-            Y0_m <= cl_pos[0], (Y0_m + 1.0) / (cl_pos[0] + 1.0) * cl_disp[0], 
-            np.where(Y0_m >= cl_pos[1], (1.0 - Y0_m) / (1.0 - cl_pos[1]) * cl_disp[1], 
-                    (cl_disp[0] * (cl_pos[1] - Y0_m) + cl_disp[1] * (Y0_m - cl_pos[0])) / (cl_pos[1] - cl_pos[0]))
+            Y0_m <= cl_pos, Y0_m / cl_pos * cl_disp, 
+            (1.0 - Y0_m) / (1.0 - cl_pos) * cl_disp
         )
         self.Y[self.Y_int_dof] = i_disp
 
@@ -304,7 +298,7 @@ class TwoPhaseStokes(Runner):
 
 
 if __name__ == "__main__":
-    solp = SolverParameters(dt = 1.0/256, Te = 0.5)
+    solp = SolverParameters(dt = 1.0/1024, Te = 1/4)
     phyp = PhysicalParameters()
     solver = TwoPhaseStokes(solp)
     solver.prepare(phyp)
