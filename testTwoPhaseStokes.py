@@ -58,13 +58,6 @@ def a_gk(g, kappa, z, _) -> np.ndarray:
     return np.sum(g * z.cn, axis=0, keepdims=True) * kappa * z.dx
 
 @BilinearForm
-def a_psiu(psi, u, z, _) -> np.ndarray:
-    # u: (2, Nf, Nq)
-    # psi: (1, 1, Nq)
-    # z.cn: (2, Nf, Nq)
-    return np.sum(u * z.cn, axis=0, keepdims=True) * psi * z.dx
-
-@BilinearForm
 def a_slip_gx(g, x, z, _) -> np.ndarray:
     # g: (2, 1, Nq)
     # x: (2, 1, Nq)
@@ -94,10 +87,10 @@ def a_el(Z, Y, x, _) -> np.ndarray:
 class PhysicalParameters:
     eta_1: float = 1.0
     eta_2: float = 0.1
-    beta_1: float = 1e2
+    beta_1: float = 1e1
     beta_s: float = 1.
-    Ca: float = 0.1
-    cosY: float = cos(np.pi/3)
+    Ca: float = 0.01
+    cosY: float = cos(np.pi/2)
 
 @dataclass
 class RealFunctionSpace:
@@ -243,7 +236,6 @@ class TwoPhaseStokes(Runner):
 
         A_gx = a_gx.assemble(x_basis, x_basis)
         A_gk = a_gk.assemble(x_basis, k_basis)
-        A_psiu = a_psiu.assemble(k_basis, u_i_basis)
         S_gx = a_slip_gx.assemble(x_cl_basis, x_cl_basis)
         
         phyp = self.phyp
@@ -251,7 +243,7 @@ class TwoPhaseStokes(Runner):
                 (B_wp1.T, None, None, None, None, L_p1), 
                 (B_wp0.T, None, None, None, None, L_p0), 
                 (None, None, None, A_gx + phyp.beta_s*phyp.Ca/solp.dt*S_gx, A_gk, None), 
-                (-solp.dt*A_psiu, None, None, A_gk.T, None, None), 
+                (-solp.dt*A_wk.T, None, None, A_gk.T, None, None), 
                 (None, L_p1.T, L_p0.T, None, None, None)), 
                 format="csc")
         
@@ -312,7 +304,7 @@ class TwoPhaseStokes(Runner):
 
 
 if __name__ == "__main__":
-    solp = SolverParameters(dt = 1.0/256, Te = 1.0)
+    solp = SolverParameters(dt = 1.0/256, Te = 0.5)
     phyp = PhysicalParameters()
     solver = TwoPhaseStokes(solp)
     solver.prepare(phyp)
