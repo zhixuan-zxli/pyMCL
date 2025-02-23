@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import numpy as np
 from math import cos
 from fem import *
@@ -18,6 +19,11 @@ def a_wu(w, u, x, _, eta) -> np.ndarray:
     for i, j in (0,0), (0,1), (1,0), (1,1):
         z += (u.grad[i,j] + u.grad[j,i]) * w.grad[i,j]
     return (z * eta[:, np.newaxis])[np.newaxis] * x.dx
+
+@LinearForm
+def l_p(p: QuadData, x: QuadData) -> np.ndarray:
+    # p: (1, 1, Nq)
+    return p * x.dx
 
 @BilinearForm
 def b_wp(w, p, x, _) -> np.ndarray:
@@ -84,14 +90,18 @@ def a_el(Z, Y, x, _) -> np.ndarray:
         r += (Y.grad[i,j] + Y.grad[j,i] + (i==j) * tr) * Z.grad[i,j]
     return r[np.newaxis] * lam_dx
 
-
+@dataclass
 class PhysicalParameters:
     eta_1: float = 1.0
     eta_2: float = 0.1
-    beta_1: float = 1e3
+    beta_1: float = 1e2
     beta_s: float = 1.
     Ca: float = 0.1
     cosY: float = cos(np.pi/3)
+
+@dataclass
+class RealFunctionSpace:
+    num_dof: int = 1
 
 class TwoPhaseStokes(Runner):
     def prepare(self, phyp: PhysicalParameters) -> None:
@@ -129,6 +139,7 @@ class TwoPhaseStokes(Runner):
             FunctionSpace(self.mesh, TriDG0, constraint=periodic_constraint), # P0
             self.i_mesh.coord_fe, # X
             FunctionSpace(self.i_mesh, LineP1), # K
+            RealFunctionSpace(num_dof=1)
         )
 
         # extract the useful DOFs
@@ -141,7 +152,7 @@ class TwoPhaseStokes(Runner):
         self.cl_dof = np.where(flag)[0]
         assert self.cl_dof.size == 4
 
-        self.free_dof = group_dof(self.mixed_fs, (np.concatenate((self.top_dof, self.bot_dof[1::2])), np.array((0,)), np.array((0,)), self.cl_dof[1::2], None))
+        self.free_dof = group_dof(self.mixed_fs, (np.concatenate((self.top_dof, self.bot_dof[1::2])), None, np.array((0,)), self.cl_dof[1::2], None, None))
             
         Y_fs = self.mesh.coord_fe # type: FunctionSpace
         self.Y_bot_dof = np.where(Y_fs.dof_loc[:,1] < 1e-12)[0]
@@ -157,13 +168,14 @@ class TwoPhaseStokes(Runner):
         self.p0 = Function(self.mixed_fs[2])
         self.x = Function(self.mixed_fs[3])
         self.kappa = Function(self.mixed_fs[4])
+        self.lbd = np.array((0.0, ))
 
         self.Y = Function(Y_fs) # the mesh deformation
     
         # read checkpoints from file
         if self.args.resume:
             self.mesh.coord_map[:] = self.resume_file["bulk_coord_map"]
-            self.i_mesh.coord_map[:] = self.resume_file["x_m"]
+            self.i_mesh.coord_map[:] = self.resume_file["r_m"]
             del self.resume_file
 
         # prepare visualization
@@ -177,13 +189,13 @@ class TwoPhaseStokes(Runner):
     def pre_step(self) -> bool:
         if self.args.vis:
             self.ax.clear()
-            # press = p0.view(np.ndarray)[mixed_fs[2].elem_dof][0] + np.sum(p1.view(np.ndarray)[mixed_fs[1].elem_dof], axis=0) / 3 # (Nt, )
-            # tpc = ax.tripcolor(mesh.coord_map[::2], mesh.coord_map[1::2], press, triangles=triangles)
-            # if colorbar is None:
-            #     colorbar = pyplot.colorbar(tpc)
-            # else:
-            #     colorbar.update_normal(tpc)
-            self.ax.tripcolor(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], self.mesh.cell_tag[2], triangles=self.triangles)
+            press = self.p0.view(np.ndarray)[self.mixed_fs[2].elem_dof][0] + np.sum(self.p1.view(np.ndarray)[self.mixed_fs[1].elem_dof], axis=0) / 3 # (Nt, )
+            tpc = self.ax.tripcolor(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], press, triangles=self.triangles)
+            if not hasattr(self, "colorbar"):
+                self.colorbar = pyplot.colorbar(tpc)
+            else:
+                self.colorbar.update_normal(tpc)
+            # self.ax.tripcolor(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], self.mesh.cell_tag[2], triangles=self.triangles)
             # plot the velocity
             _u = self.u.view(np.ndarray); _n = self.mesh.coord_map.size
             self.ax.quiver(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], _u[:_n:2], _u[1:_n:2])
@@ -193,7 +205,7 @@ class TwoPhaseStokes(Runner):
             pyplot.pause(1e-4)
         if self.step % self.solp.stride_checkpoint == 0:
             filename = self._get_output_name("{:04d}.npz".format(self.step))
-            np.savez(filename, bulk_coord_map=self.mesh.coord_map, x_m=self.i_mesh.coord_map)
+            np.savez(filename, bulk_coord_map=self.mesh.coord_map, r_m=self.i_mesh.coord_map)
             print("\n* Checkpoint saved to " + filename)
         return self.step >= self.num_steps
     
@@ -222,6 +234,8 @@ class TwoPhaseStokes(Runner):
 
         # assemble the coupled system
         A_wu = a_wu.assemble(u_basis, u_basis, None, None, eta=self.viscosity)
+        L_p1 = l_p.assemble(p1_basis).reshape(-1, 1)
+        L_p0 = l_p.assemble(p0_basis).reshape(-1, 1)
         B_wp1 = b_wp.assemble(u_basis, p1_basis)
         B_wp0 = b_wp.assemble(u_basis, p0_basis)
         A_wk = a_wk.assemble(u_i_basis, k_basis)
@@ -233,11 +247,12 @@ class TwoPhaseStokes(Runner):
         S_gx = a_slip_gx.assemble(x_cl_basis, x_cl_basis)
         
         phyp = self.phyp
-        A = bmat(((A_wu + S_wu, -B_wp1, -B_wp0, None, -1.0/phyp.Ca*A_wk), 
-                (B_wp1.T, None, None, None, None), 
-                (B_wp0.T, None, None, None, None), 
-                (None, None, None, A_gx + phyp.beta_s*phyp.Ca/solp.dt*S_gx, A_gk), 
-                (-solp.dt*A_psiu, None, None, A_gk.T, None)), 
+        A = bmat(((A_wu + S_wu, -B_wp1, -B_wp0, None, -1.0/phyp.Ca*A_wk, None), 
+                (B_wp1.T, None, None, None, None, L_p1), 
+                (B_wp0.T, None, None, None, None, L_p0), 
+                (None, None, None, A_gx + phyp.beta_s*phyp.Ca/solp.dt*S_gx, A_gk, None), 
+                (-solp.dt*A_psiu, None, None, A_gk.T, None, None), 
+                (None, L_p1.T, L_p0.T, None, None, None)), 
                 format="csc")
         
         # assemble the RHS
@@ -245,8 +260,9 @@ class TwoPhaseStokes(Runner):
         self.u[:] = 0.0
         self.p1[:] = 0.0
         self.p0[:] = 0.0
-        L = group_fn(self.u, self.p1, self.p0, \
-                     L_g + phyp.beta_s*phyp.Ca/solp.dt*(S_gx @ x_m), A_gk.T @ x_m)
+        self.lbd[:] = 0.0
+        L = group_fn(self.u, self.p1, self.p0, 
+                     L_g + phyp.beta_s*phyp.Ca/solp.dt*(S_gx @ x_m), A_gk.T @ x_m, self.lbd)
 
         # Since the essential conditions are all homogeneous,
         # we don't need to homogeneize the system
@@ -256,11 +272,11 @@ class TwoPhaseStokes(Runner):
         free_dof = self.free_dof
         sol_vec_free = spsolve(A[free_dof][:,free_dof], L[free_dof])
         sol_vec[free_dof] = sol_vec_free
-        split_fn(sol_vec, self.u, self.p1, self.p0, self.x, self.kappa)
+        split_fn(sol_vec, self.u, self.p1, self.p0, self.x, self.kappa, self.lbd)
 
         # some useful info ...
         i_disp = self.x - x_m
-        print("t = {:.4f}, disp = {:.2e}".format(t, np.linalg.norm(i_disp, np.inf)))
+        print("t = {:.4f}, disp = {:.2e}".format(t, np.linalg.norm(i_disp, np.inf)/solp.dt))
 
         # solve the displacement on the substrate 
         self.Y[:] = 0.0
