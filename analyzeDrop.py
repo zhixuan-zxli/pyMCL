@@ -3,11 +3,11 @@ from matplotlib import pyplot
 from fem import *
 from testDrop import arrange_as_FD
 
-mesh_name = "mesh/half_drop-a120.msh"
-cp_group = "result/drop-spread-Y90-st-s{}t{}/{:05d}.npz"
+mesh_name = "mesh/half_drop-sq.msh"
+cp_group = "result/drop-Y90-nonit-s{}t{}/{:05d}.npz"
 base_step = 256
-base_dt = 1.0/256
-ref_level = ((0,0), ) # (spatial, time) for each pair
+base_dt = 1.0/1024
+ref_level = ((0,0), (1,2), (2,4)) # (spatial, time) for each pair
 num_hier = len(ref_level)
 
 @Functional
@@ -30,8 +30,7 @@ def error_between_interface(y_coarse: Function, y_fine: Function) -> float:
         a = np.linalg.norm(a.reshape(-1,2), axis=1) # (Ne*2, )
         b = p[np.newaxis] - segs[:,0] # (Ne, 2)
         b = np.sum(b * segs_dir, axis=1)
-        b = np.where(b < 0.0, np.inf, b)
-        b = np.where(b > segs_norm, np.inf, b)
+        b = np.minimum(np.maximum(b, 0.0), segs_norm)
         b = segs[:,0] + b[:, np.newaxis] * segs_dir
         b = np.linalg.norm(b - p[np.newaxis], axis=1) # (Ne, )
         return np.min(np.concatenate((a, b)))
@@ -44,7 +43,7 @@ if __name__ == "__main__":
 
     table_header = [str(k) for k in range(num_hier-1)]
     error_table = {
-        "y": [0.0] * (num_hier-1), 
+        "r": [0.0] * (num_hier-1), 
         "q": [0.0] * (num_hier-1),
         "vol": [0.0] * (num_hier-1),
     }
@@ -112,8 +111,11 @@ if __name__ == "__main__":
         ax_prof.plot(q_m[::2], q_m[1::2], marker_styles[k], label=str(k))
 
         if k > 0:
-            error_table["y"][k-1] = error_between_interface(r_m_prev, r_m)
-            q_err = q_fd[::2] - q_fd_prev
+            error_table["r"][k-1] = error_between_interface(r_m_prev, r_m)
+            if q_fd.shape[0] == q_fd_prev.shape[0]:
+                q_err = q_fd - q_fd_prev
+            else:
+                q_err = q_fd[::2] - q_fd_prev
             error_table["q"][k-1] = np.linalg.norm(q_err, axis=1, ord=None).max()
             error_table["vol"][k-1] = np.abs(vol - vol_prev)
             # error_table["id"][k-1] = np.linalg.norm(id_k - id_k_prev, ord=np.inf)

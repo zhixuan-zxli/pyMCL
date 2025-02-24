@@ -13,8 +13,8 @@ from colorama import Fore, Style
 @dataclass
 class PhysicalParameters:
     eta_2: float = 0.1
-    mu_1: float = 1e2
-    mu_2: float = 1e2
+    mu_1: float = 1e1
+    mu_2: float = 1e1
     mu_cl: float = 1.
     gamma_1: float = 0.
     gamma_3: float = 10.0
@@ -306,7 +306,8 @@ class Drop_Runner(Runner):
         # extract the useful DOFs for the velocity and the sheet deformation
         u_noslip_dof = np.where(self.U_sp.dof_loc[:,1] > 1-1e-12)[0]
         u_sym_dof = np.where(self.U_sp.dof_loc[:,0] < 1e-12)[0]
-        u_fix_dof = np.unique(np.concatenate((u_noslip_dof, u_sym_dof[::2])))
+        u_bot_dof = np.where(self.U_sp.dof_loc[:,1] < 1e-12)[0]
+        u_fix_dof = np.unique(np.concatenate((u_noslip_dof, u_sym_dof[::2], u_bot_dof[1::2])))
         p_fix_dof = np.array((0,), dtype=np.int32) # np.arange(self.P0_sp.num_dof, dtype=np.int32)
         r_sym_dof = np.where(self.R_sp.dof_loc[:,0] < 1e-12)[0] # should be (2, )
         self.q_clamp_dof = np.where(self.Q_sp.dof_loc[:,0] > 1-1e-12)[0]
@@ -315,7 +316,7 @@ class Drop_Runner(Runner):
         q_fix_dof = np.unique(np.concatenate((self.q_clamp_dof, self.q_sym_dof[0:1], q_all_dof[1::2])))
         self.free_dof = group_dof(
             (self.U_sp, self.P1_sp, self.P0_sp, self.R_sp, self.OMG_sp, self.Q_sp, self.Q_sp, self.M3_sp), 
-            (u_fix_dof, None, p_fix_dof, r_sym_dof[0], None, q_fix_dof, q_all_dof, None) # for zero sheet displacement
+            (u_fix_dof, None, p_fix_dof, r_sym_dof[0], None, q_all_dof, q_all_dof, None) # for zero sheet displacement
             # (u_noslip_dof, None, p_fix_dof, None, None, self.q_clamp_dof, None, None, self.q_clamp_dof, None)
         )
         print("Number of free dofs = {}".format(self.free_dof.sum()))
@@ -397,8 +398,12 @@ class Drop_Runner(Runner):
         t = self.step * self.solp.dt
         if self.args.vis:
             self.ax.clear()
-            # press = self.p0.view(np.ndarray)[self.P0_sp.elem_dof][0] + np.sum(self.p1.view(np.ndarray)[self.P1_sp.elem_dof], axis=0) / 3 # (Nt, )
-            # tpc = self.ax.tripcolor(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], press, triangles=self.bulk_triangles, vmin=-40, vmax=40)
+            press = self.p0.view(np.ndarray)[self.P0_sp.elem_dof][0] + np.sum(self.p1.view(np.ndarray)[self.P1_sp.elem_dof], axis=0) / 3 # (Nt, )
+            tpc = self.ax.tripcolor(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], press, triangles=self.bulk_triangles)
+            if not hasattr(self, "colorbar"):
+                self.colorbar = pyplot.colorbar(tpc)
+            else:
+                self.colorbar.update_normal(tpc)
             # self.ax.triplot(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], triangles=self.bulk_triangles, linewidth=0.5)
             # plot the velocity
             _u = self.u.view(np.ndarray); _n = self.mesh.coord_map.size; 
@@ -406,7 +411,7 @@ class Drop_Runner(Runner):
             # plot the interface
             _r_m = self.r_m.view(np.ndarray)
             segments = _r_m[self.i_mesh.coord_fe.elem_dof].reshape(2, 2, -1).transpose(2, 0, 1)
-            self.ax.add_collection(LineCollection(segments=segments, colors="tab:blue"))
+            self.ax.add_collection(LineCollection(segments=segments, colors="tab:green"))
             # plot the sheet
             _q_m_down = self.q_m_down.view(np.ndarray)
             segments = _q_m_down[self.s_mesh.coord_fe.elem_dof].reshape(2, 2, -1).transpose(2, 0, 1)
@@ -628,7 +633,7 @@ class Drop_Runner(Runner):
 # ===========================================================
 
 if __name__ == "__main__":
-    solp = SolverParameters(dt=1.0/(256), Te=1.0)
+    solp = SolverParameters(dt=1.0/(1024), Te=0.25)
     runner = Drop_Runner(solp)
     runner.prepare()
     runner.run()
