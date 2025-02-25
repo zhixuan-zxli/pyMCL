@@ -20,8 +20,8 @@ class PhysicalParameters:
     gamma_3: float = 10.0
     gamma_2: float = 0. + 10.0 * cos(np.pi/2) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
     Cb: float = 1e-2
-    Cs: float = 1e1
-    pre: float = 0.2 # the initial Jacobian is 1 + pre
+    Cs: float = 1e3
+    pre: float = 0.1 # the initial Jacobian is 1 + pre
 
 # ===========================================================
 # functionals for calculating the energy
@@ -306,18 +306,17 @@ class Drop_Runner(Runner):
         # extract the useful DOFs for the velocity and the sheet deformation
         u_noslip_dof = np.where(self.U_sp.dof_loc[:,1] > 1-1e-12)[0]
         u_sym_dof = np.where(self.U_sp.dof_loc[:,0] < 1e-12)[0]
-        u_bot_dof = np.where(self.U_sp.dof_loc[:,1] < 1e-12)[0]
+        # u_bot_dof = np.where(self.U_sp.dof_loc[:,1] < 1e-12)[0]
         u_fix_dof = np.unique(np.concatenate((u_noslip_dof, u_sym_dof[::2])))
         p_fix_dof = np.array((0,), dtype=np.int32) # np.arange(self.P0_sp.num_dof, dtype=np.int32)
         r_sym_dof = np.where(self.R_sp.dof_loc[:,0] < 1e-12)[0] # should be (2, )
         self.q_clamp_dof = np.where(self.Q_sp.dof_loc[:,0] > 1-1e-12)[0]
         self.q_sym_dof = np.where(self.Q_sp.dof_loc[:,0] < 1e-12)[0]
-        q_all_dof = np.arange(self.Q_sp.num_dof)
-        q_fix_dof = np.unique(np.concatenate((self.q_clamp_dof, self.q_sym_dof[0:1], q_all_dof[1::2])))
+        # q_all_dof = np.arange(self.Q_sp.num_dof)
+        q_fix_dof = np.unique(np.concatenate((self.q_clamp_dof, self.q_sym_dof[0:1])))
         self.free_dof = group_dof(
             (self.U_sp, self.P1_sp, self.P0_sp, self.R_sp, self.OMG_sp, self.Q_sp, self.Q_sp, self.M3_sp), 
-            (u_fix_dof, None, p_fix_dof, r_sym_dof[0], None, q_all_dof, q_all_dof, None) # for zero sheet displacement
-            # (u_noslip_dof, None, p_fix_dof, None, None, self.q_clamp_dof, None, None, self.q_clamp_dof, None)
+            (u_fix_dof, None, p_fix_dof, r_sym_dof[0], None, q_fix_dof, q_fix_dof, None) 
         )
         print("Number of free dofs = {}".format(self.free_dof.sum()))
 
@@ -330,6 +329,7 @@ class Drop_Runner(Runner):
         self.omega = Function(self.OMG_sp)
         self.q = None # the deformation map
         self.q_m = Function(self.Q_sp) # the deformation map
+        self.dqdt = Function(self.Q_sp) # the velocity of the deformation map
         self.kappa = Function(self.Q_sp) # the mean curvature vector
         self.m3 = Function(self.M3_sp)
         self.id_m = Function(self.s_mesh.coord_fe) # the mesh mapping of the reference sheet
@@ -398,12 +398,12 @@ class Drop_Runner(Runner):
         t = self.step * self.solp.dt
         if self.args.vis:
             self.ax.clear()
-            press = self.p0.view(np.ndarray)[self.P0_sp.elem_dof][0] + np.sum(self.p1.view(np.ndarray)[self.P1_sp.elem_dof], axis=0) / 3 # (Nt, )
-            tpc = self.ax.tripcolor(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], press, triangles=self.bulk_triangles)
-            if not hasattr(self, "colorbar"):
-                self.colorbar = pyplot.colorbar(tpc)
-            else:
-                self.colorbar.update_normal(tpc)
+            # press = self.p0.view(np.ndarray)[self.P0_sp.elem_dof][0] + np.sum(self.p1.view(np.ndarray)[self.P1_sp.elem_dof], axis=0) / 3 # (Nt, )
+            # tpc = self.ax.tripcolor(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], press, triangles=self.bulk_triangles)
+            # if not hasattr(self, "colorbar"):
+            #     self.colorbar = pyplot.colorbar(tpc)
+            # else:
+            #     self.colorbar.update_normal(tpc)
             # self.ax.triplot(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], triangles=self.bulk_triangles, linewidth=0.5)
             # plot the velocity
             _u = self.u.view(np.ndarray); _n = self.mesh.coord_map.size; 
@@ -417,6 +417,11 @@ class Drop_Runner(Runner):
             segments = _q_m_down[self.s_mesh.coord_fe.elem_dof].reshape(2, 2, -1).transpose(2, 0, 1)
             self.ax.add_collection(LineCollection(segments=segments, colors="tab:orange"))
             self.ax.plot(self.q_m[::2], self.q_m[1::2], "k+")
+            self.ax.plot(self.q_m[::2], self.dqdt[::2], 'ro')
+            self.ax.plot(self.q_m[::2], self.dqdt[1::2], 'bo')
+            # plot the cornormals
+            self.ax.quiver(phycl[0], phycl[1], self.m1_hat[0], self.m1_hat[1], color="tab:brown") # m1
+            self.ax.quiver(phycl[0], phycl[1], self.m3[0], self.m3[1], color="tab:brown") # m3
             # plot the frame
             self.ax.plot((0.0, 1.0, 1.0), (1.0, 1.0, 0.0), 'k-')
             self.ax.set_xlim(0.0, 1.0); self.ax.set_ylim(-0.15, 1.0)
@@ -440,7 +445,14 @@ class Drop_Runner(Runner):
     def main_step(self) -> None:
         phyp = self.phyp # just for convenience
 
-        self.m1_hat[:] = (1.0, 0.0)
+        # Step 0. Get an explicit estimate of m1. 
+        q_fd = arrange_as_FD(self.Q_sp, self.q_m) # (n, 2)
+        x, y = q_fd[:,0], q_fd[:,1]
+        j = self.cl_dof_fd[0]
+        dydx = (y[j]-y[j-1])*(1/(x[j]-x[j-1]) - 1/(x[j+1]-x[j-1])) + (y[j+1]-y[j])*(1/(x[j+1]-x[j]) - 1/(x[j+1]-x[j-1]))
+        self.m1_hat[:] = (1.0, dydx)
+        self.m1_hat /= np.linalg.norm(self.m1_hat)
+
         # =================================================================
         # Step 1. Solve the fluid, the fluid-fluid interface, and the sheet deformation. 
         
@@ -551,7 +563,7 @@ class Drop_Runner(Runner):
         split_fn(sol_full, self.u, self.p1, self.p0, self.r, self.omega, self.q, self.kappa, self.m3)
 
         # q is the deformation velocity, and update to get the deformation map
-        # self.ax.plot(self.q_m[::2], self.q[::2], 'ro')
+        np.copyto(self.dqdt, self.q)
         self.q[:] = self.q_m + dt * self.q
         
         # =================================================================
@@ -566,15 +578,11 @@ class Drop_Runner(Runner):
         dq_plus[:-2] = (q_fd[1:-1] - q_fd[:-2]) * (1/(xi_fd[1:-1]-xi_fd[:-2]) + 1/(xi_fd[2:]-xi_fd[:-2])) + \
             (q_fd[2:] - q_fd[1:-1]) * (1/(xi_fd[2:]-xi_fd[:-2]) - 1/(xi_fd[2:]-xi_fd[1:-1]))
         dq_minus = np.zeros_like(q_fd)
-        dq_minus[2:] = (q_fd[1:-1] - q_fd[2:]) * (1/(xi_fd[1:-1]-xi_fd[2:]) + 1/(xi_fd[:-2]-xi_fd[2:])) + \
-            (q_fd[:-2] - q_fd[1:-1]) * (1/(xi_fd[:-2]-xi_fd[2:]) - 1/(xi_fd[:-2]-xi_fd[1:-1]))
-        # centered difference to calculate dq
-        # j = self.cl_dof_fd[0]
-        # dq = (q_fd[j-1]-q_fd[j])*(1/(xi_fd[j-1]-xi_fd[j]) + 1/(xi_fd[j+1]-xi_fd[j])) + (q_fd[j+1]-q_fd[j-1])*(1/(xi_fd[j+1]-xi_fd[j])-1/(xi_fd[j+1]-xi_fd[j-1]))
+        dq_minus[2:] = (q_fd[1:-1]-q_fd[:-2]) * (1/(xi_fd[2:]-xi_fd[:-2]) - 1/(xi_fd[1:-1]-xi_fd[:-2])) + \
+            (q_fd[2:]-q_fd[1:-1]) * (1/(xi_fd[2:]-xi_fd[1:-1]) + 1/(xi_fd[2:]-xi_fd[:-2]))
 
         slip_cl = self.r.view(np.ndarray)[self.cl_dof_R] - self.q.view(np.ndarray)[self.cl_dof_Q] # type: np.ndarray # (2,)
         # find the reference CL velocity
-        # d_chi = np.dot(slip_cl, dq) / np.sum(dq**2) # if centered difference is used
         if slip_cl[0] > 0:
             d_chi = np.dot(slip_cl, dq_plus[self.cl_dof_fd[0]]) / np.sum(dq_plus[self.cl_dof_fd[0]]**2)
         else:
@@ -633,7 +641,7 @@ class Drop_Runner(Runner):
 # ===========================================================
 
 if __name__ == "__main__":
-    solp = SolverParameters(dt=1.0/(1024), Te=0.25)
+    solp = SolverParameters(dt=1.0/(1024), Te=1.0)
     runner = Drop_Runner(solp)
     runner.prepare()
     runner.run()
