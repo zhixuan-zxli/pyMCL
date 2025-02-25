@@ -307,7 +307,7 @@ class Drop_Runner(Runner):
         u_noslip_dof = np.where(self.U_sp.dof_loc[:,1] > 1-1e-12)[0]
         u_sym_dof = np.where(self.U_sp.dof_loc[:,0] < 1e-12)[0]
         u_bot_dof = np.where(self.U_sp.dof_loc[:,1] < 1e-12)[0]
-        u_fix_dof = np.unique(np.concatenate((u_noslip_dof, u_sym_dof[::2], u_bot_dof[1::2])))
+        u_fix_dof = np.unique(np.concatenate((u_noslip_dof, u_sym_dof[::2])))
         p_fix_dof = np.array((0,), dtype=np.int32) # np.arange(self.P0_sp.num_dof, dtype=np.int32)
         r_sym_dof = np.where(self.R_sp.dof_loc[:,0] < 1e-12)[0] # should be (2, )
         self.q_clamp_dof = np.where(self.Q_sp.dof_loc[:,0] > 1-1e-12)[0]
