@@ -21,7 +21,7 @@ class PhysicalParameters:
     gamma_2: float = 0. + 10.0 * cos(np.pi/2) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
     Cb: float = 1e-2
     Cs: float = 1e2
-    pre: float = 0.2 # the initial Jacobian is 1 + pre
+    pre: float = 0.0 # the initial Jacobian is 1 + pre
 
 # ===========================================================
 # functionals for calculating the energy
@@ -61,12 +61,6 @@ def a_xikappa(xi: QuadData, kappa: QuadData, x: QuadData, _) -> np.ndarray:
     r2 = np.sum(np.sum(xi.grad * tau[:,np.newaxis], axis=0) * np.sum(kappa.grad * tau[:,np.newaxis], axis=0), axis=0) # (Ne, Nq)
     r3 = (xi.grad[0,0] + xi.grad[1,1]) * (kappa.grad[0,0] + kappa.grad[1,1])
     return (r1 - 2*r2 + r3/2)[np.newaxis] * x.dx
-# this comes from the linearization of the Willmore variation
-@BilinearForm
-def a_xiq_3(xi: QuadData, q: QuadData, x: QuadData, _, k_m: QuadData) -> np.ndarray:
-    r1 = np.sum(k_m.grad * q.grad, axis=(0,1)) * (xi.grad[0,0] + xi.grad[1,1]) # (Ne, Nq)
-    r2 = np.sum(xi.grad * q.grad, axis=(0,1)) * (k_m.grad[0,0] + k_m.grad[1,1]) # (Ne, Nq)
-    return (r1 + r2)[np.newaxis] * x.dx
 
 @LinearForm
 def l_xi(xi: QuadData, x: QuadData, gamma: np.ndarray) -> np.ndarray:
@@ -529,7 +523,6 @@ class Drop_Runner(Runner):
         A_XIK = a_xikappa.assemble(q_da_basis, q_P1_da_basis)
         A_XIQ = a_xiq.assemble(q_ref_basis, q_ref_basis, None, None, q_m=self.q_m._interpolate(d_xi))
         A_XIQ_2 = a_xiq_2.assemble(q_ref_basis, q_ref_basis, None, None, q_m=self.q_m._interpolate(d_xi))
-        A_XIQ_3 = a_xiq_3.assemble(q_da_basis, q_da_basis, None, None, k_m=self.k_m._interpolate(da))
         A_XIQ_T = a_vq_nitsche_t.assemble(q_da_basis, q_da_basis, None, None, mu=self.slip_fric)
         A_XIQ_S = a_vq_nitsche_s.assemble(q_da_basis, q_da_basis, None, None, alpha=alpha_stab)
         L_XI = l_xi.assemble(q_da_basis, None, gamma=self.surf_tens)
@@ -547,7 +540,7 @@ class Drop_Runner(Runner):
             (A_VP0.T-A_VP0_NIT.T,  None,      None,             None,       None,                 A_RHO0Q_NIT,                       None,      None),                   # rho_0
             (None,          None,             None,             A_PIR,      A_PIOMG,              None,                              None,      -A_PIM3),                # pi
             (-dt*A_VOMG.T,  None,             None,             A_PIOMG.T,  None,                 None,                              None,      None),                   # delta
-            (-A_VQ_NIT_N.T-A_VQ_NIT_T.T-A_VQ_NIT_S.T, A_RHO1Q_NIT.T, A_RHO0Q_NIT.T, None, None,   -phyp.Cs*dt*(A_XIQ+A_XIQ_2)-2*phyp.Cb*dt*A_XIQ_3-A_XIQ_T-A_XIQ_S, phyp.Cb*A_XIK, -phyp.gamma_3*A_XIM3), # xi
+            (-A_VQ_NIT_N.T-A_VQ_NIT_T.T-A_VQ_NIT_S.T, A_RHO1Q_NIT.T, A_RHO0Q_NIT.T, None, None,   -phyp.Cs*dt*(A_XIQ+A_XIQ_2)-A_XIQ_T-A_XIQ_S, phyp.Cb*A_XIK, -phyp.gamma_3*A_XIM3), # xi
             (None,          None,             None,             None,       None,                 dt*A_ETAQ,                         A_ETAK,    None),                   # eta
             (None,          None,             None,             phyp.mu_cl/dt*A_PIM3.T, None,     -phyp.mu_cl*A_XIM3.T,              None,      phyp.gamma_3*A_M3M3),    # m3
         ), format="csc")
@@ -561,14 +554,8 @@ class Drop_Runner(Runner):
         self.kappa[:] = -A_ETAQ @ self.q_m
         self.m3[:] = (phyp.gamma_2 - phyp.gamma_1) * L_M3 + phyp.mu_cl/dt*A_PIM3.T @ self.r_m
         L = group_fn(self.u, self.p1, self.p0, self.r, self.omega, self.q, self.kappa, self.m3)
-        # set up the boundary conditions and homogeneize the right-hand side
-        # self.omega[:] = 0.0
-        # self.q[:] = 0.0
-        # self.kappa[:] = 0.0
-        # self.m3[:] = 0.0
-        # sol_full = group_fn(self.u, self.p1, self.p0, self.r, self.omega, self.q, self.kappa, self.m3)
+        # set up the boundary conditions and homogeneize the right-hand side; do nothing since the boundary conditions are homogeneneous
         sol_full = np.zeros_like(L)
-        # L = L - A @ sol_full
         # solve the coupled system
         free_dof = self.free_dof
         sol_free = spsolve(A[free_dof][:,free_dof], L[free_dof])
@@ -585,35 +572,38 @@ class Drop_Runner(Runner):
         xi_fd = arrange_as_FD(self.Q_sp, lift_to_P2(self.Q_sp, self.s_mesh.coord_map))[:,0][:, np.newaxis] # (n, 1)
         assert np.all(xi_fd[1:,0] - xi_fd[:-1,0] > 0), "The mesh mapping is not strictly increasing!"
         assert np.all(q_fd[1:,0] - q_fd[:-1,0] > 0), "The mesh mapping is not strictly increasing!"
-        ref_cl = xi_fd[self.cl_dof_fd] # (1,)
-        # find the first derivative to the right and to the left
-        dq_plus = np.zeros_like(q_fd)
-        dq_plus[:-2] = (q_fd[1:-1] - q_fd[:-2]) * (1/(xi_fd[1:-1]-xi_fd[:-2]) + 1/(xi_fd[2:]-xi_fd[:-2])) + \
-            (q_fd[2:] - q_fd[1:-1]) * (1/(xi_fd[2:]-xi_fd[:-2]) - 1/(xi_fd[2:]-xi_fd[1:-1]))
-        dq_minus = np.zeros_like(q_fd)
-        dq_minus[2:] = (q_fd[1:-1]-q_fd[:-2]) * (1/(xi_fd[2:]-xi_fd[:-2]) - 1/(xi_fd[1:-1]-xi_fd[:-2])) + \
-            (q_fd[2:]-q_fd[1:-1]) * (1/(xi_fd[2:]-xi_fd[1:-1]) + 1/(xi_fd[2:]-xi_fd[:-2]))
 
         slip_cl = self.r.view(np.ndarray)[self.cl_dof_R] - self.q.view(np.ndarray)[self.cl_dof_Q] # type: np.ndarray # (2,)
-        # find the reference CL velocity
+        j = self.cl_dof_fd[0]
+        # find the reference CL velocity using an upwind derivative
+        dq_plus = (q_fd[j] - q_fd[j-1]) * (1/(xi_fd[j]-xi_fd[j-1]) + 1/(xi_fd[j+1]-xi_fd[j-1])) + \
+            (q_fd[j+1] - q_fd[j]) * (1/(xi_fd[j+1]-xi_fd[j-1]) - 1/(xi_fd[j+1]-xi_fd[j]))
+        dq_minus = (q_fd[j] - q_fd[j-1]) * (1/(xi_fd[j+1]-xi_fd[j-1]) - 1/(xi_fd[j]-xi_fd[j-1])) + \
+            (q_fd[j+1] - q_fd[j]) * (1/(xi_fd[j+1]-xi_fd[j]) + 1/(xi_fd[j+1]-xi_fd[j-1]))
         if slip_cl[0] > 0:
-            d_chi = np.dot(slip_cl, dq_plus[self.cl_dof_fd[0]]) / np.sum(dq_plus[self.cl_dof_fd[0]]**2)
+            d_chi = np.dot(slip_cl, dq_plus) / np.sum(dq_plus**2)
         else:
-            d_chi = np.dot(slip_cl, dq_minus[self.cl_dof_fd[0]]) / np.sum(dq_minus[self.cl_dof_fd[0]]**2)
+            d_chi = np.dot(slip_cl, dq_minus) / np.sum(dq_minus**2)
         # adjust the reference mesh mapping
+        ref_cl = xi_fd[j] # (1,)
         d_xi = np.where(
             xi_fd <= ref_cl[0], xi_fd / ref_cl[0] * d_chi, (xi_fd[-1]-xi_fd) / (xi_fd[-1]-ref_cl[0]) * d_chi
-        ) # (n, ) # check!
+        ) # (n, )
 
         # advect the deformation map using a Lax-Wendroff scheme
-        q_next = q_fd.copy()
-        q_next[1:-1] += d_xi[1:-1] * ((q_fd[1:-1]-q_fd[:-2])*(1/(xi_fd[1:-1]-xi_fd[:-2])-1/(xi_fd[2:]-xi_fd[:-2])) + (q_fd[2:]-q_fd[1:-1])*(1/(xi_fd[2:]-xi_fd[1:-1])-1/(xi_fd[2:]-xi_fd[:-2])))
-        q_next[1:-1] += d_xi[1:-1]**2 * ((q_fd[2:]-q_fd[1:-1])/(xi_fd[2:]-xi_fd[1:-1]) - (q_fd[1:-1]-q_fd[:-2])/(xi_fd[1:-1]-xi_fd[:-2])) / (xi_fd[2:]-xi_fd[:-2])
-        q_next[self.cl_dof_fd] = self.r.view(np.ndarray)[self.cl_dof_R] # check it!
+        def _advect(q_fd: np.ndarray) -> np.ndarray:
+            q_adv = q_fd.copy()
+            q_adv[1:-1] += d_xi[1:-1] * ((q_fd[1:-1]-q_fd[:-2])*(1/(xi_fd[1:-1]-xi_fd[:-2])-1/(xi_fd[2:]-xi_fd[:-2])) + (q_fd[2:]-q_fd[1:-1])*(1/(xi_fd[2:]-xi_fd[1:-1])-1/(xi_fd[2:]-xi_fd[:-2])))
+            q_adv[1:-1] += d_xi[1:-1]**2 * ((q_fd[2:]-q_fd[1:-1])/(xi_fd[2:]-xi_fd[1:-1]) - (q_fd[1:-1]-q_fd[:-2])/(xi_fd[1:-1]-xi_fd[:-2])) / (xi_fd[2:]-xi_fd[:-2])
+            return q_adv
+        q_adv = _advect(q_fd)
+        q_adv[j] = self.r.view(np.ndarray)[self.cl_dof_R] 
+        self.q[:] = arrange_as_FE(self.Q_sp, q_adv)
+        q_adv = _advect(arrange_as_FD(self.Q_sp, self.q_m))
+        self.q_m[:] = arrange_as_FE(self.Q_sp, q_adv)
         
-        # now overwrite the mesh mapping and the deformation
+        # now overwrite the mesh mapping
         self.s_mesh.coord_map += down_to_P1(self.Q_P1_sp, arrange_as_FE(self.Q_sp, np.concatenate((d_xi, np.zeros_like(d_xi)), axis=1)))
-        self.q[:] = arrange_as_FE(self.Q_sp, q_next)
         
         # =================================================================
         # Step 5. Displace the bulk mesh and update all the meshes. 
@@ -638,12 +628,11 @@ class Drop_Runner(Runner):
         self.mesh.coord_map += sol_vec
 
         print(Fore.GREEN + "\nt = {:.5f}, ".format((self.step+1) * self.solp.dt) + Style.RESET_ALL, end="")
-        print("i-disp = {:.2e}, s-disp = {:.2e}, ".format(
+        print("i-vel = {:.2e}, s-vel = {:.2e}, ".format(
             np.linalg.norm(self.r-self.r_m, ord=np.inf)/dt, np.linalg.norm(self.q-self.q_m, ord=np.inf)/dt), end="")
-        print("d_chi = {:+.2e}, slip_cl = ({:+.2e},{:+.2e}), ".format(d_chi/dt, slip_cl[0]/dt, slip_cl[1]/dt), end="")
+        print("ref-cl-vel = {:+.2e}, phyp-cl-vel = ({:+.2e},{:+.2e}), ".format(d_chi/dt, slip_cl[0]/dt, slip_cl[1]/dt), end="")
         print("|m| = {:.4f}, ".format(np.linalg.norm(self.m3)), end="")
-        # print("dq={:.4f} ".format(np.linalg.norm(dq)), end="")
-        print("dq-={:.4f}, dq+={:.4f}, ".format(np.linalg.norm(dq_minus[self.cl_dof_fd[0]]), np.linalg.norm(dq_plus[self.cl_dof_fd[0]])), end="")
+        print("dq-={:.4f}, dq+={:.4f}, ".format(np.linalg.norm(dq_minus), np.linalg.norm(dq_plus)), end="")
 
     def finish(self) -> None:
         super().finish()
@@ -654,7 +643,7 @@ class Drop_Runner(Runner):
 # ===========================================================
 
 if __name__ == "__main__":
-    solp = SolverParameters(dt=1.0/(1024), Te=1.0)
+    solp = SolverParameters(dt=1.0/(256), Te=1.0)
     runner = Drop_Runner(solp)
     runner.prepare()
     runner.run()
