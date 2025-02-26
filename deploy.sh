@@ -17,13 +17,13 @@ sudo apt install -y \
     cmake \
     tmux
 
-# Clone the scikit-umfpack repository
-git clone https://github.com/scikit-umfpack/scikit-umfpack.git
-cd scikit-umfpack
-
 # Create a virtual environment named 'sc'
 python3 -m venv sc
 source sc/bin/activate
+
+# Clone the scikit-umfpack repository
+git clone https://github.com/scikit-umfpack/scikit-umfpack.git
+cd scikit-umfpack
 
 # Upgrade pip
 # pip install --upgrade pip

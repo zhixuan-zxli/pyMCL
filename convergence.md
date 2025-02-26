@@ -66,7 +66,7 @@ base_step = 256
 | r                  | 1.10e-04  | 1.57 | 3.72e-05  | 1.74 | 1.11e-05  |
 | vol                | 1.29e-04  | 2.29 | 2.65e-05  | 2.26 | 5.55e-06  |
 
-## Flat sheet with Nitsche method and sheet stretching (Cs=1)
+## Flat sheet with Nitsche method and sheet stretching (Cs=1e1)
 
 base_step = 16
 
@@ -143,3 +143,35 @@ base_step = 256
 | r                 |  3.58e-04  | 1.48 |   1.28e-04  |
 | q                 |  3.48e-04  | 1.67 |   1.09e-04  |
 | vol               |  4.07e-05  | 1.79 |   1.17e-05  |
+
+Cs = 1e2, pre = 0.0
+
+base_step = 16
+                    0         rate    1         
+r                   1.27e-03  1.86    3.49e-04  
+q                   4.17e-04  7.35    2.55e-06  
+vol                 6.56e-04  1.98    1.66e-04  
+
+base_step = 32
+                    0         rate    1         
+r                   9.05e-04  1.72    2.75e-04  
+q                   4.56e-04  5.26    1.19e-05  
+vol                 6.71e-04  1.96    1.72e-04  
+
+base_step = 64
+                    0         rate    1         
+r                   5.88e-04  1.68    1.84e-04  
+q                   5.89e-04  2.59    9.75e-05  
+vol                 6.96e-04  1.91    1.85e-04  
+
+base_step = 128
+                    0         rate    1         
+r                   8.96e-04  1.63    2.89e-04  
+q                   8.96e-04  1.64    2.87e-04  
+vol                 7.60e-04  1.79    2.19e-04  
+
+base_step = 256
+                    0         rate    1         
+r                   1.17e-03  1.38    4.48e-04  
+q                   1.17e-03  1.38    4.48e-04  
+vol                 8.98e-04  1.62    2.93e-04  
