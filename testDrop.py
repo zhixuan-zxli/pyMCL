@@ -316,13 +316,16 @@ class Drop_Runner(Runner):
         u_fix_dof = np.unique(np.concatenate((u_noslip_dof, u_sym_dof[::2])))
         p_fix_dof = np.array((0,), dtype=np.int32) # np.arange(self.P0_sp.num_dof, dtype=np.int32)
         r_sym_dof = np.where(self.R_sp.dof_loc[:,0] < 1e-12)[0] # should be (2, )
-        self.q_clamp_dof = np.where(self.Q_sp.dof_loc[:,0] > 1-1e-12)[0]
-        self.q_sym_dof = np.where(self.Q_sp.dof_loc[:,0] < 1e-12)[0]
+        q_clamp_dof = np.where(self.Q_sp.dof_loc[:,0] > 1-1e-12)[0]
+        q_sym_dof = np.where(self.Q_sp.dof_loc[:,0] < 1e-12)[0]
         # q_all_dof = np.arange(self.Q_sp.num_dof)
-        q_fix_dof = np.unique(np.concatenate((self.q_clamp_dof, self.q_sym_dof[0:1])))
+        q_fix_dof = np.unique(np.concatenate((q_clamp_dof, q_sym_dof[0:1])))
+        q_P1_clamp_dof = np.where(self.Q_P1_sp.dof_loc[:,0] > 1-1e-12)[0]
+        q_P1_sym_dof = np.where(self.Q_P1_sp.dof_loc[:,0] < 1e-12)[0]
+        q_P1_fix_dof = np.unique(np.concatenate((q_P1_clamp_dof, q_P1_sym_dof[0:1])))
         self.free_dof = group_dof(
-            (self.U_sp, self.P1_sp, self.P0_sp, self.R_sp, self.OMG_sp, self.Q_sp, self.Q_sp, self.M3_sp), 
-            (u_fix_dof, None, p_fix_dof, r_sym_dof[0], None, q_fix_dof, q_fix_dof, None) 
+            (self.U_sp, self.P1_sp, self.P0_sp, self.R_sp, self.OMG_sp, self.Q_sp, self.Q_P1_sp, self.M3_sp), 
+            (u_fix_dof, None, p_fix_dof, r_sym_dof[0], None, q_fix_dof, q_P1_fix_dof, None) 
         )
         print("Number of free dofs = {}".format(self.free_dof.sum()))
 
@@ -336,8 +339,8 @@ class Drop_Runner(Runner):
         self.q = None # the deformation map
         self.q_m = Function(self.Q_sp) # the deformation map
         self.dqdt = Function(self.Q_sp) # the velocity of the deformation map
-        self.kappa = Function(self.Q_sp) # the mean curvature vector
-        self.k_m = Function(self.Q_sp)
+        self.kappa = Function(self.Q_P1_sp) # the mean curvature vector
+        self.k_m = Function(self.Q_P1_sp)
         self.m3 = Function(self.M3_sp)
         self.id_m = Function(self.s_mesh.coord_fe) # the mesh mapping of the reference sheet
         self.m1_hat = Function(self.M3_sp)
@@ -491,6 +494,7 @@ class Drop_Runner(Runner):
         p1_da_basis = FunctionBasis(self.P1_sp, da_4u)
         p0_da_basis = FunctionBasis(self.P0_sp, da_4u)
         q_da_basis = FunctionBasis(self.Q_sp, da)
+        q_P1_da_basis = FunctionBasis(self.Q_P1_sp, da)
         q_ref_basis = FunctionBasis(self.Q_sp, d_xi)
         # CL from sheet
         r_cl_basis = FunctionBasis(self.R_sp, dp_i)
@@ -519,10 +523,10 @@ class Drop_Runner(Runner):
         A_PIOMG = a_piomg.assemble(r_basis, omega_basis)
         A_PIM3 = a_pim3.assemble(r_cl_basis, m3_basis)
         # for the compatibility of the sheet
-        A_ETAQ = a_pir.assemble(q_da_basis, q_da_basis)
-        A_ETAK = a_L2.assemble(q_da_basis, q_da_basis)
+        A_ETAQ = a_pir.assemble(q_P1_da_basis, q_da_basis)
+        A_ETAK = a_L2.assemble(q_P1_da_basis, q_P1_da_basis)
         # for the mechanics of the sheet
-        A_XIK = a_xikappa.assemble(q_da_basis, q_da_basis)
+        A_XIK = a_xikappa.assemble(q_da_basis, q_P1_da_basis)
         A_XIQ = a_xiq.assemble(q_ref_basis, q_ref_basis, None, None, q_m=self.q_m._interpolate(d_xi))
         A_XIQ_2 = a_xiq_2.assemble(q_ref_basis, q_ref_basis, None, None, q_m=self.q_m._interpolate(d_xi))
         A_XIQ_3 = a_xiq_3.assemble(q_da_basis, q_da_basis, None, None, k_m=self.k_m._interpolate(da))
@@ -650,7 +654,7 @@ class Drop_Runner(Runner):
 # ===========================================================
 
 if __name__ == "__main__":
-    solp = SolverParameters(dt=1.0/(1024), Te=1.0/4)
+    solp = SolverParameters(dt=1.0/(1024), Te=1.0)
     runner = Drop_Runner(solp)
     runner.prepare()
     runner.run()
