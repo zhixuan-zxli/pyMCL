@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Update package lists
-# sudo apt update
+sudo apt update
 
 # Install system dependencies
 sudo apt install -y \
@@ -29,15 +29,11 @@ source sc/bin/activate
 # pip install --upgrade pip
 
 # Install specific version of numpy and the latest scipy
-pip install numpy==1.26.4 scipy matplotlib meshio --index-url = http://mirrors.aliyun.com/pypi/simple/
+pip install numpy==1.26.4 scipy matplotlib meshio --index-url https://mirrors.aliyun.com/pypi/simple/
 
 # Install scikit-umfpack from the cloned repository
-pip install .
+pip install . --index-url https://mirrors.aliyun.com/pypi/simple/
 
 # Deactivate the virtual environment
 deactivate
 
-# Navigate out of the repository directory
-cd ..
-
-echo "scikit-umfpack has been successfully installed in the 'sc' virtual environment."
