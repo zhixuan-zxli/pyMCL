@@ -86,7 +86,7 @@ def testMeanCurvatureFlow(solp: SolverParameters) -> None:
         # update the mesh
         mesh.coord_map[:] = x
         disp = x - x_m
-        print('disp = {0:.3e}'.format(np.linalg.norm(disp, ord=np.inf)))
+        print('disp = {0:.3e}'.format(np.linalg.norm(disp, ord=np.inf)/solp.dt))
         # update plot
         if solp.vis:
             redraw()
@@ -104,10 +104,10 @@ def b11(phi, k, z, _) -> np.ndarray:
     # z.cn: (2, Ne, Nq)
     # k.grad: (2, 2, Ne, Nq)
     tau = np.array((-z.cn[1], z.cn[0])) # (2, Ne, Nq)
-    grad_k_tt = np.sum(tau[:,np.newaxis] * k.grad, axis=0)[np.newaxis] * tau[:,np.newaxis] # (2, 2, Ne, Nq)
-    r1 = np.sum((k.grad - 2*grad_k_tt) * phi.grad, axis=(0,1)) # (Ne, Nq)
+    r1 = np.sum(k.grad * phi.grad, axis=(0,1)) # (Ne, Nq)
+    r3 = np.sum(np.sum(k.grad * tau[:,np.newaxis], axis=0) * np.sum(phi.grad * tau[:,np.newaxis], axis=0), axis=0) # (Ne, Nq)
     r2 = 0.5 * ((k.grad[0,0] + k.grad[1,1]) * (phi.grad[0,0] + phi.grad[1,1])) # (Ne, Nq)
-    return (r1 + r2)[np.newaxis] * z.dx
+    return (r1 -2*r3 + r2)[np.newaxis] * z.dx
 
 def testWillmoreFlow(solp: SolverParameters) -> None:
     mesh = Mesh()
@@ -148,7 +148,7 @@ def testWillmoreFlow(solp: SolverParameters) -> None:
         # update the mesh
         mesh.coord_map[:] = x
         disp = x - x_m
-        print('disp = {:.3e}'.format(np.linalg.norm(disp, ord=np.inf)))
+        print('disp = {:.3e}'.format(np.linalg.norm(disp, ord=np.inf)/solp.dt))
         # update the plot
         if solp.vis:
             ax.clear()
