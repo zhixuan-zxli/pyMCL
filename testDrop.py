@@ -20,8 +20,8 @@ class PhysicalParameters:
     gamma_3: float = 10.0
     gamma_2: float = 0. + 10.0 * cos(np.pi/2) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
     Cb: float = 1e-2
-    Cs: float = 1e3
-    pre: float = 0.1 # the initial Jacobian is 1 + pre
+    Cs: float = 1e2
+    pre: float = 0.2 # the initial Jacobian is 1 + pre
 
 # ===========================================================
 # functionals for calculating the energy
@@ -57,9 +57,15 @@ def l_dq(w: QuadData, x: QuadData, q_m: QuadData) -> np.ndarray:
 @BilinearForm
 def a_xikappa(xi: QuadData, kappa: QuadData, x: QuadData, _) -> np.ndarray:
     tau = np.array((-x.cn[1], x.cn[0])) # (2, Ne, Nq)
-    grad_xi_tt = np.sum(xi.grad * tau[:,np.newaxis], axis=0)[np.newaxis] * tau[:,np.newaxis] # (2, 2, Ne, Nq)
-    r1 = np.sum((xi.grad - 2*grad_xi_tt) * kappa.grad, axis=(0,1)) # (Ne, Nq)
-    r2 = (xi.grad[0,0] + xi.grad[1,1]) * (kappa.grad[0,0] + kappa.grad[1,1]) / 2
+    r1 = np.sum(xi.grad * kappa.grad, axis=(0,1)) # (Ne, Nq)
+    r2 = np.sum(np.sum(xi.grad * tau[:,np.newaxis], axis=0) * np.sum(kappa.grad * tau[:,np.newaxis], axis=0), axis=0) # (Ne, Nq)
+    r3 = (xi.grad[0,0] + xi.grad[1,1]) * (kappa.grad[0,0] + kappa.grad[1,1])
+    return (r1 - 2*r2 + r3/2)[np.newaxis] * x.dx
+# this comes from the linearization of the Willmore variation
+@BilinearForm
+def a_xiq_3(xi: QuadData, q: QuadData, x: QuadData, _, k_m: QuadData) -> np.ndarray:
+    r1 = np.sum(k_m.grad * q.grad, axis=(0,1)) * (xi.grad[0,0] + xi.grad[1,1]) # (Ne, Nq)
+    r2 = np.sum(xi.grad * q.grad, axis=(0,1)) * (k_m.grad[0,0] + k_m.grad[1,1]) # (Ne, Nq)
     return (r1 + r2)[np.newaxis] * x.dx
 
 @LinearForm
@@ -73,7 +79,7 @@ def a_xiq(xi: QuadData, q: QuadData, x: QuadData, _, q_m: QuadData) -> np.ndarra
     # q_m.grad: (2, 2, Ne, Nq)
     nu = (np.sum(q_m.grad[:,0]**2, axis=0, keepdims=True) - 1) / 2 # (1, Ne, Nq)
     return nu * np.sum(q.grad[:,0] * xi.grad[:,0], axis=0, keepdims=True) * x.dx
-
+# this comes from the linearization of the stretching energy
 @BilinearForm
 def a_xiq_2(xi: QuadData, q: QuadData, x: QuadData, _, q_m: QuadData) -> np.ndarray:
     # q_m.grad: (2, 2, Ne, Nq)
@@ -331,6 +337,7 @@ class Drop_Runner(Runner):
         self.q_m = Function(self.Q_sp) # the deformation map
         self.dqdt = Function(self.Q_sp) # the velocity of the deformation map
         self.kappa = Function(self.Q_sp) # the mean curvature vector
+        self.k_m = Function(self.Q_sp)
         self.m3 = Function(self.M3_sp)
         self.id_m = Function(self.s_mesh.coord_fe) # the mesh mapping of the reference sheet
         self.m1_hat = Function(self.M3_sp)
@@ -356,7 +363,7 @@ class Drop_Runner(Runner):
             self.i_mesh.coord_map[:] = self.resume_file["r_m"]
             self.s_mesh.coord_map[:] = self.resume_file["id_m"]
             self.q[:] = self.resume_file["q_m"]
-            self.kappa[:] = self.resume_file["kappa"]
+            self.kappa[:] = self.resume_file["k_m"]
             self.energy[:self.step+1] = self.resume_file["energy"]
             self.phycl_hist[:self.step+1] = self.resume_file["phycl_hist"]
             self.refcl_hist[:self.step+1] = self.resume_file["refcl_hist"]
@@ -375,6 +382,7 @@ class Drop_Runner(Runner):
         self.id_m[:] = self.s_mesh.coord_map
         self.q_m[:] = self.q
         self.q_m_down = down_to_P1(self.Q_P1_sp, self.q_m)
+        self.k_m[:] = self.kappa
 
         # record the CL locations
         refcl = self.id_m.view(np.ndarray)[self.cl_dof_Q_P1]
@@ -386,7 +394,7 @@ class Drop_Runner(Runner):
         d_xi = Measure(self.s_mesh, dim=1, order=5, coord_map=self.id_m) # the reference sheet mesh at the last time step
         self.energy[self.step, 0] = self.phyp.Cs * e_stretch.assemble(d_xi, q_m=self.q_m._interpolate(d_xi))
         da = Measure(self.s_mesh, dim=1, order=5, coord_map=self.q_m) # the deformed sheet surface measure
-        self.energy[self.step, 1] = self.phyp.Cb * e_L2.assemble(da, kappa=self.kappa._interpolate(da))
+        self.energy[self.step, 1] = self.phyp.Cb * e_L2.assemble(da, kappa=self.k_m._interpolate(da))
         da_1 = Measure(self.s_mesh, dim=1, order=5, tags=(5,), coord_map=self.q_m)
         self.energy[self.step, 2] = self.phyp.gamma_1 * dx.assemble(da_1)
         da_2 = Measure(self.s_mesh, dim=1, order=5, tags=(4,), coord_map=self.q_m)
@@ -434,9 +442,9 @@ class Drop_Runner(Runner):
                 pyplot.savefig(filename, dpi=300.0)
         if self.step % self.solp.stride_checkpoint == 0:
             filename = self._get_output_name("{:05}.npz".format(self.step))
-            np.savez(filename, bulk_coord_map=self.mesh.coord_map, r_m=self.r_m, id_m=self.id_m, q_m=self.q_m, kappa=self.kappa, \
-                     phycl_hist=self.phycl_hist[:self.step+1], \
-                     refcl_hist=self.refcl_hist[:self.step+1], \
+            np.savez(filename, bulk_coord_map=self.mesh.coord_map, r_m=self.r_m, id_m=self.id_m, q_m=self.q_m, k_m=self.kappa, 
+                     phycl_hist=self.phycl_hist[:self.step+1], 
+                     refcl_hist=self.refcl_hist[:self.step+1], 
                      energy=self.energy[:self.step+1])
             print(Fore.GREEN + "\nCheckpoint saved to " + filename + Style.RESET_ALL)
         
@@ -517,6 +525,7 @@ class Drop_Runner(Runner):
         A_XIK = a_xikappa.assemble(q_da_basis, q_da_basis)
         A_XIQ = a_xiq.assemble(q_ref_basis, q_ref_basis, None, None, q_m=self.q_m._interpolate(d_xi))
         A_XIQ_2 = a_xiq_2.assemble(q_ref_basis, q_ref_basis, None, None, q_m=self.q_m._interpolate(d_xi))
+        A_XIQ_3 = a_xiq_3.assemble(q_da_basis, q_da_basis, None, None, k_m=self.k_m._interpolate(da))
         A_XIQ_T = a_vq_nitsche_t.assemble(q_da_basis, q_da_basis, None, None, mu=self.slip_fric)
         A_XIQ_S = a_vq_nitsche_s.assemble(q_da_basis, q_da_basis, None, None, alpha=alpha_stab)
         L_XI = l_xi.assemble(q_da_basis, None, gamma=self.surf_tens)
@@ -534,7 +543,7 @@ class Drop_Runner(Runner):
             (A_VP0.T-A_VP0_NIT.T,  None,      None,             None,       None,                 A_RHO0Q_NIT,                       None,      None),                   # rho_0
             (None,          None,             None,             A_PIR,      A_PIOMG,              None,                              None,      -A_PIM3),                # pi
             (-dt*A_VOMG.T,  None,             None,             A_PIOMG.T,  None,                 None,                              None,      None),                   # delta
-            (-A_VQ_NIT_N.T-A_VQ_NIT_T.T-A_VQ_NIT_S.T, A_RHO1Q_NIT.T, A_RHO0Q_NIT.T, None, None,   -phyp.Cs*dt*(A_XIQ+A_XIQ_2)-A_XIQ_T-A_XIQ_S, phyp.Cb*A_XIK, -phyp.gamma_3*A_XIM3), # xi
+            (-A_VQ_NIT_N.T-A_VQ_NIT_T.T-A_VQ_NIT_S.T, A_RHO1Q_NIT.T, A_RHO0Q_NIT.T, None, None,   -phyp.Cs*dt*(A_XIQ+A_XIQ_2)-2*phyp.Cb*dt*A_XIQ_3-A_XIQ_T-A_XIQ_S, phyp.Cb*A_XIK, -phyp.gamma_3*A_XIM3), # xi
             (None,          None,             None,             None,       None,                 dt*A_ETAQ,                         A_ETAK,    None),                   # eta
             (None,          None,             None,             phyp.mu_cl/dt*A_PIM3.T, None,     -phyp.mu_cl*A_XIM3.T,              None,      phyp.gamma_3*A_M3M3),    # m3
         ), format="csc")
@@ -641,7 +650,7 @@ class Drop_Runner(Runner):
 # ===========================================================
 
 if __name__ == "__main__":
-    solp = SolverParameters(dt=1.0/(1024), Te=1.0)
+    solp = SolverParameters(dt=1.0/(1024), Te=1.0/4)
     runner = Drop_Runner(solp)
     runner.prepare()
     runner.run()
