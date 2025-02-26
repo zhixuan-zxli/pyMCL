@@ -21,7 +21,7 @@ class PhysicalParameters:
     gamma_2: float = 0. + 10.0 * cos(np.pi/2) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
     Cb: float = 1e-2
     Cs: float = 1e2
-    pre: float = 0.0 # the initial Jacobian is 1 + pre
+    pre: float = 0.2 # the initial Jacobian is 1 + pre
 
 # ===========================================================
 # functionals for calculating the energy
@@ -46,10 +46,6 @@ def e_L2(x: QuadData, kappa: QuadData) -> np.ndarray:
 @BilinearForm
 def a_L2(w: QuadData, q: QuadData, x: QuadData, _) -> np.ndarray:
     return np.sum(w * q, axis=0, keepdims=True) * x.dx
-
-@LinearForm
-def l_dq(w: QuadData, x: QuadData, q_m: QuadData) -> np.ndarray:
-    return np.sum(w * q_m.grad[:,0], axis=0, keepdims=True) * x.dx
 
 # For a_etaq, use a_pir
 # For a_etak, use a_L2
@@ -112,55 +108,17 @@ def a_vp(v: QuadData, p: QuadData, x: QuadData, _) -> np.ndarray:
     return z[np.newaxis] * x.dx
 
 @BilinearForm
-def a_vu_nitsche(v: QuadData, u: QuadData, x: QuadData, _, eta: np.ndarray, mu: np.ndarray, alpha: float, x2: QuadData) -> np.ndarray:
-    # eta, mu: (Nf, )
-    # alpha is the stabilization factor
-    assert x2.shape == x.shape
+def a_slip(v: QuadData, u: QuadData, _, x: QuadData, mu: np.ndarray, x2: QuadData) -> np.ndarray:
+    # v, u: (2, Nf, Nq)
+    # x2.cn: (2, Nf, Nq)
     tau = np.array((-x2.cn[1], x2.cn[0]))
-    n_Tu_n = 2 * eta[:, np.newaxis] * np.sum(np.sum(u.grad * x2.cn[np.newaxis], axis=1) * x2.cn, axis=0) # (Nf, Nq)
-    n_Tv_n = 2 * eta[:, np.newaxis] * np.sum(np.sum(v.grad * x2.cn[np.newaxis], axis=1) * x2.cn, axis=0) # (Nf, Nq)
-    u_n = np.sum(u * x2.cn, axis=0) # (Nf, Nq)
-    u_t = np.sum(u * tau, axis=0) # (Nf, Nq)
-    v_n = np.sum(v * x2.cn, axis=0) # (Nf, Nq)
-    v_t = np.sum(v * tau, axis=0) # (Nf, Nq)
-    return (-n_Tu_n * v_n + n_Tv_n * u_n + mu[:, np.newaxis] * u_t * v_t)[np.newaxis] * x2.dx \
-        + (alpha * u_n * v_n)[np.newaxis]
-
-@BilinearForm
-def a_vp_nitsche(v: QuadData, p: QuadData, x: QuadData, _, x2: QuadData) -> np.ndarray:
-    assert x.shape == x2.shape
-    v_n = np.sum(v * x2.cn, axis=0) # (Nf, Nq)
-    return (p[0] * v_n)[np.newaxis] * x2.dx
-
-@BilinearForm
-def a_vq_nitsche_n(v: QuadData, q: QuadData, _, x: QuadData, eta: np.ndarray) -> np.ndarray:
-    # q: (2, Nf, Nq)
-    # x.cn: (2, Nf, Nq)
-    n_Tv_n = 2 * eta[:, np.newaxis] * np.sum(np.sum(v.grad * x.cn[np.newaxis], axis=1) * x.cn, axis=0) # (Nf, Nq)
-    q_n = np.sum(q * x.cn, axis=0) # (Nf, Nq)
-    return n_Tv_n*q_n[np.newaxis] * x.dx
-
-@BilinearForm
-def a_vq_nitsche_t(v: QuadData, q: QuadData, _, x: QuadData, mu: np.ndarray) -> np.ndarray:
-    # q: (2, Nf, Nq)
-    # x.cn: (2, Nf, Nq)
-    tau = np.array((-x.cn[1], x.cn[0]))
     v_t = np.sum(v * tau, axis=0)
-    q_t = np.sum(q * tau, axis=0) # (Nf, Nq)
-    return (mu[:, np.newaxis]*v_t*q_t)[np.newaxis] * x.dx
+    u_t = np.sum(u * tau, axis=0) # (Nf, Nq)
+    return (mu[:, np.newaxis]*v_t*u_t)[np.newaxis] * x2.dx
 
 @BilinearForm
-def a_vq_nitsche_s(v: QuadData, q: QuadData, _, x: QuadData, alpha: float) -> np.ndarray:
-    # q: (2, Nf, Nq)
-    # x.cn: (2, Nf, Nq)
-    v_n = np.sum(v * x.cn, axis=0)
-    q_n = np.sum(q * x.cn, axis=0) # (Nf, Nq)
-    return (alpha * q_n * v_n)[np.newaxis]
-
-@BilinearForm
-def a_rhoq_nitsche(rho: QuadData, q: QuadData, _, x: QuadData) -> np.ndarray:
-    q_n = np.sum(q * x.cn, axis=0)
-    return (rho[0] * q_n)[np.newaxis] * x.dx
+def a_vt(v: QuadData, t: QuadData, x: QuadData, _, x2: QuadData) -> np.ndarray:
+    return np.sum(v * x2.cn, axis=0, keepdims=True) * t * x2.dx
 
 @BilinearForm
 def a_vomg(v: QuadData, omega: QuadData, x: QuadData, _) -> np.ndarray:
@@ -282,8 +240,8 @@ class Drop_Runner(Runner):
         self.OMG_sp = FunctionSpace(self.i_mesh, LineP1)
         self.Q_sp = FunctionSpace(self.s_mesh, VectorElement(LineP2, 2)) # for the sheet deformation and the mean curvature vector
         self.Q_P1_sp = self.s_mesh.coord_fe # type: FunctionSpace
+        self.T_sp = FunctionSpace(self.s_mesh, LineP1) # for the normal stress
         self.M3_sp = FunctionSpace(self.cl_mesh, VectorElement(NodeElement, 2))
-        # assert self.M3_sp.dof_loc[0,0] < self.M3_sp.dof_loc[2,0]
 
         # extract the DOFs for the bulk mesh mapping
         Y_sp = self.mesh.coord_fe # type: FunctionSpace
@@ -312,14 +270,15 @@ class Drop_Runner(Runner):
         r_sym_dof = np.where(self.R_sp.dof_loc[:,0] < 1e-12)[0] # should be (2, )
         q_clamp_dof = np.where(self.Q_sp.dof_loc[:,0] > 1-1e-12)[0]
         q_sym_dof = np.where(self.Q_sp.dof_loc[:,0] < 1e-12)[0]
-        # q_all_dof = np.arange(self.Q_sp.num_dof)
-        q_fix_dof = np.unique(np.concatenate((q_clamp_dof, q_sym_dof[0:1])))
+        q_all_dof = np.arange(self.Q_sp.num_dof)
+        q_fix_dof = np.unique(np.concatenate((q_clamp_dof, q_sym_dof[0:1], q_all_dof[1::2])))
         q_P1_clamp_dof = np.where(self.Q_P1_sp.dof_loc[:,0] > 1-1e-12)[0]
         q_P1_sym_dof = np.where(self.Q_P1_sp.dof_loc[:,0] < 1e-12)[0]
         q_P1_fix_dof = np.unique(np.concatenate((q_P1_clamp_dof, q_P1_sym_dof[0:1])))
+        q_P1_all_dof = np.arange(self.Q_P1_sp.num_dof)
         self.free_dof = group_dof(
-            (self.U_sp, self.P1_sp, self.P0_sp, self.R_sp, self.OMG_sp, self.Q_sp, self.Q_P1_sp, self.M3_sp), 
-            (u_fix_dof, None, p_fix_dof, r_sym_dof[0], None, q_fix_dof, q_P1_fix_dof, None) 
+            (self.U_sp, self.P1_sp, self.P0_sp, self.R_sp, self.OMG_sp, self.Q_sp, self.Q_P1_sp, self.T_sp, self.M3_sp), 
+            (u_fix_dof, None, p_fix_dof, r_sym_dof[0], None, q_fix_dof, q_P1_all_dof, None, None) 
         )
         print("Number of free dofs = {}".format(self.free_dof.sum()))
 
@@ -335,6 +294,7 @@ class Drop_Runner(Runner):
         self.dqdt = Function(self.Q_sp) # the velocity of the deformation map
         self.kappa = Function(self.Q_P1_sp) # the mean curvature vector
         self.k_m = Function(self.Q_P1_sp)
+        self.tnn = Function(self.T_sp) # the normal stress
         self.m3 = Function(self.M3_sp)
         self.id_m = Function(self.s_mesh.coord_fe) # the mesh mapping of the reference sheet
         self.m1_hat = Function(self.M3_sp)
@@ -349,8 +309,7 @@ class Drop_Runner(Runner):
         self.cl_dof_fd = np.where(arrange_as_FD(self.Q_sp, _temp)[:,0])[0] # shape (1, )
 
         # initialize the arrays for storing the energy history
-        self.energy = np.zeros((self.num_steps+1, 5))
-        # ^ the columns are stretching energy, bending energy, surface energy for Sigma_1, 2, 3. 
+        self.energy = np.zeros((self.num_steps+1, 5)) # the columns are stretching energy, bending energy, surface energy for Sigma_1, 2, 3. 
         self.phycl_hist = np.zeros((self.num_steps+1, 2)) # history of physical CL
         self.refcl_hist = np.zeros((self.num_steps+1, 2)) # history of reference CL
 
@@ -412,7 +371,7 @@ class Drop_Runner(Runner):
             # self.ax.triplot(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], triangles=self.bulk_triangles, linewidth=0.5)
             # plot the velocity
             _u = self.u.view(np.ndarray); _n = self.mesh.coord_map.size; 
-            self.ax.quiver(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], _u[:_n:2], _u[1:_n:2], color="tab:blue") #, _mag, cmap=pyplot.get_cmap("Spectral"))
+            self.ax.quiver(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], _u[:_n:2], _u[1:_n:2], color="tab:blue", scale=5.0, scale_units='x')
             # plot the interface
             _r_m = self.r_m.view(np.ndarray)
             segments = _r_m[self.i_mesh.coord_fe.elem_dof].reshape(2, 2, -1).transpose(2, 0, 1)
@@ -485,8 +444,9 @@ class Drop_Runner(Runner):
         omega_basis = FunctionBasis(self.OMG_sp, ds)
         # sheet domain
         u_da_basis = FunctionBasis(self.U_sp, da_4u)
-        p1_da_basis = FunctionBasis(self.P1_sp, da_4u)
-        p0_da_basis = FunctionBasis(self.P0_sp, da_4u)
+        tnn_basis = FunctionBasis(self.T_sp, da)
+        # p1_da_basis = FunctionBasis(self.P1_sp, da_4u)
+        # p0_da_basis = FunctionBasis(self.P0_sp, da_4u)
         q_da_basis = FunctionBasis(self.Q_sp, da)
         q_P1_da_basis = FunctionBasis(self.Q_P1_sp, da)
         q_ref_basis = FunctionBasis(self.Q_sp, d_xi)
@@ -496,21 +456,13 @@ class Drop_Runner(Runner):
         m3_basis = FunctionBasis(self.M3_sp, dp)
         
         # assemble by blocks
-        alpha_stab = 10.0 # the stablization constant in Nitsche method
         # for the Stokes equation
         A_VU = a_vu.assemble(u_basis, u_basis, None, None, eta=self.viscosity)
         A_VP1 = a_vp.assemble(u_basis, p1_basis)
         A_VP0 = a_vp.assemble(u_basis, p0_basis)
-        # for the Nitsche method
-        A_VU_NIT = a_vu_nitsche.assemble(u_da_basis, u_da_basis, None, None, \
-                    eta = self.viscosity_bound, mu = self.slip_fric, alpha = alpha_stab, x2 = da.x)
-        A_VP1_NIT = a_vp_nitsche.assemble(u_da_basis, p1_da_basis, x2=da.x)
-        A_VP0_NIT = a_vp_nitsche.assemble(u_da_basis, p0_da_basis, x2=da.x)
-        A_VQ_NIT_N = a_vq_nitsche_n.assemble(u_da_basis, q_da_basis, None, None, eta=self.viscosity_bound)
-        A_VQ_NIT_T = a_vq_nitsche_t.assemble(u_da_basis, q_da_basis, None, None, mu=self.slip_fric)
-        A_VQ_NIT_S = a_vq_nitsche_s.assemble(u_da_basis, q_da_basis, None, None, alpha=alpha_stab)
-        A_RHO1Q_NIT = a_rhoq_nitsche.assemble(p1_da_basis, q_da_basis)
-        A_RHO0Q_NIT = a_rhoq_nitsche.assemble(p0_da_basis, q_da_basis)
+        A_VU_S = a_slip.assemble(u_da_basis, u_da_basis, None, None, mu=self.slip_fric, x2=da.x)
+        A_VQ = a_slip.assemble(u_da_basis, q_da_basis, None, None, mu=self.slip_fric, x2=da.x)
+        A_VT = a_vt.assemble(u_da_basis, tnn_basis, None, None, x2=da.x)
         # for the fluid interface
         A_VOMG = a_vomg.assemble(u_ds_basis, omega_basis)
         A_PIR = a_pir.assemble(r_basis, r_basis)
@@ -520,11 +472,11 @@ class Drop_Runner(Runner):
         A_ETAQ = a_pir.assemble(q_P1_da_basis, q_da_basis)
         A_ETAK = a_L2.assemble(q_P1_da_basis, q_P1_da_basis)
         # for the mechanics of the sheet
+        A_XIT = a_vt.assemble(q_da_basis, tnn_basis, None, None, x2=da.x)
+        A_XIQ_S = a_slip.assemble(q_da_basis, q_da_basis, None, None, mu=self.slip_fric, x2=da.x)
         A_XIK = a_xikappa.assemble(q_da_basis, q_P1_da_basis)
         A_XIQ = a_xiq.assemble(q_ref_basis, q_ref_basis, None, None, q_m=self.q_m._interpolate(d_xi))
         A_XIQ_2 = a_xiq_2.assemble(q_ref_basis, q_ref_basis, None, None, q_m=self.q_m._interpolate(d_xi))
-        A_XIQ_T = a_vq_nitsche_t.assemble(q_da_basis, q_da_basis, None, None, mu=self.slip_fric)
-        A_XIQ_S = a_vq_nitsche_s.assemble(q_da_basis, q_da_basis, None, None, alpha=alpha_stab)
         L_XI = l_xi.assemble(q_da_basis, None, gamma=self.surf_tens)
         A_XIM3 = a_pim3.assemble(q_cl_basis, m3_basis)
         # for the contact line condition
@@ -533,16 +485,17 @@ class Drop_Runner(Runner):
 
         # collect the block matrices
         dt = solp.dt
-        #    u,             p1,               p0,               r,          omega,                q,                                 kappa,     m3
+        #    u,             p1,     p0,       r,      omega,                q,       kappa,   tnn,    m3
         A = bmat((
-            (A_VU+A_VU_NIT, -A_VP1+A_VP1_NIT, -A_VP0+A_VP0_NIT, None,       -phyp.gamma_3*A_VOMG, -A_VQ_NIT_N-A_VQ_NIT_T-A_VQ_NIT_S, None,      None),                   # v
-            (A_VP1.T-A_VP1_NIT.T,  None,      None,             None,       None,                 A_RHO1Q_NIT,                       None,      None),                   # rho_1
-            (A_VP0.T-A_VP0_NIT.T,  None,      None,             None,       None,                 A_RHO0Q_NIT,                       None,      None),                   # rho_0
-            (None,          None,             None,             A_PIR,      A_PIOMG,              None,                              None,      -A_PIM3),                # pi
-            (-dt*A_VOMG.T,  None,             None,             A_PIOMG.T,  None,                 None,                              None,      None),                   # delta
-            (-A_VQ_NIT_N.T-A_VQ_NIT_T.T-A_VQ_NIT_S.T, A_RHO1Q_NIT.T, A_RHO0Q_NIT.T, None, None,   -phyp.Cs*dt*(A_XIQ+A_XIQ_2)-A_XIQ_T-A_XIQ_S, phyp.Cb*A_XIK, -phyp.gamma_3*A_XIM3), # xi
-            (None,          None,             None,             None,       None,                 dt*A_ETAQ,                         A_ETAK,    None),                   # eta
-            (None,          None,             None,             phyp.mu_cl/dt*A_PIM3.T, None,     -phyp.mu_cl*A_XIM3.T,              None,      phyp.gamma_3*A_M3M3),    # m3
+            (A_VU+A_VU_S,   -A_VP1, -A_VP0,   None,   -phyp.gamma_3*A_VOMG, -A_VQ,   None,    -A_VT,  None),     # v
+            (A_VP1.T,       None,   None,     None,   None,                 None,    None,    None,   None),     # rho_1
+            (A_VP0.T,       None,   None,     None,   None,                 None,    None,    None,   None),     # rho_0
+            (None,          None,   None,     A_PIR,  A_PIOMG,              None,    None,    None,   -A_PIM3),  # pi
+            (-dt*A_VOMG.T,  None,   None,     A_PIOMG.T,  None,             None,    None,    None,   None),     # delta
+            (-A_VQ.T,       None,   None,     None,   None,   phyp.Cs*dt*(A_XIQ+A_XIQ_2)+A_XIQ_S, -phyp.Cb*A_XIK, A_XIT, phyp.gamma_3*A_XIM3), # xi
+            (None,          None,   None,     None,   None,                 dt*A_ETAQ, A_ETAK, None,  None),     # eta
+            (-A_VT.T,       None,   None,     None,   None,                 A_XIT.T, None,    None,   None),     # chi
+            (None,          None,   None,     phyp.mu_cl/dt*A_PIM3.T, None, -phyp.mu_cl*A_XIM3.T, None, None, phyp.gamma_3*A_M3M3),    # m3
         ), format="csc")
         # collect the right-hand side
         self.u[:] = 0.0
@@ -550,17 +503,18 @@ class Drop_Runner(Runner):
         self.p0[:] = 0.0
         self.r[:] = 0.0
         self.omega[:] = A_PIOMG.T @ self.r_m
-        self.q[:] = L_XI + phyp.Cs * A_XIQ @ self.q_m
+        self.q[:] = -L_XI - phyp.Cs * A_XIQ @ self.q_m
         self.kappa[:] = -A_ETAQ @ self.q_m
+        self.tnn[:] = 0.0
         self.m3[:] = (phyp.gamma_2 - phyp.gamma_1) * L_M3 + phyp.mu_cl/dt*A_PIM3.T @ self.r_m
-        L = group_fn(self.u, self.p1, self.p0, self.r, self.omega, self.q, self.kappa, self.m3)
+        L = group_fn(self.u, self.p1, self.p0, self.r, self.omega, self.q, self.kappa, self.tnn, self.m3)
         # set up the boundary conditions and homogeneize the right-hand side; do nothing since the boundary conditions are homogeneneous
         sol_full = np.zeros_like(L)
         # solve the coupled system
         free_dof = self.free_dof
         sol_free = spsolve(A[free_dof][:,free_dof], L[free_dof])
         sol_full[free_dof] = sol_free
-        split_fn(sol_full, self.u, self.p1, self.p0, self.r, self.omega, self.q, self.kappa, self.m3)
+        split_fn(sol_full, self.u, self.p1, self.p0, self.r, self.omega, self.q, self.kappa, self.tnn, self.m3)
 
         # q is the deformation velocity, and update to get the deformation map
         np.copyto(self.dqdt, self.q)
@@ -599,8 +553,6 @@ class Drop_Runner(Runner):
         q_adv = _advect(q_fd)
         q_adv[j] = self.r.view(np.ndarray)[self.cl_dof_R] 
         self.q[:] = arrange_as_FE(self.Q_sp, q_adv)
-        q_adv = _advect(arrange_as_FD(self.Q_sp, self.q_m))
-        self.q_m[:] = arrange_as_FE(self.Q_sp, q_adv)
         
         # now overwrite the mesh mapping
         self.s_mesh.coord_map += down_to_P1(self.Q_P1_sp, arrange_as_FE(self.Q_sp, np.concatenate((d_xi, np.zeros_like(d_xi)), axis=1)))
