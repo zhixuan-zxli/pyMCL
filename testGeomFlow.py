@@ -105,9 +105,9 @@ def b11(phi, k, z, _) -> np.ndarray:
     # k.grad: (2, 2, Ne, Nq)
     tau = np.array((-z.cn[1], z.cn[0])) # (2, Ne, Nq)
     r1 = np.sum(k.grad * phi.grad, axis=(0,1)) # (Ne, Nq)
-    r3 = np.sum(np.sum(k.grad * tau[:,np.newaxis], axis=0) * np.sum(phi.grad * tau[:,np.newaxis], axis=0), axis=0) # (Ne, Nq)
-    r2 = 0.5 * ((k.grad[0,0] + k.grad[1,1]) * (phi.grad[0,0] + phi.grad[1,1])) # (Ne, Nq)
-    return (r1 -2*r3 + r2)[np.newaxis] * z.dx
+    # r3 = np.sum(np.sum(k.grad * tau[:,np.newaxis], axis=0) * np.sum(phi.grad * tau[:,np.newaxis], axis=0), axis=0) # (Ne, Nq)
+    r2 = (k.grad[0,0] + k.grad[1,1]) * (phi.grad[0,0] + phi.grad[1,1]) # (Ne, Nq)
+    return (r1 - 1.5*r2)[np.newaxis] * z.dx
 
 def testWillmoreFlow(solp: SolverParameters) -> None:
     mesh = Mesh()

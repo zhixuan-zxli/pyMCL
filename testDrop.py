@@ -21,7 +21,7 @@ class PhysicalParameters:
     gamma_2: float = 0. + 5.0 * cos(np.pi/2) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
     Cb: float = 1e-2
     Cs: float = 1e2
-    pre: float = 0.1 # the initial Jacobian is 1 + pre
+    pre: float = 0.2 # the initial Jacobian is 1 + pre
 
 # ===========================================================
 # functionals for calculating the energy
@@ -52,11 +52,11 @@ def a_L2(w: QuadData, q: QuadData, x: QuadData, _) -> np.ndarray:
 
 @BilinearForm
 def a_xikappa(xi: QuadData, kappa: QuadData, x: QuadData, _) -> np.ndarray:
-    tau = np.array((-x.cn[1], x.cn[0])) # (2, Ne, Nq)
+    # tau = np.array((-x.cn[1], x.cn[0])) # (2, Ne, Nq)
     r1 = np.sum(xi.grad * kappa.grad, axis=(0,1)) # (Ne, Nq)
-    r2 = np.sum(np.sum(xi.grad * tau[:,np.newaxis], axis=0) * np.sum(kappa.grad * tau[:,np.newaxis], axis=0), axis=0) # (Ne, Nq)
+    # r2 = np.sum(np.sum(xi.grad * tau[:,np.newaxis], axis=0) * np.sum(kappa.grad * tau[:,np.newaxis], axis=0), axis=0) # (Ne, Nq)
     r3 = (xi.grad[0,0] + xi.grad[1,1]) * (kappa.grad[0,0] + kappa.grad[1,1])
-    return (r1 - 2*r2 + r3/2)[np.newaxis] * x.dx
+    return (r1 - 1.5*r3)[np.newaxis] * x.dx
 
 @LinearForm
 def l_xi(xi: QuadData, x: QuadData, gamma: np.ndarray) -> np.ndarray:
@@ -270,11 +270,14 @@ class Drop_Runner(Runner):
         r_sym_dof = np.where(self.R_sp.dof_loc[:,0] < 1e-12)[0] # should be (2, )
         q_clamp_dof = np.where(self.Q_sp.dof_loc[:,0] > 1-1e-12)[0]
         q_sym_dof = np.where(self.Q_sp.dof_loc[:,0] < 1e-12)[0]
-        q_all_dof = np.arange(self.Q_sp.num_dof)
-        q_fix_dof = np.unique(np.concatenate((q_clamp_dof, q_sym_dof[0:1], q_all_dof[1::2])))
+        # q_all_dof = np.arange(self.Q_sp.num_dof)
+        q_fix_dof = np.unique(np.concatenate((q_clamp_dof, q_sym_dof[0:1])))
+        q_P1_clamp_dof = np.where(self.Q_P1_sp.dof_loc[:,0] > 1-1e-12)[0]
+        q_P1_sym_dof = np.where(self.Q_P1_sp.dof_loc[:,0] < 1e-12)[0]
+        q_P1_fix_dof = np.unique(np.concatenate((q_P1_clamp_dof, q_P1_sym_dof[0:1])))
         self.free_dof = group_dof(
-            (self.U_sp, self.P1_sp, self.P0_sp, self.R_sp, self.OMG_sp, self.Q_sp, self.Q_sp, self.T_sp, self.M3_sp), 
-            (u_fix_dof, None, p_fix_dof, r_sym_dof[0], None, q_fix_dof, q_all_dof, None, None) 
+            (self.U_sp, self.P1_sp, self.P0_sp, self.R_sp, self.OMG_sp, self.Q_sp, self.Q_P1_sp, self.T_sp, self.M3_sp), 
+            (u_fix_dof, None, p_fix_dof, r_sym_dof[0], None, q_fix_dof, q_P1_fix_dof, None, None) 
         )
         print("Number of free dofs = {}".format(self.free_dof.sum()))
 
@@ -288,8 +291,8 @@ class Drop_Runner(Runner):
         self.q = None # the deformation map
         self.q_m = Function(self.Q_sp) # the deformation map
         self.dqdt = Function(self.Q_sp) # the velocity of the deformation map
-        self.kappa = Function(self.Q_sp) # the mean curvature vector
-        self.k_m = Function(self.Q_sp)
+        self.kappa = Function(self.Q_P1_sp) # the mean curvature vector
+        self.k_m = Function(self.Q_P1_sp)
         self.tnn = Function(self.T_sp) # the normal stress
         self.m3 = Function(self.M3_sp)
         self.id_m = Function(self.s_mesh.coord_fe) # the mesh mapping of the reference sheet
@@ -377,8 +380,8 @@ class Drop_Runner(Runner):
             segments = _q_m_down[self.s_mesh.coord_fe.elem_dof].reshape(2, 2, -1).transpose(2, 0, 1)
             self.ax.add_collection(LineCollection(segments=segments, colors="tab:orange"))
             self.ax.plot(self.q_m[::2], self.q_m[1::2], "k+")
-            self.ax.plot(self.q_m[::2], self.dqdt[::2], 'ro')
-            # self.ax.plot(self.q_m[::2], self.dqdt[1::2], 'bo')
+            self.ax.plot(self.q_m[::2], self.dqdt[::2], 'ro', mfc='none')
+            self.ax.plot(self.q_m[::2], self.dqdt[1::2], 'bo', mfc='none')
             # plot the cornormals
             self.ax.quiver(phycl[0], phycl[1], self.m1_hat[0], self.m1_hat[1], color="tab:brown") # m1
             self.ax.quiver(phycl[0], phycl[1], self.m3[0], self.m3[1], color="tab:brown") # m3
@@ -442,6 +445,7 @@ class Drop_Runner(Runner):
         u_da_basis = FunctionBasis(self.U_sp, da_4u)
         tnn_basis = FunctionBasis(self.T_sp, da)
         q_da_basis = FunctionBasis(self.Q_sp, da)
+        q_P1_da_basis = FunctionBasis(self.Q_P1_sp, da)
         q_ref_basis = FunctionBasis(self.Q_sp, d_xi)
         # CL from sheet
         r_cl_basis = FunctionBasis(self.R_sp, dp_i)
@@ -462,12 +466,12 @@ class Drop_Runner(Runner):
         A_PIOMG = a_piomg.assemble(r_basis, omega_basis)
         A_PIM3 = a_pim3.assemble(r_cl_basis, m3_basis)
         # for the compatibility of the sheet
-        A_ETAQ = a_pir.assemble(q_da_basis, q_da_basis)
-        A_ETAK = a_L2.assemble(q_da_basis, q_da_basis)
+        A_ETAQ = a_pir.assemble(q_P1_da_basis, q_da_basis)
+        A_ETAK = a_L2.assemble(q_P1_da_basis, q_P1_da_basis)
         # for the mechanics of the sheet
         A_XIT = a_vt.assemble(q_da_basis, tnn_basis, None, None, x2=da.x)
         A_XIQ_S = a_slip.assemble(q_da_basis, q_da_basis, None, None, mu=self.slip_fric, x2=da.x)
-        A_XIK = a_xikappa.assemble(q_da_basis, q_da_basis)
+        A_XIK = a_xikappa.assemble(q_da_basis, q_P1_da_basis)
         A_XIQ = a_xiq.assemble(q_ref_basis, q_ref_basis, None, None, q_m=self.q_m._interpolate(d_xi))
         A_XIQ_2 = a_xiq_2.assemble(q_ref_basis, q_ref_basis, None, None, q_m=self.q_m._interpolate(d_xi))
         L_XI = l_xi.assemble(q_da_basis, None, gamma=self.surf_tens)

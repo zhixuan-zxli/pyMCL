@@ -177,7 +177,7 @@ q                   1.17e-03  1.38    4.48e-04
 vol                 8.98e-04  1.62    2.93e-04  
 
 ## Flat sheet with Cs=1e2, pre=0.2, Lagrange multiplier, dt=1/256
-A very simular result with Cs=1e2, pre=0.1, gamma_3=5, mu_cl=1, P1+P0 pressure, P1 normal stress, P2 curvature, interpolation, dt=1/256.
+A very simular result with Cs=1e2, pre=0.1, gamma_3=5, mu_cl=1, P1+P0 pressure, P1 normal stress, P2 curvature, interpolation, dt=1/256. Absolute errors are halved. 
 base_step = 16
                     0         rate    1         
 r                   1.28e-03  1.99    3.24e-04  
