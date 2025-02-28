@@ -15,13 +15,13 @@ class PhysicalParameters:
     eta_2: float = 0.1
     mu_1: float = 1e1
     mu_2: float = 1e1
-    mu_cl: float = 1.
+    mu_cl: float = 1.0
     gamma_1: float = 0.
-    gamma_3: float = 10.0
-    gamma_2: float = 0. + 10.0 * cos(np.pi/2) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
+    gamma_3: float = 5.0
+    gamma_2: float = 0. + 5.0 * cos(np.pi/2) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
     Cb: float = 1e-2
     Cs: float = 1e2
-    pre: float = 0.2 # the initial Jacobian is 1 + pre
+    pre: float = 0.1 # the initial Jacobian is 1 + pre
 
 # ===========================================================
 # functionals for calculating the energy
@@ -272,13 +272,9 @@ class Drop_Runner(Runner):
         q_sym_dof = np.where(self.Q_sp.dof_loc[:,0] < 1e-12)[0]
         q_all_dof = np.arange(self.Q_sp.num_dof)
         q_fix_dof = np.unique(np.concatenate((q_clamp_dof, q_sym_dof[0:1], q_all_dof[1::2])))
-        q_P1_clamp_dof = np.where(self.Q_P1_sp.dof_loc[:,0] > 1-1e-12)[0]
-        q_P1_sym_dof = np.where(self.Q_P1_sp.dof_loc[:,0] < 1e-12)[0]
-        q_P1_fix_dof = np.unique(np.concatenate((q_P1_clamp_dof, q_P1_sym_dof[0:1])))
-        q_P1_all_dof = np.arange(self.Q_P1_sp.num_dof)
         self.free_dof = group_dof(
-            (self.U_sp, self.P1_sp, self.P0_sp, self.R_sp, self.OMG_sp, self.Q_sp, self.Q_P1_sp, self.T_sp, self.M3_sp), 
-            (u_fix_dof, None, p_fix_dof, r_sym_dof[0], None, q_fix_dof, q_P1_all_dof, None, None) 
+            (self.U_sp, self.P1_sp, self.P0_sp, self.R_sp, self.OMG_sp, self.Q_sp, self.Q_sp, self.T_sp, self.M3_sp), 
+            (u_fix_dof, None, p_fix_dof, r_sym_dof[0], None, q_fix_dof, q_all_dof, None, None) 
         )
         print("Number of free dofs = {}".format(self.free_dof.sum()))
 
@@ -292,8 +288,8 @@ class Drop_Runner(Runner):
         self.q = None # the deformation map
         self.q_m = Function(self.Q_sp) # the deformation map
         self.dqdt = Function(self.Q_sp) # the velocity of the deformation map
-        self.kappa = Function(self.Q_P1_sp) # the mean curvature vector
-        self.k_m = Function(self.Q_P1_sp)
+        self.kappa = Function(self.Q_sp) # the mean curvature vector
+        self.k_m = Function(self.Q_sp)
         self.tnn = Function(self.T_sp) # the normal stress
         self.m3 = Function(self.M3_sp)
         self.id_m = Function(self.s_mesh.coord_fe) # the mesh mapping of the reference sheet
@@ -382,7 +378,7 @@ class Drop_Runner(Runner):
             self.ax.add_collection(LineCollection(segments=segments, colors="tab:orange"))
             self.ax.plot(self.q_m[::2], self.q_m[1::2], "k+")
             self.ax.plot(self.q_m[::2], self.dqdt[::2], 'ro')
-            self.ax.plot(self.q_m[::2], self.dqdt[1::2], 'bo')
+            # self.ax.plot(self.q_m[::2], self.dqdt[1::2], 'bo')
             # plot the cornormals
             self.ax.quiver(phycl[0], phycl[1], self.m1_hat[0], self.m1_hat[1], color="tab:brown") # m1
             self.ax.quiver(phycl[0], phycl[1], self.m3[0], self.m3[1], color="tab:brown") # m3
@@ -445,10 +441,7 @@ class Drop_Runner(Runner):
         # sheet domain
         u_da_basis = FunctionBasis(self.U_sp, da_4u)
         tnn_basis = FunctionBasis(self.T_sp, da)
-        # p1_da_basis = FunctionBasis(self.P1_sp, da_4u)
-        # p0_da_basis = FunctionBasis(self.P0_sp, da_4u)
         q_da_basis = FunctionBasis(self.Q_sp, da)
-        q_P1_da_basis = FunctionBasis(self.Q_P1_sp, da)
         q_ref_basis = FunctionBasis(self.Q_sp, d_xi)
         # CL from sheet
         r_cl_basis = FunctionBasis(self.R_sp, dp_i)
@@ -469,12 +462,12 @@ class Drop_Runner(Runner):
         A_PIOMG = a_piomg.assemble(r_basis, omega_basis)
         A_PIM3 = a_pim3.assemble(r_cl_basis, m3_basis)
         # for the compatibility of the sheet
-        A_ETAQ = a_pir.assemble(q_P1_da_basis, q_da_basis)
-        A_ETAK = a_L2.assemble(q_P1_da_basis, q_P1_da_basis)
+        A_ETAQ = a_pir.assemble(q_da_basis, q_da_basis)
+        A_ETAK = a_L2.assemble(q_da_basis, q_da_basis)
         # for the mechanics of the sheet
         A_XIT = a_vt.assemble(q_da_basis, tnn_basis, None, None, x2=da.x)
         A_XIQ_S = a_slip.assemble(q_da_basis, q_da_basis, None, None, mu=self.slip_fric, x2=da.x)
-        A_XIK = a_xikappa.assemble(q_da_basis, q_P1_da_basis)
+        A_XIK = a_xikappa.assemble(q_da_basis, q_da_basis)
         A_XIQ = a_xiq.assemble(q_ref_basis, q_ref_basis, None, None, q_m=self.q_m._interpolate(d_xi))
         A_XIQ_2 = a_xiq_2.assemble(q_ref_basis, q_ref_basis, None, None, q_m=self.q_m._interpolate(d_xi))
         L_XI = l_xi.assemble(q_da_basis, None, gamma=self.surf_tens)
@@ -530,10 +523,10 @@ class Drop_Runner(Runner):
         slip_cl = self.r.view(np.ndarray)[self.cl_dof_R] - self.q.view(np.ndarray)[self.cl_dof_Q] # type: np.ndarray # (2,)
         j = self.cl_dof_fd[0]
         # find the reference CL velocity using an upwind derivative
-        dq_plus = (q_fd[j] - q_fd[j-1]) * (1/(xi_fd[j]-xi_fd[j-1]) + 1/(xi_fd[j+1]-xi_fd[j-1])) + \
-            (q_fd[j+1] - q_fd[j]) * (1/(xi_fd[j+1]-xi_fd[j-1]) - 1/(xi_fd[j+1]-xi_fd[j]))
-        dq_minus = (q_fd[j] - q_fd[j-1]) * (1/(xi_fd[j+1]-xi_fd[j-1]) - 1/(xi_fd[j]-xi_fd[j-1])) + \
-            (q_fd[j+1] - q_fd[j]) * (1/(xi_fd[j+1]-xi_fd[j]) + 1/(xi_fd[j+1]-xi_fd[j-1]))
+        h_r = xi_fd[j+1] - xi_fd[j]
+        dq_plus = (q_fd[j+1] - q_fd[j]) / h_r * (3/2) - (q_fd[j+2] - q_fd[j+1]) / h_r * (1/2)
+        h_l = xi_fd[j] - xi_fd[j-1]
+        dq_minus = -(q_fd[j-1] - q_fd[j-2]) / h_l * (1/2) + (q_fd[j] - q_fd[j-1]) / h_l * (3/2)
         if slip_cl[0] > 0:
             d_chi = np.dot(slip_cl, dq_plus) / np.sum(dq_plus**2)
         else:
@@ -544,13 +537,23 @@ class Drop_Runner(Runner):
             xi_fd <= ref_cl[0], xi_fd / ref_cl[0] * d_chi, (xi_fd[-1]-xi_fd) / (xi_fd[-1]-ref_cl[0]) * d_chi
         ) # (n, )
 
-        # advect the deformation map using a Lax-Wendroff scheme
-        def _advect(q_fd: np.ndarray) -> np.ndarray:
+        def _reinterpolate(q_fd: np.ndarray) -> np.ndarray:
             q_adv = q_fd.copy()
-            q_adv[1:-1] += d_xi[1:-1] * ((q_fd[1:-1]-q_fd[:-2])*(1/(xi_fd[1:-1]-xi_fd[:-2])-1/(xi_fd[2:]-xi_fd[:-2])) + (q_fd[2:]-q_fd[1:-1])*(1/(xi_fd[2:]-xi_fd[1:-1])-1/(xi_fd[2:]-xi_fd[:-2])))
-            q_adv[1:-1] += d_xi[1:-1]**2 * ((q_fd[2:]-q_fd[1:-1])/(xi_fd[2:]-xi_fd[1:-1]) - (q_fd[1:-1]-q_fd[:-2])/(xi_fd[1:-1]-xi_fd[:-2])) / (xi_fd[2:]-xi_fd[:-2])
+            # interpolate the middle nodes
+            h = (xi_fd[2::2] - xi_fd[:-2:2])/2
+            x = d_xi[1:-1:2]
+            q_adv[1:-1:2] = (q_fd[:-2:2] * (x*(x-h)/2) - q_fd[1:-1:2] * ((x+h)*(x-h)) + q_fd[2::2] * ((x+h)*x/2)) / h**2
+            # interpolate to the right
+            hr = h[1:]
+            x = d_xi[2:-2:2]-hr
+            q_r = (q_fd[2:-2:2] * (x*(x-hr)/2) - q_fd[3:-1:2] * ((x+hr)*(x-hr)) + q_fd[4::2] * ((x+hr)*x/2)) / hr**2
+            # interpolate to the left
+            hl = h[:-1]
+            x = d_xi[2:-2:2]+hl
+            q_l = (q_fd[:-4:2] * (x*(x-hl)/2) - q_fd[1:-3:2] * ((x+hl)*(x-hl)) + q_fd[2:-2:2] * ((x+hl)*x/2)) / hl**2
+            q_adv[2:-2:2] = np.where(d_xi[2:-2:2] > 0, q_r, q_l)
             return q_adv
-        q_adv = _advect(q_fd)
+        q_adv = _reinterpolate(q_fd)
         q_adv[j] = self.r.view(np.ndarray)[self.cl_dof_R] 
         self.q[:] = arrange_as_FE(self.Q_sp, q_adv)
         

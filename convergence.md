@@ -177,7 +177,7 @@ q                   1.17e-03  1.38    4.48e-04
 vol                 8.98e-04  1.62    2.93e-04  
 
 ## Flat sheet with Cs=1e2, pre=0.2, Lagrange multiplier, dt=1/256
-
+A very simular result with Cs=1e2, pre=0.1, gamma_3=5, mu_cl=1, P1+P0 pressure, P1 normal stress, P2 curvature, interpolation, dt=1/256.
 base_step = 16
                     0         rate    1         
 r                   1.28e-03  1.99    3.24e-04  
@@ -207,3 +207,246 @@ base_step = 256
 r                   2.12e-03  1.84    5.90e-04  
 q                   2.12e-03  1.84    5.90e-04  
 vol                 1.53e-03  2.04    3.73e-04  
+
+## Flat sheet with Cs=1e2, pre=0.1, gamma_3=5, mu_cl=1, P1 pressure, Lagrange multiplier, dt=1/256
+base_step = 16
+                    0         rate    1         
+r                   3.76e-03  0.77    2.20e-03  
+q                   6.01e-04  1.44    2.21e-04  
+vol                 2.29e-03  1.09    1.08e-03  
+
+base_step = 32
+                    0         rate    1         
+r                   5.36e-03  0.87    2.93e-03  
+q                   1.86e-03  1.26    7.77e-04  
+vol                 4.06e-03  1.04    1.98e-03  
+
+base_step = 64
+                    0         rate    1         
+r                   9.92e-03  1.05    4.80e-03  
+q                   5.37e-03  1.12    2.47e-03  
+vol                 7.52e-03  1.02    3.72e-03  
+
+base_step = 128
+                    0         rate    1         
+r                   1.93e-02  1.03    9.47e-03  
+q                   1.32e-02  1.08    6.23e-03  
+vol                 1.44e-02  1.01    7.15e-03  
+
+base_step = 256
+                    0         rate    1         
+r                   3.68e-02  1.05    1.77e-02  
+q                   3.09e-02  1.10    1.44e-02  
+vol                 2.79e-02  1.00    1.40e-02  
+
+## Cs=1e3, Cb=1e-2, pre=0.2, Lagrange multiplier, dt=1/256
+base_step = 16
+                    0         rate    1         
+r                   4.20e-04  1.73    1.27e-04  
+q                   2.69e-04  2.23    5.73e-05  
+vol                 3.11e-04  2.15    7.01e-05  
+
+base_step = 32
+                    0         rate    1         
+r                   3.95e-04  2.18    8.71e-05  
+q                   3.25e-04  2.17    7.20e-05  
+vol                 3.43e-04  2.16    7.66e-05  
+
+base_step = 64
+                    0         rate    1         
+r                   4.87e-04  1.67    1.53e-04  
+q                   4.88e-04  1.67    1.53e-04  
+vol                 3.87e-04  2.18    8.57e-05  
+
+base_step = 128
+                    0         rate    1         
+r                   8.42e-04  1.46    3.07e-04  
+q                   8.43e-04  1.46    3.07e-04  
+vol                 4.93e-04  2.16    1.10e-04  
+
+base_step = 256
+                    0         rate    1         
+r                   1.29e-03  1.46    4.68e-04  
+q                   1.29e-03  1.46    4.68e-04  
+vol                 7.18e-04  2.12    1.65e-04  
+
+
+## Cs=1e2, Cb=1e-4, pre=0.1, mu_cl=0.1, gamma_3=5, Lagrange multiplier, dt=1/1024, Te=0.5
+base_step = 16
+                    0         rate    1         
+r                   9.20e-04  1.58    3.08e-04  
+q                   8.65e-04  1.27    3.59e-04  
+vol                 4.67e-05  2.47    8.44e-06  
+
+base_step = 32
+                    0         rate    1         
+r                   8.15e-04  1.68    2.54e-04  
+q                   6.52e-04  1.34    2.57e-04  
+vol                 5.84e-05  2.35    1.15e-05  
+
+base_step = 64
+                    0         rate    1         
+r                   7.66e-04  1.71    2.34e-04  
+q                   6.52e-04  1.40    2.48e-04  
+vol                 7.19e-05  2.33    1.44e-05  
+
+base_step = 128
+                    0         rate    1         
+r                   7.14e-04  1.52    2.49e-04  
+q                   5.41e-04  0.91    2.87e-04  
+vol                 8.69e-05  2.37    1.68e-05  
+
+base_step = 256
+                    0         rate    1         
+r                   6.51e-04  0.31    5.25e-04  
+q                   6.99e-04  0.31    5.63e-04  
+vol                 1.26e-04  2.34    2.49e-05  
+
+base_step = 512
+                    0         rate    1         
+r                   1.02e-03  0.07    9.73e-04  
+q                   1.07e-03  0.07    1.02e-03  
+vol                 2.32e-04  2.22    4.97e-05  
+
+base_step = 512
+                    0         rate    1         
+r                   1.02e-03  0.07    9.73e-04  
+q                   1.07e-03  0.07    1.02e-03  
+vol                 2.32e-04  2.22    4.97e-05  
+
+## Cs=1e2, Cb=1e-3, pre=0.1, mu_cl=5, gamma_3=5, Lagrange multiplier, polygonal sheet, dt=1/1024, Te=0.5
+base_step = 16
+                    0         rate    1         
+r                   8.76e-04  1.53    3.04e-04  
+q                   6.18e-04  1.08    2.91e-04  
+vol                 5.02e-05  2.43    9.31e-06  
+
+base_step = 32
+                    0         rate    1         
+r                   7.23e-04  1.71    2.20e-04  
+q                   5.57e-04  1.06    2.66e-04  
+vol                 6.68e-05  2.26    1.40e-05  
+
+base_step = 64
+                    0         rate    1         
+r                   5.60e-04  1.67    1.76e-04  
+q                   6.73e-04  1.20    2.93e-04  
+vol                 8.85e-05  2.18    1.95e-05  
+
+base_step = 128
+                    0         rate    1         
+r                   4.84e-04  1.65    1.54e-04  
+q                   6.21e-04  1.17    2.77e-04  
+vol                 1.16e-04  2.17    2.57e-05  
+
+base_step = 256
+                    0         rate    1         
+r                   3.73e-04  1.16    1.67e-04  
+q                   6.16e-04  1.09    2.90e-04  
+vol                 1.63e-04  2.18    3.60e-05  
+
+base_step = 512
+                    0         rate    1         
+r                   7.53e-04  0.86    4.14e-04  
+q                   9.22e-04  0.91    4.92e-04  
+vol                 2.67e-04  2.16    5.96e-05  
+
+## Cs=1e2, Cb=1e-3, pre=0.1, mu_cl=1, gamma_3=5, P0 Lagrange multiplier, dt=1/256, Te=1
+base_step = 8
+                    0         rate    1         
+r                   1.83e-03  1.81    5.23e-04  
+q                   1.98e-03  1.87    5.43e-04  
+vol                 1.67e-04  2.49    2.97e-05  
+
+base_step = 16
+                    0         rate    1         
+r                   2.01e-03  1.84    5.61e-04  
+q                   2.05e-03  1.88    5.59e-04  
+vol                 1.94e-04  2.45    3.54e-05  
+
+base_step = 32
+                    0         rate    1         
+r                   1.38e-03  1.75    4.12e-04  
+q                   1.47e-03  1.52    5.13e-04  
+vol                 1.96e-04  2.54    3.37e-05  
+
+base_step = 64
+                    0         rate    1         
+r                   1.44e-03  1.22    6.16e-04  
+q                   1.60e-03  1.21    6.88e-04  
+vol                 1.80e-04  2.74    2.69e-05  
+
+base_step = 128
+                    0         rate    1         
+r                   1.77e-03  0.82    1.00e-03  
+q                   1.91e-03  0.83    1.07e-03  
+vol                 1.65e-04  2.99    2.07e-05  
+
+base_step = 256
+                    0         rate    1         
+r                   2.07e-03  0.58    1.38e-03  
+q                   2.22e-03  0.60    1.46e-03  
+vol                 1.58e-04  3.18    1.74e-05  
+
+## Same, (0,4), (1,4), (2,4)
+base_step = 16
+                    0         rate    1         
+r                   6.34e-04  1.99    1.60e-04  
+q                   4.59e-04  0.65    2.93e-04  
+vol                 4.72e-05  1.09    2.22e-05  
+
+base_step = 32
+                    0         rate    1         
+r                   8.43e-04  2.06    2.02e-04  
+q                   4.34e-04  0.49    3.09e-04  
+vol                 6.51e-05  1.15    2.94e-05  
+
+base_step = 64
+                    0         rate    1         
+r                   8.61e-04  1.51    3.03e-04  
+q                   5.15e-04  0.66    3.25e-04  
+vol                 8.43e-05  1.18    3.72e-05  
+
+base_step = 128
+                    0         rate    1         
+r                   1.29e-03  0.81    7.36e-04  
+q                   1.19e-03  0.56    8.02e-04  
+vol                 9.91e-05  1.19    4.35e-05  
+
+base_step = 256
+                    0         rate    1         
+r                   1.93e-03  0.61    1.26e-03  
+q                   1.85e-03  0.46    1.34e-03  
+vol                 1.05e-04  1.18    4.67e-05  
+
+## Same, (1,2), (1,3), (1,4)
+
+base_step = 16
+                    0         rate    1         
+r                   4.70e-04  0.45    3.44e-04  
+q                   3.39e-04  1.00    1.69e-04  
+vol                 4.11e-05  1.30    1.66e-05  
+
+base_step = 32
+                    0         rate    1         
+r                   3.12e-04  0.45    2.28e-04  
+q                   2.95e-04  1.01    1.47e-04  
+vol                 4.48e-05  1.29    1.83e-05  
+
+base_step = 64
+                    0         rate    1         
+r                   2.74e-04  0.84    1.53e-04  
+q                   2.80e-04  1.01    1.39e-04  
+vol                 4.54e-05  1.29    1.86e-05  
+
+base_step = 128
+                    0         rate    1         
+r                   1.80e-04  0.84    1.00e-04  
+q                   1.85e-04  1.04    9.01e-05  
+vol                 4.55e-05  1.29    1.86e-05  
+
+base_step = 256
+                    0         rate    1         
+r                   8.43e-05  0.48    6.04e-05  
+q                   8.64e-05  1.14    3.91e-05  
+vol                 4.55e-05  1.29    1.86e-05  
