@@ -50,18 +50,18 @@ def a_L2(w: QuadData, q: QuadData, x: QuadData, _) -> np.ndarray:
 # For a_etaq, use a_pir
 # For a_etak, use a_L2
 
-@BilinearForm
-def a_xikappa(xi: QuadData, kappa: QuadData, x: QuadData, _) -> np.ndarray:
-    # tau = np.array((-x.cn[1], x.cn[0])) # (2, Ne, Nq)
-    r1 = np.sum(xi.grad * kappa.grad, axis=(0,1)) # (Ne, Nq)
-    # r2 = np.sum(np.sum(xi.grad * tau[:,np.newaxis], axis=0) * np.sum(kappa.grad * tau[:,np.newaxis], axis=0), axis=0) # (Ne, Nq)
-    r3 = (xi.grad[0,0] + xi.grad[1,1]) * (kappa.grad[0,0] + kappa.grad[1,1])
-    return (r1 - 1.5*r3)[np.newaxis] * x.dx
+# For a_xikappa, use a_pir
 
 @LinearForm
 def l_xi(xi: QuadData, x: QuadData, gamma: np.ndarray) -> np.ndarray:
     # gamma: (Nf, )
     return (gamma[:,np.newaxis] * (xi.grad[0,0] + xi.grad[1,1]))[np.newaxis] * x.dx
+
+@LinearForm
+def l_wm_xi(xi: QuadData, x: QuadData, k_m: QuadData) -> np.ndarray:
+    # k_m: (2, Nf, Nq)
+    # xi.grad: (2, 2, Nf, Nq)
+    return (k_m[0]**2 + k_m[1]**2) * (xi.grad[0,0] + xi.grad[1,1])[np.newaxis] * x.dx
 
 # this is for the stretching energy 
 @BilinearForm
@@ -275,6 +275,7 @@ class Drop_Runner(Runner):
         q_P1_clamp_dof = np.where(self.Q_P1_sp.dof_loc[:,0] > 1-1e-12)[0]
         q_P1_sym_dof = np.where(self.Q_P1_sp.dof_loc[:,0] < 1e-12)[0]
         q_P1_fix_dof = np.unique(np.concatenate((q_P1_clamp_dof, q_P1_sym_dof[0:1])))
+        self.k_m_free_dof = group_dof((self.Q_P1_sp,), (q_P1_fix_dof,))
         self.free_dof = group_dof(
             (self.U_sp, self.P1_sp, self.P0_sp, self.R_sp, self.OMG_sp, self.Q_sp, self.Q_P1_sp, self.T_sp, self.M3_sp), 
             (u_fix_dof, None, p_fix_dof, r_sym_dof[0], None, q_fix_dof, q_P1_fix_dof, None, None) 
@@ -290,7 +291,7 @@ class Drop_Runner(Runner):
         self.omega = Function(self.OMG_sp)
         self.q = None # the deformation map
         self.q_m = Function(self.Q_sp) # the deformation map
-        self.dqdt = Function(self.Q_sp) # the velocity of the deformation map
+        self.dqdt = Function(self.Q_sp) # the velocity of the deformation map, for plotting only
         self.kappa = Function(self.Q_P1_sp) # the mean curvature vector
         self.k_m = Function(self.Q_P1_sp)
         self.tnn = Function(self.T_sp) # the normal stress
@@ -471,7 +472,7 @@ class Drop_Runner(Runner):
         # for the mechanics of the sheet
         A_XIT = a_vt.assemble(q_da_basis, tnn_basis, None, None, x2=da.x)
         A_XIQ_S = a_slip.assemble(q_da_basis, q_da_basis, None, None, mu=self.slip_fric, x2=da.x)
-        A_XIK = a_xikappa.assemble(q_da_basis, q_P1_da_basis)
+        A_XIK = a_pir.assemble(q_da_basis, q_P1_da_basis)
         A_XIQ = a_xiq.assemble(q_ref_basis, q_ref_basis, None, None, q_m=self.q_m._interpolate(d_xi))
         A_XIQ_2 = a_xiq_2.assemble(q_ref_basis, q_ref_basis, None, None, q_m=self.q_m._interpolate(d_xi))
         L_XI = l_xi.assemble(q_da_basis, None, gamma=self.surf_tens)
@@ -479,6 +480,13 @@ class Drop_Runner(Runner):
         # for the contact line condition
         A_M3M3 = a_m3m3.assemble(m3_basis, m3_basis, None, None, m1_hat=self.m1_hat._interpolate(dp))
         L_M3 = l_m3.assemble(m3_basis, None, m1_hat=self.m1_hat._interpolate(dp))
+
+        # solve for the sheet curvature explicitly
+        k_m_free_dof = self.k_m_free_dof
+        self.k_m[:] = 0.0
+        sol_free = spsolve(A_ETAK[k_m_free_dof][:,k_m_free_dof], -(A_ETAQ @ self.q_m)[k_m_free_dof])
+        self.k_m[k_m_free_dof] = sol_free
+        L_WM_XI = l_wm_xi.assemble(q_da_basis, None, k_m=self.k_m._interpolate(da))
 
         # collect the block matrices
         dt = solp.dt
@@ -500,8 +508,8 @@ class Drop_Runner(Runner):
         self.p0[:] = 0.0
         self.r[:] = 0.0
         self.omega[:] = A_PIOMG.T @ self.r_m
-        self.q[:] = -L_XI - phyp.Cs * A_XIQ @ self.q_m
-        self.kappa[:] = -A_ETAQ @ self.q_m
+        self.q[:] = -L_XI - phyp.Cs * (A_XIQ @ self.q_m) + 1.5 * phyp.Cb * L_WM_XI
+        self.kappa[:] = -(A_ETAQ @ self.q_m)
         self.tnn[:] = 0.0
         self.m3[:] = (phyp.gamma_2 - phyp.gamma_1) * L_M3 + phyp.mu_cl/dt*A_PIM3.T @ self.r_m
         L = group_fn(self.u, self.p1, self.p0, self.r, self.omega, self.q, self.kappa, self.tnn, self.m3)
