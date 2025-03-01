@@ -450,3 +450,100 @@ base_step = 256
 r                   8.43e-05  0.48    6.04e-05  
 q                   8.64e-05  1.14    3.91e-05  
 vol                 4.55e-05  1.29    1.86e-05  
+
+## Cs=1e2, Cb=1e-2, pre=0.2, gamma_3=5, mu_cl=1, P1 normal stress, P1 curvature, modified Willmore variation, dt=1/256
+
+base_step = 16
+                    0         rate    1         
+r                   1.08e-03  1.85    2.98e-04  
+q                   9.10e-04  1.97    2.32e-04  
+vol                 2.98e-04  2.21    6.43e-05  
+
+base_step = 32
+                    0         rate    1         
+r                   8.07e-04  1.95    2.09e-04  
+q                   8.62e-04  1.93    2.26e-04  
+vol                 3.30e-04  2.24    6.98e-05  
+
+base_step = 64
+                    0         rate    1         
+r                   1.02e-03  1.77    2.99e-04  
+q                   1.06e-03  1.77    3.11e-04  
+vol                 3.72e-04  2.28    7.66e-05  
+
+base_step = 128
+                    0         rate    1         
+r                   1.44e-03  1.59    4.78e-04  
+q                   1.48e-03  1.59    4.90e-04  
+vol                 4.71e-04  2.26    9.83e-05  
+
+base_step = 256
+                    0         rate    1         
+r                   2.00e-03  1.52    6.94e-04  
+q                   2.04e-03  1.53    7.06e-04  
+vol                 6.92e-04  2.20    1.50e-04  
+
+## Same, (1,2), (1,3), (1,4)
+
+base_step = 16
+                    0         rate    1         
+r                   3.33e-04  0.25    2.79e-04  
+q                   1.51e-04  1.02    7.46e-05  
+vol                 4.95e-05  1.24    2.10e-05  
+
+base_step = 32
+                    0         rate    1         
+r                   1.61e-04  0.03    1.57e-04  
+q                   1.40e-04  1.01    6.96e-05  
+vol                 5.31e-05  1.23    2.26e-05  
+
+base_step = 64
+                    0         rate    1         
+r                   1.37e-04  0.42    1.03e-04  
+q                   1.37e-04  1.00    6.85e-05  
+vol                 5.37e-05  1.24    2.28e-05  
+
+base_step = 128
+                    0         rate    1         
+r                   1.06e-04  0.58    7.08e-05  
+q                   1.06e-04  1.02    5.23e-05  
+vol                 5.37e-05  1.24    2.27e-05  
+
+base_step = 256
+                    0         rate    1         
+r                   7.60e-05  0.55    5.18e-05  
+q                   7.65e-05  1.12    3.53e-05  
+vol                 5.36e-05  1.25    2.25e-05  
+
+
+## Cs=1e2, Cb=1e-2, pre=0.1, gamma_3=5, mu_cl=1, P1 normal stress, P1 curvature, modified Willmore variation, dt=1/256
+
+base_step = 16
+                    0         rate    1         
+r                   1.83e-03  1.88    4.98e-04  
+q                   2.04e-03  1.93    5.37e-04  
+vol                 2.67e-04  2.33    5.29e-05  
+
+base_step = 32
+                    0         rate    1         
+r                   1.14e-03  1.92    3.02e-04  
+q                   1.36e-03  2.09    3.20e-04  
+vol                 2.96e-04  2.42    5.54e-05  
+
+base_step = 64
+                    0         rate    1         
+r                   1.23e-03  2.08    2.90e-04  
+q                   1.38e-03  2.06    3.30e-04  
+vol                 3.30e-04  2.50    5.82e-05  
+
+base_step = 128
+                    0         rate    1         
+r                   1.53e-03  1.89    4.14e-04  
+q                   1.67e-03  1.89    4.48e-04  
+vol                 4.24e-04  2.47    7.63e-05  
+
+base_step = 256
+                    0         rate    1         
+r                   1.98e-03  1.77    5.79e-04  
+q                   2.12e-03  1.79    6.15e-04  
+vol                 6.42e-04  2.35    1.26e-04  
