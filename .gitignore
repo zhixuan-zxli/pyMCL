@@ -1,8 +1,6 @@
 __pycache__/
-build/
 result/
 .vscode/
-*.so
 *.geo
 *.msh
 *.npz
