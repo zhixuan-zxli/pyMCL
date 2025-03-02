@@ -4,9 +4,9 @@ from fem import *
 from testDrop import arrange_as_FD
 
 mesh_name = "mesh/half_drop-sq.msh"
-cp_group = "result/drop-Y90-flat-s{}t{}/{:05d}.npz"
+cp_group = "result/drop-lm-Cs2-Cb-2-pre01-s{}t{}/{:05d}.npz"
 base_step = 256
-base_dt = 1.0/1024
+base_dt = 1.0/256
 ref_level = ((0,0), (1,2), (2,4), (3,6)) # (spatial, time) for each pair
 num_hier = len(ref_level)
 

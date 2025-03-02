@@ -21,7 +21,7 @@ class PhysicalParameters:
     gamma_2: float = 0. + 5.0 * cos(np.pi/2) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
     Cb: float = 1e-2
     Cs: float = 1e2
-    pre: float = 0.2 # the initial Jacobian is 1 + pre
+    pre: float = 0.1 # the initial Jacobian is 1 + pre
 
 # ===========================================================
 # functionals for calculating the energy
