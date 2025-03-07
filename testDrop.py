@@ -312,6 +312,7 @@ class Drop_Runner(Runner):
         self.energy = np.zeros((self.num_steps+1, 5)) # the columns are stretching energy, bending energy, surface energy for Sigma_1, 2, 3. 
         self.phycl_hist = np.zeros((self.num_steps+1, 2)) # history of physical CL
         self.refcl_hist = np.zeros((self.num_steps+1, 2)) # history of reference CL
+        self.thd_hist = np.zeros((self.num_steps+1, ))    # history of the dynamic contact angle
 
         # read checkpoints from file
         if self.args.resume:
@@ -328,7 +329,9 @@ class Drop_Runner(Runner):
         # prepare visualization
         if self.args.vis:
             pyplot.ion()
-            self.ax = pyplot.subplot()
+            pyplot.rc("font", size=16)
+            self.fig, self.ax = pyplot.subplots()
+            self.fig.set_size_inches(6, 6)
             self.ax.axis("equal")
             self.bulk_triangles = self.mesh.coord_fe.elem_dof[::2,:].T//2
 
@@ -345,6 +348,7 @@ class Drop_Runner(Runner):
         self.refcl_hist[self.step] = refcl
         phycl = self.q.view(np.ndarray)[self.cl_dof_Q]
         self.phycl_hist[self.step] = phycl
+        self.thd_hist[self.step] = np.dot(self.m1_hat, self.m3)
 
         # calculate the energy
         d_xi = Measure(self.s_mesh, dim=1, order=5, coord_map=self.id_m) # the reference sheet mesh at the last time step
@@ -380,14 +384,14 @@ class Drop_Runner(Runner):
             _q_m_down = self.q_m_down.view(np.ndarray)
             segments = _q_m_down[self.s_mesh.coord_fe.elem_dof].reshape(2, 2, -1).transpose(2, 0, 1)
             self.ax.add_collection(LineCollection(segments=segments, colors="tab:orange"))
-            self.ax.plot(self.q_m[::2], self.q_m[1::2], "k+")
-            self.ax.plot(self.q_m[::2], self.dqdt[::2], 'ro', mfc='none')
-            self.ax.plot(self.q_m[::2], self.dqdt[1::2], 'bo', mfc='none')
+            # self.ax.plot(self.q_m[::2], self.q_m[1::2], "k+")
+            # self.ax.plot(self.q_m[::2], self.dqdt[::2], 'ro', mfc='none')
+            # self.ax.plot(self.q_m[::2], self.dqdt[1::2], 'bo', mfc='none')
             # plot the cornormals
-            self.ax.quiver(phycl[0], phycl[1], self.m1_hat[0], self.m1_hat[1], color="tab:brown") # m1
-            self.ax.quiver(phycl[0], phycl[1], self.m3[0], self.m3[1], color="tab:brown") # m3
+            # self.ax.quiver(phycl[0], phycl[1], self.m1_hat[0], self.m1_hat[1], color="tab:brown") # m1
+            # self.ax.quiver(phycl[0], phycl[1], self.m3[0], self.m3[1], color="tab:brown") # m3
             # plot the frame
-            self.ax.plot((0.0, 1.0, 1.0), (1.0, 1.0, 0.0), 'k-')
+            # self.ax.plot((0.0, 1.0, 1.0), (1.0, 1.0, 0.0), 'k-')
             self.ax.set_xlim(0.0, 1.0); self.ax.set_ylim(-0.15, 1.0)
             pyplot.title("t={:.5f}".format(t))
             pyplot.draw()
@@ -395,12 +399,13 @@ class Drop_Runner(Runner):
             # output image files
             if self.step % self.solp.stride_frame == 0:
                 filename = self._get_output_name("{:05}.png".format(self.step))
-                pyplot.savefig(filename, dpi=300.0)
+                self.fig.savefig(filename, dpi=300.0, bbox_inches="tight")
         if self.step % self.solp.stride_checkpoint == 0:
             filename = self._get_output_name("{:05}.npz".format(self.step))
             np.savez(filename, bulk_coord_map=self.mesh.coord_map, r_m=self.r_m, id_m=self.id_m, q_m=self.q_m, k_m=self.kappa, 
                      phycl_hist=self.phycl_hist[:self.step+1], 
                      refcl_hist=self.refcl_hist[:self.step+1], 
+                     thd_hist = self.thd_hist[:self.step+1],
                      energy=self.energy[:self.step+1])
             print(Fore.GREEN + "\nCheckpoint saved to " + filename + Style.RESET_ALL)
         

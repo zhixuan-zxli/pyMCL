@@ -180,12 +180,12 @@ class Mesh:
         submesh.build_facet_ref()
         return submesh
     
-    def show(self) -> None:
+    def show(self):
         if self.tdim == 3:
             print("Unable to visualize 3D mesh. ")
         elif self.tdim == 2:
             if self.gdim == 2:
-                pyplot.triplot(self.point[:,0], self.point[:,1], triangles=self.cell[2][:, :-1])
+                return pyplot.triplot(self.point[:,0], self.point[:,1], triangles=self.cell[2][:, :-1])
             elif self.gdim == 3:
                 # use plot_trisurf
                 raise NotImplementedError
@@ -195,8 +195,7 @@ class Mesh:
                 p0 = self.point[self.cell[1][:,0]]
                 p1 = self.point[self.cell[1][:,1]]
                 segs = np.concatenate((p0[:,np.newaxis], p1[:,np.newaxis]), axis=1) # (nseg x 2 x 2)
-                pyplot.gca().add_collection(LineCollection(segments=segs))
+                return pyplot.gca().add_collection(LineCollection(segments=segs))
             else:
                 raise NotImplementedError
-        pyplot.axis("equal")
 

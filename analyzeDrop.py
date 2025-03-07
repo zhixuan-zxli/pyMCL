@@ -4,10 +4,10 @@ from fem import *
 from testDrop import arrange_as_FD
 
 mesh_name = "mesh/half_drop-sq.msh"
-cp_group = "result/drop-lm-Cs2-Cb-2-pre01-s{}t{}/{:05d}.npz"
+cp_group = "result/drop-lm-s{}t{}/{:05d}.npz"
 base_step = 256
 base_dt = 1.0/256
-ref_level = ((0,0), (1,2), (2,4), (3,6)) # (spatial, time) for each pair
+ref_level = ((0,0), ) # (spatial, time) for each pair
 num_hier = len(ref_level)
 
 @Functional
@@ -47,7 +47,7 @@ if __name__ == "__main__":
         "q": [0.0] * (num_hier-1),
         "vol": [0.0] * (num_hier-1),
     }
-    # print("\n * Showing t = {}".format(cp_base_num * base_dt))
+    pyplot.rc("font", size=16)
     marker_styles = ("bo", "m+", "rx", "y*")
     fig, ax_prof = pyplot.subplots()
     ax_prof.axis("equal")
@@ -78,22 +78,30 @@ if __name__ == "__main__":
         energy = cp["energy"] # type: np.ndarray
         refcl_hist = cp["refcl_hist"] # type: np.ndarray
         phycl_hist = cp["phycl_hist"] # type: np.ndarray
+        thd_hist = cp["thd_hist"] if "thd_hist" in cp.files else np.zeros((phycl_hist.shape[0], )) # type: np.ndarray
 
         # plot the total energy
         if k == num_hier-1:
             t_span = np.arange(energy.shape[0]) * base_dt / 2**ref_level[k][1]
-            # pyplot.figure()
             fig, ax = pyplot.subplots()
-            ax.plot(t_span, np.sum(energy, axis=1), '-', label="total")
+            ax.plot(t_span, np.sum(energy, axis=1), '-', label="$\\mathcal{E}$")
+            ax.plot(t_span, energy[:,0], '-', label="$\\mathcal{E}_s$")
+            ax.plot(t_span, energy[:,1], '-', label="$\\mathcal{E}_b$")
+            ax.plot(t_span, energy[:,4], '-', label="$\\gamma_3|\\Sigma_3|$")
+            ax.set_xlabel("$t$")
             ax.legend()
-            ax.set_title(cp_file)
             # plot the contact line motion
             fig, ax = pyplot.subplots()
-            ax.plot(t_span, refcl_hist[:,0], '-', label="ref cl")
-            ax.plot(t_span, phycl_hist[:,0], '-', label="phy cl")
+            ax.plot(t_span, refcl_hist[:,0], '-', label="Reference")
+            ax.plot(t_span, phycl_hist[:,0], '-', label="Physical")
             ax.legend()
-            ax.set_title(cp_file)
-            # pass
+            ax.set_xlabel("$t$")
+            ax.set_ylabel("$x$")
+            # plot the dynamic contact angle
+            fig, ax = pyplot.subplots()
+            ax.plot(t_span[1:], np.arccos(thd_hist[1:]), '-')
+            ax.set_xlabel("$t$")
+            ax.set_ylabel("$\\theta_d$")
 
         # extract the interface parametrization
         r_m = Function(R_sp)
@@ -104,7 +112,6 @@ if __name__ == "__main__":
         q_m = Function(Q_sp)
         q_m[:] = cp["q_m"]
         vol += xdy_ydx.assemble(Measure(s_mesh, dim=1, order=5, tags=(5,), coord_map=q_m)) # type: float
-        # print("volume at level {} = {}".format(k, vol))
         q_fd = arrange_as_FD(Q_sp, q_m) # (n, 2)
 
         ax_prof.plot(r_m[::2], r_m[1::2], marker_styles[k], label=str(k))
@@ -124,7 +131,7 @@ if __name__ == "__main__":
         q_fd_prev = q_fd.view(np.ndarray).copy() # type: np.ndarray
         vol_prev = vol
 
-    print(f"base_step = {base_step}")
+    print("t = {}".format(base_step * base_dt))
     if num_hier >= 2:
         printConvergenceTable(table_header, error_table)
     ax_prof.legend()
