@@ -230,7 +230,7 @@ if __name__ == "__main__":
         # theta_0 = np.pi*2/3 # change this
         # print("Theta_0 = {} degrees".format(theta_0*180/np.pi))
         # vol_0 = np.pi/8 # the volume of the droplet
-        h_min, h_max = 0.05, 0.5
+        h_min, h_max = 0.01, 0.2 # 0.05, 0.5
         # R = np.sqrt(vol_0 / (theta_0 - 0.5 * np.sin(2*theta_0)))
         # arcl = 2*R*theta_0
         # num_segs = np.ceil(arcl / 2 / h_min)
@@ -238,7 +238,7 @@ if __name__ == "__main__":
         # markers = np.vstack((R * np.cos(theta), R * (np.sin(theta) - np.cos(theta_0))))
         # markers[1,0] = 0.0; markers[0,-1] = 0.0 # attach on the substrate
         markers = np.array(((0.5, 0.0), (0.5, 0.5), (0.0, 0.5))).T
-        build_drop_mesh(bbox, markers.T, np.array(((h_min, h_max, 0.0, 0.5), (0.05, 0.4, 0.05, 0.4))))
+        build_drop_mesh(bbox, markers.T, np.array(((h_min, h_max, 0.0, 0.5), (1e-3, 0.2, 1e-3, 0.4))))  # (0.05, 0.4, 0.05, 0.4)
     elif argv[1] == "unit_square":
         build_unit_square(0.1)
     else:
