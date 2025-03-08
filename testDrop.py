@@ -13,12 +13,12 @@ from colorama import Fore, Style
 @dataclass
 class PhysicalParameters:
     eta_2: float = 0.1
-    mu_1: float = 1e1
-    mu_2: float = 1e1
+    mu_1: float = 1e3
+    mu_2: float = 1e3
     mu_cl: float = 1.0
-    gamma_1: float = 0.
+    gamma_1: float = 2.5
     gamma_3: float = 5.0
-    gamma_2: float = 0. + 5.0 * cos(np.pi/2) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
+    gamma_2: float = 2.5 + 5.0 * cos(2*np.pi/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
     Cb: float = 1e-2
     Cs: float = 1e2
     pre: float = 0.1 # the initial Jacobian is 1 + pre
@@ -324,6 +324,7 @@ class Drop_Runner(Runner):
             self.energy[:self.step+1] = self.resume_file["energy"]
             self.phycl_hist[:self.step+1] = self.resume_file["phycl_hist"]
             self.refcl_hist[:self.step+1] = self.resume_file["refcl_hist"]
+            self.thd_hist[:self.step+1] = self.resume_file["thd_hist"]
             del self.resume_file
 
         # prepare visualization
@@ -331,7 +332,7 @@ class Drop_Runner(Runner):
             pyplot.ion()
             pyplot.rc("font", size=16)
             self.fig, self.ax = pyplot.subplots()
-            self.fig.set_size_inches(6, 6)
+            self.fig.set_size_inches(6, 7.2)
             self.ax.axis("equal")
             self.bulk_triangles = self.mesh.coord_fe.elem_dof[::2,:].T//2
 
@@ -375,7 +376,7 @@ class Drop_Runner(Runner):
             # self.ax.triplot(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], triangles=self.bulk_triangles, linewidth=0.5)
             # plot the velocity
             _u = self.u.view(np.ndarray); _n = self.mesh.coord_map.size; 
-            self.ax.quiver(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], _u[:_n:2], _u[1:_n:2], color="tab:blue", scale=5.0, scale_units='x')
+            self.ax.quiver(self.mesh.coord_map[::2], self.mesh.coord_map[1::2], _u[:_n:2], _u[1:_n:2], color="tab:blue") #, scale=5.0, scale_units='x')
             # plot the interface
             _r_m = self.r_m.view(np.ndarray)
             segments = _r_m[self.i_mesh.coord_fe.elem_dof].reshape(2, 2, -1).transpose(2, 0, 1)
@@ -392,8 +393,8 @@ class Drop_Runner(Runner):
             # self.ax.quiver(phycl[0], phycl[1], self.m3[0], self.m3[1], color="tab:brown") # m3
             # plot the frame
             # self.ax.plot((0.0, 1.0, 1.0), (1.0, 1.0, 0.0), 'k-')
-            self.ax.set_xlim(0.0, 1.0); self.ax.set_ylim(-0.15, 1.0)
-            pyplot.title("t={:.5f}".format(t))
+            self.ax.set_xlim(0.0, 1.0); self.ax.set_ylim(-0.2, 1.0)
+            # pyplot.title("t={:.5f}".format(t))
             pyplot.draw()
             pyplot.pause(1e-4)
             # output image files
@@ -615,7 +616,7 @@ class Drop_Runner(Runner):
 # ===========================================================
 
 if __name__ == "__main__":
-    solp = SolverParameters(dt=1.0/(256), Te=1.0)
+    solp = SolverParameters(dt=1.0/(8192), Te=4.0)
     runner = Drop_Runner(solp)
     runner.prepare()
     runner.run()
