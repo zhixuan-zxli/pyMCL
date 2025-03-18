@@ -3,10 +3,10 @@ from matplotlib import pyplot
 from fem import *
 from testDrop import arrange_as_FD
 
-mesh_name = "mesh/half_drop-sq.msh"
-cp_group = "result/drop-lm-s{}t{}/{:05d}.npz"
-base_step = 256
-base_dt = 1.0/256
+mesh_name = "mesh/half_drop-sq-refined.msh"
+cp_group = "result/drop-mu1e3-Y60-s{}t{}/{:05d}.npz"
+base_step = 32768
+base_dt = 1.0/8192
 ref_level = ((0,0), ) # (spatial, time) for each pair
 num_hier = len(ref_level)
 
@@ -85,14 +85,14 @@ if __name__ == "__main__":
             t_span = np.arange(energy.shape[0]) * base_dt / 2**ref_level[k][1]
             fig, ax = pyplot.subplots()
             ax.plot(t_span, np.sum(energy, axis=1), '-', label="$\\mathcal{E}$")
-            ax.plot(t_span, energy[:,0], '-', label="$\\mathcal{E}_s$")
-            ax.plot(t_span, energy[:,1], '-', label="$\\mathcal{E}_b$")
-            ax.plot(t_span, energy[:,4], '-', label="$\\gamma_3|\\Sigma_3|$")
+            ax.plot(t_span, energy[:,0], '-.', label="$\\mathcal{E}_s$")
+            ax.plot(t_span, energy[:,1], ':', label="$\\mathcal{E}_b$")
+            ax.plot(t_span, np.sum(energy[:,2:], axis=1), '--', label="$\\sum \\gamma_i|\\Sigma_i|$")
             ax.set_xlabel("$t$")
             ax.legend()
             # plot the contact line motion
             fig, ax = pyplot.subplots()
-            ax.plot(t_span, refcl_hist[:,0], '-', label="Reference")
+            ax.plot(t_span, refcl_hist[:,0], '--', label="Reference")
             ax.plot(t_span, phycl_hist[:,0], '-', label="Physical")
             ax.legend()
             ax.set_xlabel("$t$")

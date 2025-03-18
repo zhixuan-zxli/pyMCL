@@ -16,9 +16,9 @@ class PhysicalParameters:
     mu_1: float = 1e3
     mu_2: float = 1e3
     mu_cl: float = 1.0
-    gamma_1: float = 2.5
+    gamma_1: float = 0.0
     gamma_3: float = 5.0
-    gamma_2: float = 2.5 + 5.0 * cos(2*np.pi/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
+    gamma_2: float = 0.0 + 5.0 * cos(np.pi/3) # to be consistent: gamma_2 = gamma_1 + gamma_3 * cos(theta_Y)
     Cb: float = 1e-2
     Cs: float = 1e2
     pre: float = 0.1 # the initial Jacobian is 1 + pre
