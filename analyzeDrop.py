@@ -3,11 +3,11 @@ from matplotlib import pyplot
 from fem import *
 from testDrop import arrange_as_FD
 
-mesh_name = "mesh/half_drop-sq-refined.msh"
-cp_group = "result/drop-mu1e3-Y60-s{}t{}/{:05d}.npz"
-base_step = 32768
-base_dt = 1.0/8192
-ref_level = ((0,0), ) # (spatial, time) for each pair
+mesh_name = "mesh/half_drop-sq.msh"
+cp_group = "result/drop-mu1e1-Y90-s{}t{}/{:05d}.npz"
+base_step = 16
+base_dt = 1.0/256
+ref_level = ((0,0), (1,2), (2,4)) # (spatial, time) for each pair
 num_hier = len(ref_level)
 
 @Functional
@@ -98,10 +98,10 @@ if __name__ == "__main__":
             ax.set_xlabel("$t$")
             ax.set_ylabel("$x$")
             # plot the dynamic contact angle
-            fig, ax = pyplot.subplots()
-            ax.plot(t_span[1:], np.arccos(thd_hist[1:]), '-')
-            ax.set_xlabel("$t$")
-            ax.set_ylabel("$\\theta_d$")
+            # fig, ax = pyplot.subplots()
+            # ax.plot(t_span[1:], np.arccos(thd_hist[1:]), '-')
+            # ax.set_xlabel("$t$")
+            # ax.set_ylabel("$\\theta_d$")
 
         # extract the interface parametrization
         r_m = Function(R_sp)
