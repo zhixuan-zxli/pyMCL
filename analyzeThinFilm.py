@@ -3,8 +3,9 @@ import numpy as np
 from os.path import join as pjoin
 from scipy.linalg import solve as dense_solve
 from scipy.special import expi
+from scipy.integrate import solve_ivp
 from fem.post import printConvergenceTable
-from thin_film import PhysicalParameters
+from testThinFilm import PhysicalParameters
 from matplotlib import pyplot
 from itertools import product
 from dataclasses import dataclass
@@ -63,6 +64,18 @@ def getSpaceConvergence() -> None:
     print("\nSpace convergence: ")
     printConvergenceTable(table_headers, error_table)
 
+def solveLeadOrderODE(phyp: PhysicalParameters, t_span: tuple[float]):
+    gamma = np.array(phyp.gamma)
+    sqr_gam = np.sqrt(gamma)
+    def rhs(t, a):
+        alpha = 3*phyp.vol / (a**2 * (1+1/gamma[0]))
+        beta = -alpha / gamma[0]
+        adot = phyp.eps * ((alpha - sqr_gam[0]/(sqr_gam[0] + sqr_gam[1])*beta)**3 - phyp.theta_Y**3)/3
+        return adot
+    t_eval = np.linspace(t_span[0], t_span[1], 513)
+    solution = solve_ivp(rhs, t_span, [phyp.a_init], t_eval=t_eval, vectorized=True)
+    return solution
+
 def plotCLSpeed(cp_list, markers, colors):
     npzdata = []; params = []; 
     # load the checkpoints and the parameters
@@ -78,7 +91,9 @@ def plotCLSpeed(cp_list, markers, colors):
         print("Plotting", phyp)
         label = "$\\gamma_1 = {:.1f}$".format(phyp.gamma[0]) # print gamma
         a_hist = npz["a_hist"]
-        ax1.plot(a_hist[0,::1024], a_hist[1,::1024], '-', label=label) # todo: add log-log plot
+        ax1.plot(a_hist[0,::1024], a_hist[1,::1024], 'o', markevery=0.05, ls=' ', marker=marker, mfc='none', mec=col, markersize=8, label=label) # todo: add log-log plot
+        ode_sol = solveLeadOrderODE(phyp, (a_hist[0,0], a_hist[0,-1]))
+        ax1.plot(ode_sol.t, ode_sol.y[0], '-', color=col)
         speed = (a_hist[1,1:] - a_hist[1,:-1]) / (a_hist[0,1:] - a_hist[0,:-1])
         a = a_hist[1,1:]
         ax2.plot(a[:1024:-1024], speed[:1024:-1024] / phyp.eps, markevery = 0.05,
@@ -276,6 +291,8 @@ def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters,
 
 if __name__ == "__main__":
 
+    pyplot.rc("font", size=16)
+
     # getTimeConvergence()
     # getSpaceConvergence()
 
@@ -283,17 +300,17 @@ if __name__ == "__main__":
     if True:
         markers = "o^sX"
         colors = ["tab:blue", "tab:orange", "tab:green", "tab:red"]
-        cp_list = ["result/tf-s-4-g{}-Y1-B0-adv/0064.npz".format(i) for i in (1, 2, 4, 8)]
+        cp_list = ["result/tf/tf-s-4-g{}-Y1-B0-adv/0064.npz".format(i) for i in (1, 2, 4, 8)]
         ax1, ax2 = plotCLSpeed(cp_list, markers, colors)
         ax2.set_xlim(1.0, 1.8); ax2.set_ylim(0, 6) # for spreading
 
-        cp_list = ["result/tf-s-4-g{}-Y1-rec/0064.npz".format(i) for i in (1, 2, 4, 8)]
+        cp_list = ["result/tf/tf-s-4-g{}-Y1-rec/0064.npz".format(i) for i in (1, 2, 4, 8)]
         ax1, ax2 = plotCLSpeed(cp_list, markers, colors)
         ax2.set_xlim(1.5, 1.98); ax2.set_ylim(-0.4, 0) # for receding
         
         cp_list.clear()
         for g, b in product((1, 2, 4, 8), (-2, -1, 0)):
-            cp_list += ["result/tf-s-4-g{}-Y1-B{}-adv/0064.npz".format(g, b)]
+            cp_list += ["result/tf/tf-s-4-g{}-Y1-B{}-adv/0064.npz".format(g, b)]
         markers = "o^s" * 4
         colors = ["tab:blue"] * 3 + ["tab:orange"] * 3 + ["tab:green"] * 3 + ["tab:red"] * 3
         ax2 = plotCLSpeed_2(cp_list, markers, colors, 3)
