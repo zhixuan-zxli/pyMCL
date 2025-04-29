@@ -90,15 +90,16 @@ def plotCLSpeed(cp_list, markers, colors):
     for npz, phyp, marker, col in zip(npzdata, params, markers, colors):
         print("Plotting", phyp)
         label = "$\\gamma_1 = {:.1f}$".format(phyp.gamma[0]) # print gamma
+        # Figure: the contact line location versus time, and the the Cox-Voinov solved as an ODE
         a_hist = npz["a_hist"]
-        ax1.plot(a_hist[0,::1024], a_hist[1,::1024], 'o', markevery=0.05, ls=' ', marker=marker, mfc='none', mec=col, markersize=8, label=label) # todo: add log-log plot
+        ax1.plot(a_hist[0,::1024], a_hist[1,::1024], 'o', markevery=0.05, ls=' ', mfc='none', mec=col, markersize=8, label=label)
         ode_sol = solveLeadOrderODE(phyp, (a_hist[0,0], a_hist[0,-1]))
         ax1.plot(ode_sol.t, ode_sol.y[0], '-', color=col)
+        # Figure: the contact line speed versus the location, and the Cox-Voinov relation
         speed = (a_hist[1,1:] - a_hist[1,:-1]) / (a_hist[0,1:] - a_hist[0,:-1])
         a = a_hist[1,1:]
         ax2.plot(a[:1024:-1024], speed[:1024:-1024] / phyp.eps, markevery = 0.05,
                  ls = ' ', marker=marker, mfc='none', mec=col, markersize = 8, label=label)
-        # calculate and plot the theoretical prediction
         a_app = 3*phyp.vol/(a**2*(1+1/phyp.gamma[0]))
         b_app = -a_app / phyp.gamma[0]
         b_til = np.sqrt(phyp.gamma[0]) / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app
@@ -113,6 +114,8 @@ def plotCLSpeed(cp_list, markers, colors):
     ax2.set_xlabel("$a$"); ax2.set_ylabel("$\\dot{a}(t)/\\epsilon$"); ax2.legend()
     return ax1, ax2
 
+# This figure is to show that the speed is mostly irrelevant to the bending modulus; 
+# plot the contact line speed versus the location, with multiple bending moduli.
 def plotCLSpeed_2(cp_list, markers, colors, group_size):
     npzdata = []; params = []; 
     # load the checkpoints and the parameters
@@ -145,14 +148,14 @@ class plotProfileOption:
 
 def plotProfiles(test_name, cp_list, opt: plotProfileOption) -> None:
     # load the parameters
-    with open(pjoin("result", test_name, "PhysicalParameters"), "rb") as f:
+    with open(pjoin(test_name, "PhysicalParameters"), "rb") as f:
         phyp = pickle.load(f)
     phyp.eps = -1.0 / np.log(phyp.slip)
     print("Parameters of the profiles:", phyp)
     # load the data
     npzdata = []
     for cp in cp_list:
-        name = pjoin("result", test_name, "{:04}.npz".format(cp))
+        name = pjoin(test_name, "{:04}.npz".format(cp))
         npzdata.append(np.load(name))
     #
     _, ax1 = pyplot.subplots() # axis for plotting the profiles and the asymptotics
@@ -186,7 +189,7 @@ def plotProfiles(test_name, cp_list, opt: plotProfileOption) -> None:
         ax2.plot(z, -dh, markevery=0.025, ls='none', marker='o', mfc='none', mec="tab:blue", label=label, alpha=alpha)
         ax3.plot(z, -dg, markevery=0.025, ls='none', marker='o', mfc='none', mec="tab:orange", label=label, alpha=alpha)
         # plot the theoretical prediction
-        plotPrediction(xi_c[2:2+n_fluid], xi_c[2:-2], phyp, a, adot[-1], alpha, ax1, ax2, ax3, cp == cp_list[-1], opt)
+        plotPrediction(xi_c[2:2+n_fluid], xi_c[2:-2], phyp, a, adot[-1], ax1, ax2, ax3, cp == cp_list[-1], opt)
     ax1.legend(); ax1.set_xlabel("$x$"); ax1.set_xlim(0.0, 2.5); ax1.set_ylabel("$z$")
     if not opt.plotProfileLines:
         ax2.legend(); ax2.set_xlabel("$s$"); ax2.set_ylabel("$\partial_{y}h$")
@@ -197,6 +200,8 @@ def varphi(x: np.ndarray) -> np.ndarray:
     r1 = np.exp(x) * expi(-x)
     r2 = np.exp(-x) * expi(x)
     r = (r1 - r2) / 2
+    if np.isscalar(x):
+        return 0.0 if x == 0.0 else r
     r[x == 0.0] = 0.0
     return r
 
@@ -204,11 +209,13 @@ def dvarphi(x: np.ndarray) -> np.ndarray:
     r1 = np.exp(x) * expi(-x)
     r2 = np.exp(-x) * expi(x)
     r = (r1 + r2) / 2
+    if np.isscalar(x):
+        return 0.0 if x == 0.0 else r
     r[x == 0.0] = 0.0
     return r
 
 def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters, 
-                   a: float, adot: float, alpha: float, ax1, ax2, ax3, addLabels: bool, opt: plotProfileOption) -> None:
+                   a: float, adot: float, ax1, ax2, ax3, addLabels: bool, opt: plotProfileOption) -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         eps, th_y = phyp.eps, phyp.theta_Y
@@ -216,7 +223,7 @@ def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters,
         a_app = 3*phyp.vol / (a**2 * (1+1/phyp.gamma[0]))
         b_app = -1/phyp.gamma[0] * a_app
         th_app = 3*phyp.vol / a**2
-        Cb = phyp.bm / eps**2 #np.sqrt(phyp.bm / phyp.gamma[0]) / eps
+        Cb = phyp.bm / eps**2 # C_b^* in the paper, at order 1
         b_til = np.sqrt(phyp.gamma[0]) / (np.sqrt(phyp.gamma[0]) + np.sqrt(phyp.gamma[1])) * b_app
         a0 = ((a_app - b_til)**3 - th_y**3) / 3
         ea1 = adot / eps - a0
@@ -235,7 +242,7 @@ def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters,
         y = a - xf
         z = np.log(y) * eps + 1.0
         dh_outer = a_app * xf / a + eps * a0 / th_app**2 * (np.log(y) + (3-np.log(2*a)))
-        mask = z > 0.7
+        mask = z > 0.8
         ax2.plot(z[mask], dh_outer[mask], 'k-', label="Outer" if addLabels else None)
 
         # ================== Inner region ==================
@@ -254,40 +261,52 @@ def plotPrediction(xi_f: np.ndarray, xi_s: np.ndarray, phyp: PhysicalParameters,
         gamma = phyp.gamma
         # calculate the constants in the leading-order solution
         lb = [np.sqrt(Cb / gam) for gam in gamma] 
-        C2 = lb[1] * np.sqrt(gamma[0]) / (np.sqrt(gamma[0]) + np.sqrt(gamma[1])) * b_app
-        C1 = lb[0] * np.sqrt(gamma[1]) / (np.sqrt(gamma[0]) + np.sqrt(gamma[1])) * b_app
+        C2 = lb[1] * np.sqrt(gamma[0]) / (np.sqrt(gamma[0]) + np.sqrt(gamma[1])) * b_app # C_2^+ in the paper
+        C1 = lb[0] * np.sqrt(gamma[1]) / (np.sqrt(gamma[0]) + np.sqrt(gamma[1])) * b_app # C_1^- in the paper
         A = C2 - C1
         y_til = (a - xs) / eps
         g_til_0 = np.where(y_til >= 0.0, 
                         A + b_app * y_til + C1 * np.exp(-y_til / lb[0]), 
                         C2 * np.exp(y_til / lb[1]))
         # calculate the constants in the next-order solution
-        E1 = np.log(2*a/(eps*lb[0])) - 3
-        A = np.array(((1.0, -1.0), (lb[0], lb[1])))
-        rhs = np.array((b_app / a, a0/(gamma[0]*th_app**2)*(0.57722 + E1)))
-        D = dense_solve(A, rhs)
-        F1 = Cb * (D[1]/gamma[1] - D[0]/gamma[0])
-        y1 = np.maximum(0.0, y_til / lb[0])
-        g_til_1 = np.where(y_til >= 0.0, 
-                        D[0]*lb[0]**2*np.exp(-y1) - b_app/(2*a)*y_til**2 + a0*lb[0]/(gamma[0]*th_app**2)*(varphi(y1) - y1*np.log(y1) + (E1+1)*y1) + F1, 
-                        D[1]*lb[1]**2*np.exp(y_til / lb[1]))
-        #
+        E1 = np.log(2*a/eps) - 3
+        c_til = C1 / th_app
+        # A = np.array(((1.0, -1.0), (lb[0], lb[1])))
+        # rhs = np.array((b_app / a - a0 / (np.sqrt(gamma[0] * Cb) * th_app**2) * varphi(c_til / lb[0]), 
+        #                 a0/(gamma[0]*th_app**2)*(dvarphi(c_til/lb[0]) - np.log(c_til) + E1)))
+        # D = dense_solve(A, rhs)
+        # F1 = Cb * (D[1]/gamma[1] - D[0]/gamma[0]) - a0 / (gamma[0]*th_app**2) * (lb[0] * varphi(c_til/lb[0]) - c_til*np.log(c_til))
+        # g_til_1 = np.where(y_til >= 0.0, 
+        #                 D[0]*lb[0]**2*np.exp(-y_til / lb[0]) - b_app/(2*a)*y_til**2 + a0/(gamma[0]*th_app**2)*(lb[0]*varphi((y_til + c_til)/lb[0]) - (y_til+c_til)*np.log(y_til+c_til) + (E1+1)*y_til) + F1, 
+        #                 D[1]*lb[1]**2*np.exp(y_til / lb[1]))
+        # #
         h_til_0 = a_app * y_til + C2
-        h_til_1 = a0/th_app**2 * (y_til * np.log(y_til) + (2 + np.log(eps/(2*a)))*y_til) - a_app/(2*a)*y_til**2 + D[1]*lb[1]
+        # h_til_1 = a0/th_app**2 * ((y_til+c_til) * np.log(y_til+c_til) + (2 + np.log(eps/(2*a)))*y_til) - a_app/(2*a)*y_til**2 + D[1]*lb[1]**2 - a0*c_til/(th_app**2)*np.log(c_til)
         if opt.plotBending:
-            ax1.plot(xs, (h_til_0 + eps * h_til_1) * eps, 'k-', label="Asymptotics" if addLabels else None)
-            ax1.plot(xs, (g_til_0 + eps * g_til_1) * eps, 'k-')
+            ax1.plot(xs[y_til > 0.0], h_til_0[y_til > 0.0] * eps, 'k-', label="Asymptotics" if addLabels else None)
+            ax1.plot(xs, g_til_0 * eps, 'k-')
         # plot the slopes
         y_til = y_til[y_til > 0.0]
-        y1 = y1[y1 > 0.0]
+        y1 = y_til / lb[0]
         z = np.log(y_til * eps) * eps + 1.0
-        mask = (z > 0.3) & (z < 0.7)
         dg_til_0 = b_app - C1 / lb[0] * np.exp(-y1)
-        dg_til_1 = -D[0]*lb[0]*np.exp(-y1) - b_app/a*y_til + a0/(gamma[0]*th_app**2)*(dvarphi(y1) - np.log(y1) + E1)
-        ax3.plot(z, dg_til_0 + eps * dg_til_1, 'k-', label="Asymptotics" if addLabels else None)
+        # ax3.plot(z, dg_til_0, 'k-', label="Leading order" if addLabels else None)
+        dg_til_1_far = -b_app/a*y_til + a0/(gamma[0]*th_app**2)*(dvarphi((y_til+c_til)/lb[0]) - np.log(y_til+c_til) + E1)
+        mask = (z > 0.3)
+        ax3.plot(z[mask], (dg_til_0 + eps * dg_til_1_far)[mask], 'k-', label="Far field" if addLabels else None)
+        dg_til_1_near = a0/(Cb*(a_app-b_til)**2) * y_til**3 * np.log(y_til)
+        mask = (z < 0.6)
+        ax3.plot(z[mask], (dg_til_0 + eps * dg_til_1_near)[mask], 'k--', label="Near field" if addLabels else None)
+        # dg_til_1 = -D[0]*lb[0]*np.exp(-y1) - b_app/a*y_til + a0/(gamma[0]*th_app**2)*(dvarphi((y_til+c_til)/lb[0]) - np.log(y_til+c_til) + E1)
+        # ax3.plot(z, dg_til_0 + eps * dg_til_1, 'k-', label="Asymptotics" if addLabels else None)
         dh_til_0 = a_app
-        dh_til_1 = a0/th_app**2*(np.log(y_til) + 3 + np.log(eps/(2*a))) - a_app/a*y_til
-        ax2.plot(z[mask], (dh_til_0 + eps*dh_til_1)[mask], 'k--', label="Bending" if addLabels else None) # y_til -> +infty    
+        dh_til_1_far = a0/th_app**2*(np.log(y_til+c_til) + 3 + np.log(eps/(2*a))) - a_app/a*y_til
+        mask = (z > 0.6) & (z < 0.8)
+        ax2.plot(z[mask], (dh_til_0 + eps*dh_til_1_far)[mask], 'k--', label="Bending" if addLabels else None)
+        C1_til = ea1 / eps / a0 + np.log(eps) + th_y + np.log(th_y)
+        dh_til_1_near = a0/(a_app - b_til)**2 * (np.log(y_til) + (C1_til + 1.0))
+        mask = (z > 0.4) & (z < 0.7)
+        ax2.plot(z[mask], (dh_til_0 + eps*dh_til_1_near)[mask], 'k--') #, label="Near field bending" if addLabels else None)
 
 if __name__ == "__main__":
 
@@ -297,7 +316,7 @@ if __name__ == "__main__":
     # getSpaceConvergence()
 
     # =================================================================
-    if True:
+    if False:
         markers = "o^sX"
         colors = ["tab:blue", "tab:orange", "tab:green", "tab:red"]
         cp_list = ["result/tf/tf-s-4-g{}-Y1-B0-adv/0064.npz".format(i) for i in (1, 2, 4, 8)]
@@ -317,17 +336,17 @@ if __name__ == "__main__":
         ax2.set_xlim(1.0, 1.8); ax2.set_ylim(0, 6) # for spreading
 
     # =================================================================
-    if False:
-        opt = plotProfileOption()
-        # plotProfiles("tf-s-4-g2-Y1-B0-adv", [1, 4, 16, 64], opt)
-        # plotProfiles("tf-s-4-g2-Y1-rec", [1, 8, 24, 48], opt)
+    if True:
+        opt = plotProfileOption(plotProfileLines=True)
+        # plotProfiles("result/tf/tf-s-4-g2-Y1-B0-adv", [1, 4, 16, 64], opt)
+        # plotProfiles("result/tf/tf-s-4-g2-Y1-rec", [1, 8, 24, 48], opt)
 
         opt.plotProfileLines = False
         opt.plotProfileMarkers = True
         opt.plotOuter = True
-        plotProfiles("tf-s-4-g2-Y1-B0-adv", [2, 8], opt)
+        # plotProfiles("result/tf/tf-s-4-g2-Y1-B0-adv", [2, 8], opt)
         opt.plotOuter = False; opt.plotBending = True
-        plotProfiles("tf-s-4-g2-Y1-B0-adv", [2, 8], opt)
-        plotProfiles("tf-s-4-g2-Y1-rec", [8], opt)
+        # plotProfiles("result/tf/tf-s-4-g2-Y1-B0-adv", [2, 8], opt)
+        plotProfiles("result/tf/tf-s-4-g2-Y1-rec", [8], opt)
 
     pyplot.show()

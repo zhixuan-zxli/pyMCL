@@ -4,3 +4,4 @@ result/
 *.geo
 *.msh
 *.npz
+*.pdf
