@@ -1,7 +1,7 @@
 import pickle
 import numpy as np
 from os.path import join as pjoin
-from scipy.linalg import solve as dense_solve
+# from scipy.linalg import solve as dense_solve
 from scipy.special import expi
 from scipy.integrate import solve_ivp
 from fem.post import printConvergenceTable
@@ -129,7 +129,7 @@ def plotCLSpeed_2(cp_list, markers, colors, group_size):
     i = 0
     for npz, phyp, marker, col in zip(npzdata, params, markers, colors):
         print("Plotting", phyp)
-        label = "$C_b = {:.2f}\\epsilon^2$".format(phyp.bm / phyp.eps**2) if i < group_size else None # print C_b
+        label = "$C_b = {:.2f}$".format(phyp.bm / phyp.eps**2) if i < group_size else None # print C_b
         a_hist = npz["a_hist"]
         speed = (a_hist[1,1:] - a_hist[1,:-1]) / (a_hist[0,1:] - a_hist[0,:-1])
         a = a_hist[1,1:]
@@ -316,7 +316,7 @@ if __name__ == "__main__":
     # getSpaceConvergence()
 
     # =================================================================
-    if False:
+    if True:
         markers = "o^sX"
         colors = ["tab:blue", "tab:orange", "tab:green", "tab:red"]
         cp_list = ["result/tf/tf-s-4-g{}-Y1-B0-adv/0064.npz".format(i) for i in (1, 2, 4, 8)]
@@ -336,7 +336,7 @@ if __name__ == "__main__":
         ax2.set_xlim(1.0, 1.8); ax2.set_ylim(0, 6) # for spreading
 
     # =================================================================
-    if True:
+    if False:
         opt = plotProfileOption(plotProfileLines=True)
         # plotProfiles("result/tf/tf-s-4-g2-Y1-B0-adv", [1, 4, 16, 64], opt)
         # plotProfiles("result/tf/tf-s-4-g2-Y1-rec", [1, 8, 24, 48], opt)
