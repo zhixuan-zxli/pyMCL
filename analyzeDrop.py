@@ -4,11 +4,8 @@ from fem import *
 from testDrop import arrange_as_FD
 
 mesh_name = "mesh/half_drop-sq-refined.msh"
-cp_group = "result/drop-mu1e3-Y120-s{}t{}/{:05d}.npz"
 base_step = 8192*4
 base_dt = 1.0/8192
-ref_level = ((0,0),) # (spatial, time) for each pair
-num_hier = len(ref_level)
 
 @Functional
 def xdy_ydx(x: QuadData) -> np.ndarray:
@@ -38,8 +35,12 @@ def error_between_interface(y_coarse: Function, y_fine: Function) -> float:
     e = [point2polyline(p.view(np.ndarray)) for p in y_c]
     return max(e)
 
-
-if __name__ == "__main__":
+# calculate errors and the convergence table
+def calcErrorAndConvergence() -> None:
+    
+    cp_group = "result/drop-mu1e3-Y120-s{}t{}/{:05d}.npz"
+    ref_level = ((0,0),) # (spatial, time) for each pair
+    num_hier = len(ref_level)
 
     table_header = [str(k) for k in range(num_hier-1)]
     error_table = {
@@ -47,9 +48,8 @@ if __name__ == "__main__":
         "q": [0.0] * (num_hier-1),
         "vol": [0.0] * (num_hier-1),
     }
-    pyplot.rc("font", size=16)
     marker_styles = ("bo", "m+", "rx", "y*")
-    fig, ax_prof = pyplot.subplots()
+    _, ax_prof = pyplot.subplots()
     ax_prof.axis("equal")
 
     for k in range(num_hier):
@@ -69,7 +69,7 @@ if __name__ == "__main__":
         setMeshMapping(s_mesh)
 
         R_sp = i_mesh.coord_fe # type: FunctionSpace
-        Q_P1_sp = s_mesh.coord_fe # type: FunctionSpace
+        # Q_P1_sp = s_mesh.coord_fe # type: FunctionSpace
         Q_sp = FunctionSpace(s_mesh, VectorElement(LineP2, 2)) # for deformation and also for the fluid stress
 
         # read the data from checkpoint
@@ -78,12 +78,12 @@ if __name__ == "__main__":
         energy = cp["energy"] # type: np.ndarray
         refcl_hist = cp["refcl_hist"] # type: np.ndarray
         phycl_hist = cp["phycl_hist"] # type: np.ndarray
-        thd_hist = cp["thd_hist"] if "thd_hist" in cp.files else np.zeros((phycl_hist.shape[0], )) # type: np.ndarray
+        # thd_hist = cp["thd_hist"] if "thd_hist" in cp.files else np.zeros((phycl_hist.shape[0], )) # type: np.ndarray
 
         # plot the total energy
         if k == num_hier-1:
             t_span = np.arange(energy.shape[0]) * base_dt / 2**ref_level[k][1]
-            fig, ax = pyplot.subplots()
+            _, ax = pyplot.subplots()
             ax.plot(t_span, np.sum(energy, axis=1), '-', label="$\\mathcal{E}$")
             ax.plot(t_span, energy[:,0], '-.', label="$\\mathcal{E}_s$")
             ax.plot(t_span, energy[:,1], ':', label="$\\mathcal{E}_b$")
@@ -91,7 +91,7 @@ if __name__ == "__main__":
             ax.set_xlabel("$t$")
             ax.legend()
             # plot the contact line motion
-            fig, ax = pyplot.subplots()
+            _, ax = pyplot.subplots()
             ax.plot(t_span, refcl_hist[:,0], '--', label="Reference")
             ax.plot(t_span, phycl_hist[:,0], '-', label="Physical")
             ax.legend()
@@ -135,4 +135,58 @@ if __name__ == "__main__":
     if num_hier >= 2:
         printConvergenceTable(table_header, error_table)
     ax_prof.legend()
+
+def plotCLMotion() -> None:
+    cp_group = ["result/drop-mu1e3-Cs5e1-Y60-s0t0/65536.npz", 
+                "result/drop-mu1e3-Y60-s0t0/32768.npz", 
+                "result/drop-mu1e3-Cs5e2-Y60-s0t0/32768.npz", ]
+                # "result/drop-mu1e3-Cs1e3-Y60-s0t0/32768.npz"]
+    labels = ["$C_s = 50$", "$C_s = 10^2$", "$C_s = 5 \\times 10^2$", ] #"$C_s = 10^3$"]
+    base_dt = (1/16384, 1/8192, 1/8192, ) #1/8192)
+    mesh = Mesh()
+    mesh.load(mesh_name)
+
+    slip_len = 1e-3
+    eps = -1.0 / np.log(slip_len)
+
+    # _, ax_energy = pyplot.subplots()
+    _, ax_cl = pyplot.subplots()
+    _, ax_adot = pyplot.subplots()
+
+    for k in range(len(cp_group)):
+        cp = np.load(cp_group[k])
+        energy = cp["energy"]
+        # refcl_hist = cp["refcl_hist"]
+        phycl_hist = cp["phycl_hist"]
+        t_span = np.arange(energy.shape[0]) * base_dt[k]
+
+        # plot the energy
+        # ax_energy.plot(t_span, np.sum(energy, axis=1), '-', label="$\\mathcal{E}$")
+        # ax_energy.plot(t_span, energy[:,0], '-.', label="$\\mathcal{E}_s$")
+        # ax_energy.plot(t_span, energy[:,1], ':', label="$\\mathcal{E}_b$")
+        # ax_energy.plot(t_span, np.sum(energy[:,2:], axis=1), '--', label="$\\sum \\gamma_i|\\Sigma_i|$")
+        # ax_energy.set_xlabel("$t$")
+
+        # plot the contact line location
+        ax_cl.plot(t_span, phycl_hist[:, 0], linestyle='-', label=labels[k], markevery=32)
+        ax_cl.set_xlabel("$t$")
+        ax_cl.set_ylabel("$a(t)$")
+
+        # plot the contact line speed
+        start_from = 128
+        adot = (phycl_hist[1:, 0] - phycl_hist[:-1, 0]) / (t_span[1:] - t_span[:-1])
+        ax_adot.plot(t_span[start_from+1:], adot[start_from:] / eps, linestyle='-', label=labels[k], markevery=32)
+        # ax_adot.plot(phycl_hist[start_from+1:, 0], adot[start_from:] / eps, linestyle='-', label=labels[k], markevery=32)
+        ax_adot.set_xlabel("$t$")
+        # ax_adot.set_xlabel("$a(t)$")
+        ax_adot.set_ylabel("$\\dot{a}(t) / \\epsilon$")
+
+    ax_cl.legend()
+    ax_adot.legend()
+
+if __name__ == "__main__":
+
+    pyplot.rc("font", size=16)
+    # calcErrorAndConvergence()
+    plotCLMotion()
     pyplot.show()
