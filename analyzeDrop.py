@@ -137,12 +137,22 @@ def calcErrorAndConvergence() -> None:
     ax_prof.legend()
 
 def plotCLMotion() -> None:
-    cp_group = ["result/drop-mu1e3-Cs5e1-Y60-s0t0/65536.npz", 
-                "result/drop-mu1e3-Y60-s0t0/32768.npz", 
-                "result/drop-mu1e3-Cs5e2-Y60-s0t0/32768.npz", ]
-                # "result/drop-mu1e3-Cs1e3-Y60-s0t0/32768.npz"]
-    labels = ["$C_s = 50$", "$C_s = 10^2$", "$C_s = 5 \\times 10^2$", ] #"$C_s = 10^3$"]
-    base_dt = (1/16384, 1/8192, 1/8192, ) #1/8192)
+    # cp_group = ["result/drop-mu1e3-Cs5e1-Y60-s0t0/65536.npz", 
+    #             "result/drop-mu1e3-Y60-s0t0/32768.npz", 
+    #             "result/drop-mu1e3-Cs5e2-Y60-s0t0/32768.npz", ]
+    # cp_group = ["result/drop-mu1e3-Cs5e1-Y120-s0t0/65536.npz", 
+                # "result/drop-mu1e3-Y120-s0t0/32768.npz", 
+                # "result/drop-mu1e3-Cs5e2-Y120-s0t0/32768.npz", ]
+    # cp_group = ["result/drop-mu1e3-Y120-s0t0/32768.npz", 
+    #             "result/drop-mu1e3-Cb-3-Y120-s0t0/32768.npz", 
+    #             "result/drop-mu1e3-Cb-4-Y120-s0t0/32768.npz", ]
+    cp_group = ["result/drop-mu1e3-Y60-s0t0/32768.npz", 
+                "result/drop-mu1e3-Cb-3-Y60-s0t0/32768.npz", 
+                "result/drop-mu1e3-Cb-4-Y60-s0t0/32768.npz", ]
+    # labels = ["$C_s = 50$", "$C_s = 10^2$", "$C_s = 5 \\times 10^2$", ]
+    labels = ["$C_b = 10^{-2}$", "$C_b = 10^{-3}$", "$C_b = 10^{-4}$", ]
+    # base_dt = (1/8192/2, 1/8192, 1/8192, ) #1/8192)
+    base_dt = (1/8192, 1/8192, 1/8192, )
     mesh = Mesh()
     mesh.load(mesh_name)
 
@@ -159,13 +169,6 @@ def plotCLMotion() -> None:
         # refcl_hist = cp["refcl_hist"]
         phycl_hist = cp["phycl_hist"]
         t_span = np.arange(energy.shape[0]) * base_dt[k]
-
-        # plot the energy
-        # ax_energy.plot(t_span, np.sum(energy, axis=1), '-', label="$\\mathcal{E}$")
-        # ax_energy.plot(t_span, energy[:,0], '-.', label="$\\mathcal{E}_s$")
-        # ax_energy.plot(t_span, energy[:,1], ':', label="$\\mathcal{E}_b$")
-        # ax_energy.plot(t_span, np.sum(energy[:,2:], axis=1), '--', label="$\\sum \\gamma_i|\\Sigma_i|$")
-        # ax_energy.set_xlabel("$t$")
 
         # plot the contact line location
         ax_cl.plot(t_span, phycl_hist[:, 0], linestyle='-', label=labels[k], markevery=32)
