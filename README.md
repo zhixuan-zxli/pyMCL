@@ -10,3 +10,14 @@ ffmpeg -pattern_type glob -i "*.png" -framerate 25 -r 25 -c:v libx264 -pix_fmt y
 ```
 
 **Usage**
+
+First generate the mesh:
+```
+mkdir mesh
+python generateMesh.py half_drop
+```
+
+Then run the simulation:
+```
+python testDrop.py mesh/half_drop.msh result/ --vis --checkpoint 32
+```
